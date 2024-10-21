@@ -29,6 +29,7 @@
 #include "gui/utils/format.hpp"
 #include "gui/utils/theme.hpp"
 #include "media/anime.hpp"
+#include "media/anime_list.hpp"
 
 namespace gui {
 

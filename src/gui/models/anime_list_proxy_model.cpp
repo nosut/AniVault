@@ -22,6 +22,7 @@
 
 #include "gui/models/anime_list_model.hpp"
 #include "media/anime.hpp"
+#include "media/anime_list.hpp"
 #include "media/anime_season.hpp"
 
 namespace {

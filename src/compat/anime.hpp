@@ -26,6 +26,5 @@
 namespace compat::v1 {
 
 QList<Anime> read_anime_database(const std::string& path);
-QList<ListEntry> read_list_entries(const std::string& path);
 
 }  // namespace compat::v1

@@ -33,6 +33,7 @@
 #include "gui/models/anime_list_proxy_model.hpp"
 #include "gui/utils/format.hpp"
 #include "media/anime.hpp"
+#include "media/anime_list.hpp"
 
 namespace gui {
 

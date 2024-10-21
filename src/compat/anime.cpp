@@ -19,18 +19,9 @@
 #include "anime.hpp"
 
 #include <QFile>
-#include <QRegularExpression>
 #include <QXmlStreamReader>
 
-namespace {
-
-// This regex is used to remove the extra root element from v1's XML documents so that they
-// can be read by `QXmlStreamReader` without an "Extra content at end of document" error.
-// See #842 for more information.
-static const QRegularExpression metaElementRegex{"<meta>.+</meta>",
-                                                 QRegularExpression::DotMatchesEverythingOption};
-
-}  // namespace
+#include "compat/common.hpp"
 
 namespace compat::v1 {
 
@@ -40,7 +31,7 @@ QList<Anime> read_anime_database(const std::string& path) {
   if (!file.open(QIODevice::ReadOnly)) return {};
 
   QString str{file.readAll()};
-  str.remove(metaElementRegex);
+  str.remove(meta_element_regex);
 
   QXmlStreamReader xml(str);
 
@@ -120,64 +111,6 @@ QList<Anime> read_anime_database(const std::string& path) {
   }
 
   return data;
-}
-
-QList<ListEntry> read_list_entries(const std::string& path) {
-  QFile file(QString::fromStdString(path));
-
-  if (!file.open(QIODevice::ReadOnly)) return {};
-
-  QString str{file.readAll()};
-  str.remove(metaElementRegex);
-
-  QXmlStreamReader xml(str);
-
-  if (!xml.readNextStartElement()) return {};
-  if (xml.name() != u"library") return {};
-
-  QList<ListEntry> entries;
-
-  while (xml.readNextStartElement()) {
-    if (xml.name() != u"anime") break;
-
-    ListEntry entry;
-
-    while (xml.readNextStartElement()) {
-      if (xml.name() == u"id") {
-        entry.anime_id = xml.readElementText().toInt();
-      } else if (xml.name() == u"library_id") {
-        entry.id = xml.readElementText().toStdString();
-      } else if (xml.name() == u"progress") {
-        entry.watched_episodes = xml.readElementText().toInt();
-      } else if (xml.name() == u"date_start") {
-        entry.date_started = FuzzyDate(xml.readElementText().toStdString());
-      } else if (xml.name() == u"date_end") {
-        entry.date_completed = FuzzyDate(xml.readElementText().toStdString());
-      } else if (xml.name() == u"score") {
-        entry.score = xml.readElementText().toInt();
-      } else if (xml.name() == u"status") {
-        entry.status = static_cast<anime::list::Status>(xml.readElementText().toInt());
-      } else if (xml.name() == u"private") {
-        entry.is_private = xml.readElementText().toInt();
-      } else if (xml.name() == u"rewatched_times") {
-        entry.rewatched_times = xml.readElementText().toInt();
-      } else if (xml.name() == u"rewatching") {
-        entry.rewatching = xml.readElementText().toInt();
-      } else if (xml.name() == u"rewatching_ep") {
-        entry.rewatching_ep = xml.readElementText().toInt();
-      } else if (xml.name() == u"notes") {
-        entry.notes = xml.readElementText().toStdString();
-      } else if (xml.name() == u"last_updated") {
-        entry.last_updated = xml.readElementText().toLongLong();
-      } else {
-        xml.skipCurrentElement();
-      }
-    }
-
-    entries.emplace_back(entry);
-  }
-
-  return entries;
 }
 
 }  // namespace compat::v1

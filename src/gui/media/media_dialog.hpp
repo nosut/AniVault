@@ -22,6 +22,7 @@
 #include <optional>
 
 #include "media/anime.hpp"
+#include "media/anime_list.hpp"
 
 class QResizeEvent;
 class QShowEvent;

@@ -23,6 +23,7 @@
 #include <QMenu>
 
 #include "media/anime.hpp"
+#include "media/anime_list.hpp"
 
 class QItemSelectionModel;
 

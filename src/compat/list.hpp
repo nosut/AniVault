@@ -19,13 +19,12 @@
 #pragma once
 
 #include <QList>
+#include <string>
 
-#include "media/anime.hpp"
 #include "media/anime_list.hpp"
 
-namespace anime {
+namespace compat::v1 {
 
-QList<Anime> readDatabase();
-QList<ListEntry> readListEntries();
+QList<ListEntry> read_list_entries(const std::string& path);
 
-}  // namespace anime
+}  // namespace compat::v1

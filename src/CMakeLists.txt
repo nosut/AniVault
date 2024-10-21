@@ -5,6 +5,7 @@ add_executable(taiga)
 target_sources(taiga PRIVATE
 	base/chrono.cpp
 	compat/anime.cpp
+	compat/list.cpp
 	compat/settings.cpp
 	media/anime_db_2.cpp
 	media/anime_season.cpp

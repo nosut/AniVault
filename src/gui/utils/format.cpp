@@ -24,6 +24,7 @@
 
 #include "base/chrono.hpp"
 #include "media/anime.hpp"
+#include "media/anime_list.hpp"
 #include "media/anime_season.hpp"
 
 namespace gui {

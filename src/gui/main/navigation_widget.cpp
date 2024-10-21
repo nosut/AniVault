@@ -26,6 +26,7 @@
 #include "gui/utils/theme.hpp"
 #include "media/anime.hpp"
 #include "media/anime_db.hpp"
+#include "media/anime_list.hpp"
 
 namespace gui {
 

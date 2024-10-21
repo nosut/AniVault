@@ -23,6 +23,7 @@
 #include <QMap>
 
 #include "media/anime.hpp"
+#include "media/anime_list.hpp"
 
 namespace gui {
 

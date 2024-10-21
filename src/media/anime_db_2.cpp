@@ -20,6 +20,7 @@
 
 #include "anime_db.hpp"
 #include "compat/anime.hpp"
+#include "compat/list.hpp"
 #include "taiga/path.hpp"
 #include "taiga/settings.hpp"
 

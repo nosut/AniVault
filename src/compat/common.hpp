@@ -18,14 +18,14 @@
 
 #pragma once
 
-#include <QList>
+#include <QRegularExpression>
 
-#include "media/anime.hpp"
-#include "media/anime_list.hpp"
+namespace compat::v1 {
 
-namespace anime {
+// This regex is used to remove the extra root element from v1's XML documents so that they
+// can be read by `QXmlStreamReader` without an "Extra content at end of document" error.
+// See #842 for more information.
+inline const QRegularExpression meta_element_regex{"<meta>.+</meta>",
+                                                   QRegularExpression::DotMatchesEverythingOption};
 
-QList<Anime> readDatabase();
-QList<ListEntry> readListEntries();
-
-}  // namespace anime
+}  // namespace compat::v1

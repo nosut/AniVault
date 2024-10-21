@@ -19,12 +19,10 @@
 #pragma once
 
 #include <array>
-// #include <map>
 #include <string>
 #include <vector>
 
 #include "base/chrono.hpp"
-// #include "sync/service.h"
 
 namespace anime {
 
@@ -116,49 +114,6 @@ struct Details {
   std::time_t next_episode_time = 0;
 };
 
-namespace list {
-
-enum class Status {
-  NotInList,
-  Watching,
-  Completed,
-  OnHold,
-  Dropped,
-  PlanToWatch,
-};
-
-constexpr std::array<Status, 5> kStatuses{
-  Status::Watching,
-  Status::Completed,
-  Status::OnHold,
-  Status::Dropped,
-  Status::PlanToWatch,
-};
-
-struct Entry {
-  std::string id;
-  int anime_id = kUnknownId;
-  int watched_episodes = 0;
-  int score = 0;
-  Status status = Status::NotInList;
-  bool is_private = false;
-  int rewatched_times = 0;
-  bool rewatching = false;
-  int rewatching_ep = 0;
-  FuzzyDate date_started;
-  FuzzyDate date_completed;
-  std::time_t last_updated;
-  std::string notes;
-};
-
-}  // namespace list
-
-// struct LocalInformation {
-//   std::vector<bool> available_episodes;
-//   std::string next_episode_path;
-// };
-
 }  // namespace anime
 
 using Anime = anime::Details;
-using ListEntry = anime::list::Entry;
