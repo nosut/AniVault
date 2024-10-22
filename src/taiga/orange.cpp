@@ -27,7 +27,7 @@
 
 namespace {
 
-/* clang-format off */
+// clang-format off
 constexpr std::array<std::pair<int, float>, 32> notes{{
   {84, 1/2.f}, {84, 1/4.f}, {86, 1/8.f}, {84, 1/4.f},
   {82, 1/4.f}, {81, 1/4.f}, {77, 1/8.f}, {79, 1/8.f},
@@ -38,7 +38,7 @@ constexpr std::array<std::pair<int, float>, 32> notes{{
   {77, 1/8.f}, {79, 1/8.f}, {72, 1/8.f}, {77, 1/2.f},
   {76, 1/8.f}, {77, 1/8.f}, {76, 1/8.f}, {74, 1/2.f},
 }};
-/* clang-format on */
+// clang-format on
 
 constexpr float get_frequency(const int note) {
   if (note < 0 || note > 119) return -1.0f;
