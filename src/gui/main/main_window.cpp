@@ -131,45 +131,34 @@ void MainWindow::initPage(MainWindowPage page) {
 
   if (initializedPages.contains(page)) return;
 
+  static const auto init_page = [](QWidget* page, QWidget* widget) {
+    const auto layout = new QHBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(widget);
+    page->setLayout(layout);
+  };
+
   switch (page) {
     case MainWindowPage::Home:
       break;
 
-    case MainWindowPage::Search: {
-      const auto layout = new QHBoxLayout(ui_->searchPage);
-      layout->setContentsMargins(0, 0, 0, 0);
-      ui_->searchPage->setLayout(layout);
-
+    case MainWindowPage::Search:
       m_searchWidget = new SearchWidget(ui_->searchPage, this);
-      layout->addWidget(m_searchWidget);
-
+      init_page(ui_->searchPage, m_searchWidget);
       break;
-    }
 
-    case MainWindowPage::List: {
-      const auto layout = new QHBoxLayout(ui_->listPage);
-      layout->setContentsMargins(0, 0, 0, 0);
-      ui_->listPage->setLayout(layout);
-
+    case MainWindowPage::List:
       m_listWidget = new ListWidget(ui_->listPage, this);
-      layout->addWidget(m_listWidget);
-
+      init_page(ui_->listPage, m_listWidget);
       break;
-    }
 
     case MainWindowPage::History:
       break;
 
-    case MainWindowPage::Library: {
-      const auto layout = new QHBoxLayout(ui_->libraryPage);
-      layout->setContentsMargins(0, 0, 0, 0);
-      ui_->libraryPage->setLayout(layout);
-
+    case MainWindowPage::Library:
       m_libraryWidget = new LibraryWidget(ui_->libraryPage);
-      layout->addWidget(m_libraryWidget);
-
+      init_page(ui_->libraryPage, m_libraryWidget);
       break;
-    }
 
     case MainWindowPage::Torrents:
       break;
