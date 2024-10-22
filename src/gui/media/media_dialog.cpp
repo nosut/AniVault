@@ -174,7 +174,7 @@ void MediaDialog::initDetails() {
   }
   ui_->infoLayout->addRow(get_row_title(tr("Type:")), get_row_label(formatType(m_anime.type)));
   ui_->infoLayout->addRow(get_row_title(tr("Episodes:")),
-                          get_row_label(QString::number(m_anime.episode_count)));
+                          get_row_label(formatNumber(m_anime.episode_count, "?")));
   if (m_anime.episode_length > 0 && m_anime.type != anime::Type::Tv) {
     const auto duration = formatEpisodeLength(m_anime.episode_length);
     const auto label = m_anime.episode_count == 1 ? duration : u"%1 per episode"_qs.arg(duration);

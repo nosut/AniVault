@@ -59,7 +59,7 @@ SearchWidget::SearchWidget(QWidget* parent, MainWindow* mainWindow)
   {
     m_comboYear->setPlaceholderText("Year");
     for (int year = QDate::currentDate().year() + 1; year >= 1940; --year) {
-      m_comboYear->addItem(u"%1"_qs.arg(year), year);
+      m_comboYear->addItem(QString::number(year), year);
     }
     if (m_proxyModel->filters().year) {
       m_comboYear->setCurrentText(QString::number(*m_proxyModel->filters().year));

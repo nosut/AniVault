@@ -29,6 +29,10 @@
 
 namespace gui {
 
+QString formatNumber(const int value, QString placeholder) {
+  return value > 0 ? QString::number(value) : placeholder;
+}
+
 QString formatEpisodeLength(const int minutes, QString placeholder) {
   return minutes > 0 ? u"%1m"_qs.arg(minutes) : placeholder;
 }

@@ -116,10 +116,9 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
 
   // Summary
   {
-    const QString summary =
-        u"%1 · %2 episodes · %3"_qs.arg(formatType(item->type))
-            .arg(item->episode_count > 0 ? u"%1"_qs.arg(item->episode_count) : u"?"_qs)
-            .arg(formatScore(item->score));
+    const QString summary = u"%1 · %2 episodes · %3"_qs.arg(formatType(item->type))
+                                .arg(formatNumber(item->episode_count, "?"))
+                                .arg(formatScore(item->score));
     const QFontMetrics metrics(painter->font());
     QRect summaryRect = rect;
     summaryRect.setHeight(metrics.height());

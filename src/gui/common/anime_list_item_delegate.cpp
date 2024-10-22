@@ -24,6 +24,7 @@
 #include <limits>
 
 #include "gui/models/anime_list_model.hpp"
+#include "gui/utils/format.hpp"
 #include "gui/utils/painter_state_saver.hpp"
 #include "gui/utils/theme.hpp"
 
@@ -94,8 +95,7 @@ void ListItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
       const int progress = std::clamp(entry->watched_episodes, 0,
                                       episodes > 0 ? episodes : std::numeric_limits<int>::max());
       const int percent = episodes > 0 ? static_cast<float>(progress) / episodes * 100.0f : 50;
-      const auto text =
-          tr("%1/%2").arg(progress).arg(episodes > 0 ? QString::number(episodes) : "?");
+      const auto text = tr("%1/%2").arg(progress).arg(formatNumber(episodes, "?"));
 
       QStyleOptionProgressBar styleOption{};
       styleOption.state = option.state | QStyle::State_Horizontal;

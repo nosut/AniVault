@@ -47,6 +47,8 @@ enum class Status;
 
 namespace gui {
 
+QString formatNumber(const int value, QString placeholder = "-");
+
 QString formatEpisodeLength(const int minutes, QString placeholder = "-");
 
 QString formatScore(const double value);

@@ -87,7 +87,7 @@ void NavigationItemDelegate::paintCounter(QPainter* painter, QRect rect, const i
     return font;
   }());
 
-  const QString text = u"%1"_qs.arg(count);
+  const QString text = QString::number(count);
   const QFontMetrics metrics(painter->font());
   const QRect boundingRect = metrics.boundingRect(text);
 

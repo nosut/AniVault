@@ -22,6 +22,7 @@
 #include <QLabel>
 
 #include "gui/media/media_dialog.hpp"
+#include "gui/utils/format.hpp"
 #include "gui/utils/theme.hpp"
 
 namespace gui {
@@ -83,7 +84,7 @@ void NowPlayingWidget::refresh() {
 
   m_mainLabel->setText(u"Watching <a href=\"#\" style=\"%3\">%1</a> – Episode %2"_qs
                            .arg(QString::fromStdString(m_anime->titles.romaji))
-                           .arg(u"%1/%2"_qs.arg(1).arg(m_anime->episode_count))
+                           .arg(u"%1/%2"_qs.arg(1).arg(formatNumber(m_anime->episode_count, "?")))
                            .arg("font-weight: 600; text-decoration: none;"));
 
   m_timerLabel->setText("List update in <b style=\"font-weight: 600;\">00:00</b>");

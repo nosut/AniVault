@@ -28,7 +28,6 @@ namespace ui {
 std::wstring TranslateDate(const Date& date);
 std::wstring TranslateDateRange(const std::pair<Date, Date>& range);
 std::wstring TranslateMonth(const int month);
-std::wstring TranslateNumber(const int value, const std::wstring& default_char = L"-");
 
 std::wstring TranslateScore(const double value);
 anime::SeriesType TranslateType(const std::wstring& value);
