@@ -94,12 +94,6 @@ static std::wstring GetLibraryVersion(ThirdPartyLibrary library) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-class AboutDialog DlgAbout;
-
-AboutDialog::AboutDialog() {
-  RegisterDlgClass(L"TaigaAboutW");
-}
-
 BOOL AboutDialog::OnDestroy() {
   taiga::orange.Stop();
 
@@ -119,13 +113,6 @@ BOOL AboutDialog::OnInitDialog() {
       L"{\\f0\\fnil\\fcharset0 Segoe UI;}"
       L"}"
       L"\\fs24\\b " TAIGA_APP_NAME L"\\b0  " + StrToWstr(taiga::version().to_string()) + L"\\line\\fs18\\par "
-      L"\\b Author:\\b0\\line "
-      L"erengy (Eren Okka)\\line\\par "
-      L"\\b Contributors:\\b0\\line "
-      L"saka, Diablofan, slevir, LordGravewish, rr-, sunjayc, ConnorKrammer, Soinou, Jiyuu, ryban, tollyx,\\line "
-      L"pavelxdd, gunt3001, synthtech, cnguy, CeruleanSky, Xabis, rzumer, Juplay, SacredZenpie\\line\\par "
-      L"\\b Donators:\\b0\\line "
-      L"Farfie, snickler, Nydaleclya, WizardTim, Kinzer, MeGaNeKo, WhatsCPS, Jerico64 and other anonymous supporters\\line\\par "
       L"\\b Third-party components:\\b0\\line "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/HowardHinnant/date\"}}{\\fldrslt{date " + GetLibraryVersion(kDate) + L"}}}, "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/discordapp/discord-rpc\"}}{\\fldrslt{Discord RPC " + GetLibraryVersion(kDiscordRpc) + L"}}}, "
@@ -164,48 +151,9 @@ INT_PTR AboutDialog::DialogProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
       }
       break;
     }
-
-    case WM_NOTIFY: {
-      switch (reinterpret_cast<LPNMHDR>(lParam)->code) {
-        // Execute link
-        case EN_LINK: {
-          auto en_link = reinterpret_cast<ENLINK*>(lParam);
-          if (en_link->msg == WM_LBUTTONUP) {
-            ExecuteLink(rich_edit_.GetTextRange(&en_link->chrg));
-            return TRUE;
-          }
-          break;
-        }
-      }
-      break;
-    }
   }
 
   return DialogProcDefault(hwnd, uMsg, wParam, lParam);
-}
-
-void AboutDialog::OnPaint(HDC hdc, LPPAINTSTRUCT lpps) {
-  win::Dc dc = hdc;
-  win::Rect rect;
-
-  win::Rect rect_edit;
-  rich_edit_.GetWindowRect(GetWindowHandle(), &rect_edit);
-
-  const int margin = rect_edit.top;
-  const int sidebar_width = rect_edit.left - margin;
-
-  // Paint background
-  GetClientRect(&rect);
-  rect.left = sidebar_width;
-  dc.FillRect(rect, ::GetSysColor(COLOR_WINDOW));
-
-  // Paint application icon
-  rect.Set(margin / 2, margin, sidebar_width - (margin / 2), rect.bottom);
-  DrawIconResource(IDI_MAIN, dc.Get(), rect, true, false);
-  win::Window label = GetDlgItem(IDC_STATIC_APP_ICON);
-  label.SetPosition(nullptr, rect,
-      SWP_NOACTIVATE | SWP_NOREDRAW | SWP_NOOWNERZORDER | SWP_NOZORDER);
-  label.SetWindowHandle(nullptr);
 }
 
 }  // namespace ui

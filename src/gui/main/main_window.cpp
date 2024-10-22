@@ -279,15 +279,31 @@ void MainWindow::displayWindow() {
 }
 
 void MainWindow::about() {
-  const QString text = tr("<b>Taiga</b> v%1<br><br>"
-                          "This version is a work in progress. For more information, visit the "
-                          "<a href=\"%2\">GitHub repository</a> or the "
-                          "<a href=\"%3\">Discord server</a>.")
-                           .arg(QString::fromStdString(taiga::version().to_string()))
-                           .arg("https://github.com/erengy/taiga")
-                           .arg("https://discord.gg/yeGNktZ");
+  const auto version = QString::fromStdString(taiga::version().to_string());
 
-  QMessageBox::about(this, tr("About Taiga"), text);
+  const auto contributors =
+      "saka, Diablofan, slevir, LordGravewish, rr-, sunjayc, ConnorKrammer, Soinou, Jiyuu, ryban, "
+      "tollyx, pavelxdd, gunt3001, synthtech, cnguy, CeruleanSky, Xabis, rzumer, Juplay, "
+      "SacredZenpie";
+
+  const auto donators =
+      "Farfie, snickler, Nydaleclya, WizardTim, Kinzer, MeGaNeKo, WhatsCPS, Jerico64";
+
+  const QStringList lines{
+      u"<big><b>Taiga</b> %1</big>"_qs.arg(version),
+      tr("This version is a work in progress. For more information, visit the "
+         "<a href='%1'>GitHub repository</a> or the "
+         "<a href='%2'>Discord server</a>.")
+          .arg("https://github.com/erengy/taiga")
+          .arg("https://discord.gg/yeGNktZ"),
+      u"<b>%1:</b><br>erengy (Eren Okka)"_qs.arg(tr("Author")),
+      u"<b>%1:</b><br>%2"_qs.arg(tr("Contributors")).arg(contributors),
+      u"<b>%1:</b><br>%2 %3"_qs.arg(tr("Donators"))
+          .arg(donators)
+          .arg(tr("and other anonymous supporters")),
+  };
+
+  QMessageBox::about(this, tr("About Taiga"), lines.join("<br><br>"));
 }
 
 void MainWindow::donate() const {
