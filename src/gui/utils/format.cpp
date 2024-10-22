@@ -29,29 +29,29 @@
 
 namespace gui {
 
-QString formatEpisodeLength(const int minutes) {
-  return minutes > 0 ? u"%1m"_qs.arg(minutes) : "-";
+QString formatEpisodeLength(const int minutes, QString placeholder) {
+  return minutes > 0 ? u"%1m"_qs.arg(minutes) : placeholder;
 }
 
 QString formatScore(const double value) {
   return u"%1%"_qs.arg(value * 10.0, 0, 'g', 4);
 }
 
-QString formatListScore(const int value) {
-  return value > 0 ? u"%1"_qs.arg(value / 10.0) : "-";
+QString formatListScore(const int value, QString placeholder) {
+  return value > 0 ? u"%1"_qs.arg(value / 10.0) : placeholder;
 }
 
-QString formatDate(const base::Date& date) {
-  return date.ok() ? formatDate(QDate(date)) : u"?"_qs;
+QString formatDate(const base::Date& date, QString placeholder) {
+  return date.ok() ? formatDate(QDate(date), placeholder) : placeholder;
 }
 
-QString formatDate(const QDate date) {
-  return date.isValid() ? QDate(date).toString(Qt::RFC2822Date) : u"?"_qs;
+QString formatDate(const QDate date, QString placeholder) {
+  return date.isValid() ? QDate(date).toString(Qt::RFC2822Date) : placeholder;
 }
 
-QString formatFuzzyDate(const base::FuzzyDate& fuzzyDate) {
+QString formatFuzzyDate(const base::FuzzyDate& fuzzyDate, QString placeholder) {
   const QDate date(fuzzyDate.year(), fuzzyDate.month(), fuzzyDate.day());
-  return fuzzyDate ? date.toString(Qt::RFC2822Date) : u"?"_qs;
+  return fuzzyDate ? date.toString(Qt::RFC2822Date) : placeholder;
 }
 
 QString formatAsRelativeTime(const qint64 time) {

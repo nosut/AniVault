@@ -47,14 +47,14 @@ enum class Status;
 
 namespace gui {
 
-QString formatEpisodeLength(const int minutes);
+QString formatEpisodeLength(const int minutes, QString placeholder = "-");
 
 QString formatScore(const double value);
-QString formatListScore(const int value);
+QString formatListScore(const int value, QString placeholder = "-");
 
-QString formatDate(const base::Date& date);
-QString formatDate(const QDate date);
-QString formatFuzzyDate(const base::FuzzyDate& date);
+QString formatDate(const base::Date& date, QString placeholder = "?");
+QString formatDate(const QDate date, QString placeholder = "?");
+QString formatFuzzyDate(const base::FuzzyDate& date, QString placeholder = "?");
 QString formatAsRelativeTime(const qint64 time);
 QString formatTimestamp(const qint64 time);
 
