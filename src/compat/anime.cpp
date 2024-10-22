@@ -55,7 +55,10 @@ QList<Anime> read_anime_database(const std::string& path) {
 
     while (xml.readNextStartElement()) {
       if (xml.name() == u"id") {
+        // @TODO: Store ID from current `source`
         anime.id = xml.readElementText().toInt();
+      } else if (xml.name() == u"slug") {
+        anime.slug = xml.readElementText().toStdString();
       } else if (xml.name() == u"title") {
         anime.titles.romaji = xml.readElementText().toStdString();
       } else if (xml.name() == u"english") {

@@ -7,7 +7,7 @@ target_sources(taiga PRIVATE
 	compat/anime.cpp
 	compat/list.cpp
 	compat/settings.cpp
-	media/anime_db_2.cpp
+	media/anime_db.cpp
 	media/anime_season.cpp
 	resources/icons.qrc
 	resources/styles.qrc

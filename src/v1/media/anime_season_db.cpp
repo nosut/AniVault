@@ -46,17 +46,6 @@ bool SeasonDatabase::IsRefreshRequired() const {
   return false;
 }
 
-void SeasonDatabase::Set(const Season& season) {
-  current_season = season;
-  items.clear();
-  Review();
-}
-
-void SeasonDatabase::Reset() {
-  current_season = Season{};
-  items.clear();
-}
-
 void SeasonDatabase::Review() {
   const auto [date_start, date_end] = current_season.to_date_range();
 
