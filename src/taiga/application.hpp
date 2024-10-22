@@ -20,6 +20,7 @@
 
 #include <QApplication>
 #include <QPointer>
+#include <QStringList>
 
 namespace gui {
 class MainWindow;
@@ -50,10 +51,12 @@ public:
   bool isVerbose() const;
 
 private:
+  void init();
   void initLogger() const;
   void parseCommandLine();
 
   detail::CommandLineOptions options_;
+  QStringList parsed_option_names_;
   QPointer<gui::MainWindow> window_;
 };
 

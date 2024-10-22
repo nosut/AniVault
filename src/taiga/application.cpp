@@ -35,10 +35,7 @@ Application::Application(int argc, char* argv[]) : QApplication(argc, argv) {
   setApplicationVersion(QString::fromStdString(taiga::version().to_string()));
   setWindowIcon(gui::theme.getIcon("taiga", "png"));
 
-  parseCommandLine();
-  initLogger();
-
-  gui::theme.initStyle();
+  init();
 
   window_ = new gui::MainWindow();
   window_->show();
@@ -62,6 +59,24 @@ bool Application::isVerbose() const {
   return options_.verbose;
 }
 
+void Application::init() {
+  parseCommandLine();
+  initLogger();
+
+  const auto last_modified = QFileInfo{QCoreApplication::applicationFilePath()}
+                                 .lastModified()
+                                 .toString(Qt::DateFormat::ISODate)
+                                 .toStdString();
+
+  LOGD("Version {} ({})", taiga::version().to_string(), last_modified);
+
+  if (!parsed_option_names_.isEmpty()) {
+    LOGD("Options: {}", parsed_option_names_.join(", ").toStdString());
+  }
+
+  gui::theme.initStyle();
+}
+
 void Application::initLogger() const {
   using monolog::Level;
 
@@ -71,13 +86,6 @@ void Application::initLogger() const {
   monolog::log.enable_console_output(false);
   monolog::log.set_path(path);
   monolog::log.set_level(options_.debug ? Level::Debug : Level::Warning);
-
-  const auto last_modified = QFileInfo{QCoreApplication::applicationFilePath()}
-                                 .lastModified()
-                                 .toString(Qt::DateFormat::ISODate)
-                                 .toStdString();
-
-  LOGI("Version {} ({})", taiga::version().to_string(), last_modified);
 }
 
 void Application::parseCommandLine() {
@@ -88,9 +96,11 @@ void Application::parseCommandLine() {
       {"verbose", QCoreApplication::translate("main", "Enable verbose output")},
   });
 
+  // Note that `QCommandLineParser::process()` stops the current process in case
+  // of an error (e.g. an unknown option was passed).
   parser.process(QApplication::arguments());
 
-  // @TODO: Log valid & invalid arguments
+  parsed_option_names_ = parser.optionNames();
 
 #ifdef _DEBUG
   options_.debug = true;
