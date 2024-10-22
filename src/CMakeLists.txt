@@ -9,21 +9,12 @@ target_sources(taiga PRIVATE
 	compat/settings.cpp
 	media/anime_db.cpp
 	media/anime_season.cpp
-	resources/icons.qrc
-	resources/styles.qrc
 	taiga/application.cpp
 	taiga/orange.cpp
 	taiga/path.cpp
 	taiga/version.cpp
 	main.cpp
 )
-
-if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-	target_sources(taiga PRIVATE
-		resources/taiga.manifest
-		resources/taiga.rc
-	)
-endif()
 
 target_link_libraries(taiga PRIVATE
 	Qt6::Core
@@ -32,6 +23,7 @@ target_link_libraries(taiga PRIVATE
 	taiga-config
 	taiga-deps
 	taiga-gui
+	taiga-resources
 )
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -40,3 +32,4 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 endif()
 
 add_subdirectory(gui)
+add_subdirectory(resources)
