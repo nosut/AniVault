@@ -19,7 +19,6 @@
 #include <curl/curlver.h>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
-#include <pugixml.hpp>
 #include <rapidjson/rapidjson.h>
 #include <utf8proc/utf8proc.h>
 #include <zlib/zlib.h>
@@ -42,7 +41,6 @@ enum ThirdPartyLibrary {
   kFmt,
   kJson,
   kLibcurl,
-  kPugixml,
   kRandom,
   kRapidJson,
   kUtf8proc,
@@ -70,11 +68,6 @@ static std::wstring GetLibraryVersion(ThirdPartyLibrary library) {
           LIBCURL_VERSION_MAJOR,
           LIBCURL_VERSION_MINOR,
           LIBCURL_VERSION_PATCH).to_string());
-    case kPugixml:
-      return StrToWstr(semaver::Version(
-          (PUGIXML_VERSION / 1000),
-          (PUGIXML_VERSION % 1000) / 10,
-          (PUGIXML_VERSION % 1000) % 10).to_string());
     case kRandom:
       return L"1.4.0";
     case kRapidJson:
@@ -120,7 +113,6 @@ BOOL AboutDialog::OnInitDialog() {
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://p.yusukekamiyamane.com/icons/search/fugue/\"}}{\\fldrslt{Fugue Icons 3.4.5}}}, "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/nlohmann/json\"}}{\\fldrslt{JSON for Modern C++ " + GetLibraryVersion(kJson) + L"}}}, "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/curl/curl\"}}{\\fldrslt{libcurl " + GetLibraryVersion(kLibcurl) + L"}}}, "
-      L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/zeux/pugixml\"}}{\\fldrslt{pugixml " + GetLibraryVersion(kPugixml) + L"}}}, "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/effolkronium/random\"}}{\\fldrslt{Random " + GetLibraryVersion(kRandom) + L"}}}, "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/Tencent/rapidjson\"}}{\\fldrslt{RapidJSON " + GetLibraryVersion(kRapidJson) + L"}}}, "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/JuliaLang/utf8proc\"}}{\\fldrslt{utf8proc " + GetLibraryVersion(kUtf8proc) + L"}}}, "

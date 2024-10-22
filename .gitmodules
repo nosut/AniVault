@@ -42,10 +42,6 @@
 	path = deps/src/random
 	url = https://github.com/effolkronium/random.git
 
-[submodule "pugixml"]
-	path = deps/src/pugixml
-	url = https://github.com/zeux/pugixml.git
-
 [submodule "rapidjson"]
 	path = deps/src/rapidjson
 	url = https://github.com/Tencent/rapidjson.git
