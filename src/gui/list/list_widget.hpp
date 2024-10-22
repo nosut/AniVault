@@ -28,7 +28,6 @@ class AnimeListModel;
 class AnimeListProxyModel;
 class ListView;
 class ListViewCards;
-class MainWindow;
 
 enum class ListViewMode {
   List,
@@ -40,7 +39,7 @@ class ListWidget final : public PageWidget {
   Q_DISABLE_COPY_MOVE(ListWidget)
 
 public:
-  ListWidget(QWidget* parent, MainWindow* mainWindow);
+  ListWidget(QWidget* parent);
   ~ListWidget() = default;
 
   ListViewMode viewMode() const;
@@ -51,7 +50,6 @@ private:
   void initSortMenu();
   void initViewMenu();
 
-  MainWindow* m_mainWindow = nullptr;
   AnimeListModel* m_model = nullptr;
   AnimeListProxyModel* m_proxyModel = nullptr;
   ListView* m_listView = nullptr;

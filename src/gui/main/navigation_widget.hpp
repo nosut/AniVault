@@ -29,14 +29,12 @@ namespace gui {
 enum class MainWindowPage;
 enum class NavigationItemDataRole;
 
-class MainWindow;
-
 class NavigationWidget final : public QTreeWidget {
   Q_OBJECT
   Q_DISABLE_COPY_MOVE(NavigationWidget)
 
 public:
-  NavigationWidget(MainWindow* mainWindow);
+  NavigationWidget(QWidget* parent);
   ~NavigationWidget() = default;
 
   QTreeWidgetItem* findItemByPage(MainWindowPage page) const;
@@ -56,8 +54,6 @@ private:
   QTreeWidgetItem* addChildItem(QTreeWidgetItem* parent, const QString& text);
   void addSeparator();
   void setItemData(QTreeWidgetItem* item, NavigationItemDataRole role, const QVariant& value);
-
-  MainWindow* m_mainWindow = nullptr;
 };
 
 }  // namespace gui

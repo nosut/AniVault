@@ -50,6 +50,8 @@ public:
   bool isDebug() const;
   bool isVerbose() const;
 
+  gui::MainWindow* mainWindow() const;
+
 private:
   void init();
   void initLogger() const;
@@ -59,5 +61,9 @@ private:
   QStringList parsed_option_names_;
   QPointer<gui::MainWindow> window_;
 };
+
+inline Application* app() {
+  return static_cast<Application*>(qApp);
+}
 
 }  // namespace taiga

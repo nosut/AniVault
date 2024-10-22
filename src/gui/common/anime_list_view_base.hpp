@@ -26,7 +26,6 @@ namespace gui {
 
 class AnimeListModel;
 class AnimeListProxyModel;
-class MainWindow;
 
 class ListViewBase final : public QObject {
   Q_OBJECT
@@ -34,7 +33,7 @@ class ListViewBase final : public QObject {
 
 public:
   ListViewBase(QWidget* parent, QAbstractItemView* view, AnimeListModel* model,
-               AnimeListProxyModel* proxyModel, MainWindow* mainWindow);
+               AnimeListProxyModel* proxyModel);
   ~ListViewBase() = default;
 
 public slots:
@@ -48,7 +47,6 @@ private:
 
   AnimeListModel* m_model = nullptr;
   AnimeListProxyModel* m_proxyModel = nullptr;
-  MainWindow* m_mainWindow = nullptr;
   QAbstractItemView* m_view = nullptr;
 };
 

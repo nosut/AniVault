@@ -38,19 +38,15 @@
 namespace gui {
 
 ListViewBase::ListViewBase(QWidget* parent, QAbstractItemView* view, AnimeListModel* model,
-                           AnimeListProxyModel* proxyModel, MainWindow* mainWindow)
-    : QObject(parent),
-      m_view(view),
-      m_model(model),
-      m_proxyModel(proxyModel),
-      m_mainWindow(mainWindow) {
+                           AnimeListProxyModel* proxyModel)
+    : QObject(parent), m_view(view), m_model(model), m_proxyModel(proxyModel) {
   m_view->setContextMenuPolicy(Qt::CustomContextMenu);
   m_view->setSelectionMode(QAbstractItemView::SelectionMode::ExtendedSelection);
 
   m_proxyModel->setSourceModel(m_model);
   m_view->setModel(m_proxyModel);
 
-  connect(mainWindow->searchBox(), &QLineEdit::textChanged, this, &ListViewBase::filterByText);
+  connect(mainWindow()->searchBox(), &QLineEdit::textChanged, this, &ListViewBase::filterByText);
 
   connect(m_view, &QAbstractItemView::doubleClicked, this, &ListViewBase::showMediaDialog);
 
@@ -69,7 +65,7 @@ void ListViewBase::showMediaDialog(const QModelIndex& index) {
   const auto anime = m_model->getAnime(mappedIndex);
   if (!anime) return;
   const auto entry = m_model->getListEntry(mappedIndex);
-  MediaDialog::show(m_mainWindow, *anime, entry ? std::optional<ListEntry>{*entry} : std::nullopt);
+  MediaDialog::show(mainWindow(), *anime, entry ? std::optional<ListEntry>{*entry} : std::nullopt);
 }
 
 void ListViewBase::showMediaMenu() {
@@ -97,7 +93,7 @@ void ListViewBase::updateSelectionStatus(const QItemSelection& selected, const Q
   const auto n_selected = selectedIndexes().size();
 
   if (!n_selected) {
-    m_mainWindow->statusBar()->clearMessage();
+    mainWindow()->statusBar()->clearMessage();
     return;
   }
 
@@ -124,7 +120,7 @@ void ListViewBase::updateSelectionStatus(const QItemSelection& selected, const Q
       tr("%1 average").arg(formatScore(average_score)),
   };
 
-  m_mainWindow->statusBar()->showMessage(parts.join(" · "));
+  mainWindow()->statusBar()->showMessage(parts.join(" · "));
 }
 
 QModelIndexList ListViewBase::selectedIndexes() {

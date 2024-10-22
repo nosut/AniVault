@@ -59,6 +59,10 @@ bool Application::isVerbose() const {
   return options_.verbose;
 }
 
+gui::MainWindow* Application::mainWindow() const {
+  return window_.get();
+}
+
 void Application::init() {
   parseCommandLine();
   initLogger();

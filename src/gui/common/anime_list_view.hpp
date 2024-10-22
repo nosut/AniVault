@@ -25,15 +25,13 @@ namespace gui {
 class AnimeListModel;
 class AnimeListProxyModel;
 class ListViewBase;
-class MainWindow;
 
 class ListView final : public QTreeView {
   Q_OBJECT
   Q_DISABLE_COPY_MOVE(ListView)
 
 public:
-  ListView(QWidget* parent, AnimeListModel* model, AnimeListProxyModel* proxyModel,
-           MainWindow* mainWindow);
+  ListView(QWidget* parent, AnimeListModel* model, AnimeListProxyModel* proxyModel);
   ~ListView() = default;
 
   ListViewBase* baseView() {

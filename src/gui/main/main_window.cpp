@@ -59,6 +59,10 @@ MainWindow::MainWindow() : QMainWindow(), ui_(new Ui::MainWindow) {
   updateTitle();
 }
 
+MainWindow* mainWindow() {
+  return taiga::app()->mainWindow();
+}
+
 void MainWindow::initActions() {
   ui_->actionProfile->setToolTip(tr("Profile"));
   ui_->actionSynchronize->setToolTip(tr("Synchronize with %1").arg("AniList"));
@@ -143,12 +147,12 @@ void MainWindow::initPage(MainWindowPage page) {
       break;
 
     case MainWindowPage::Search:
-      m_searchWidget = new SearchWidget(ui_->searchPage, this);
+      m_searchWidget = new SearchWidget(ui_->searchPage);
       init_page(ui_->searchPage, m_searchWidget);
       break;
 
     case MainWindowPage::List:
-      m_listWidget = new ListWidget(ui_->listPage, this);
+      m_listWidget = new ListWidget(ui_->listPage);
       init_page(ui_->listPage, m_listWidget);
       break;
 

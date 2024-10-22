@@ -30,8 +30,7 @@
 
 namespace gui {
 
-NavigationWidget::NavigationWidget(MainWindow* mainWindow)
-    : QTreeWidget(mainWindow), m_mainWindow(mainWindow) {
+NavigationWidget::NavigationWidget(QWidget* parent) : QTreeWidget(parent) {
   setObjectName("navigation");
   setFixedWidth(200);
   setFrameShape(QFrame::Shape::NoFrame);

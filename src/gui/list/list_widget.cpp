@@ -34,11 +34,10 @@
 
 namespace gui {
 
-ListWidget::ListWidget(QWidget* parent, MainWindow* mainWindow)
+ListWidget::ListWidget(QWidget* parent)
     : PageWidget(parent),
       m_model(new AnimeListModel(this)),
       m_proxyModel(new AnimeListProxyModel(this)),
-      m_mainWindow(mainWindow),
       m_sortMenu(new QMenu(this)),
       m_viewMenu(new QMenu(this)) {
   // @TODO: Use settings from the previous session
@@ -50,7 +49,7 @@ ListWidget::ListWidget(QWidget* parent, MainWindow* mainWindow)
   connect(m_sortMenu, &QMenu::aboutToShow, this, &ListWidget::initSortMenu);
   connect(m_viewMenu, &QMenu::aboutToShow, this, &ListWidget::initViewMenu);
 
-  connect(mainWindow->navigation(), &NavigationWidget::currentListStatusChanged, this,
+  connect(mainWindow()->navigation(), &NavigationWidget::currentListStatusChanged, this,
           [this](anime::list::Status status) {
             m_proxyModel->setListStatusFilter({
                 .status = static_cast<int>(status),
@@ -79,13 +78,13 @@ void ListWidget::setViewMode(ListViewMode mode) {
 
   switch (mode) {
     case ListViewMode::List:
-      m_listView = new ListView(this, m_model, m_proxyModel, m_mainWindow);
+      m_listView = new ListView(this, m_model, m_proxyModel);
       layout()->addWidget(m_listView);
       m_listView->show();
       break;
 
     case ListViewMode::Cards:
-      m_listViewCards = new ListViewCards(this, m_model, m_proxyModel, m_mainWindow);
+      m_listViewCards = new ListViewCards(this, m_model, m_proxyModel);
       layout()->addWidget(m_listViewCards);
       m_listViewCards->show();
       break;

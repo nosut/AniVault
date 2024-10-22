@@ -24,15 +24,14 @@
 
 #include "gui/common/anime_list_item_delegate_cards.hpp"
 #include "gui/common/anime_list_view_base.hpp"
-#include "gui/main/main_window.hpp"
 #include "gui/models/anime_list_model.hpp"
 #include "gui/models/anime_list_proxy_model.hpp"
 
 namespace gui {
 
 ListViewCards::ListViewCards(QWidget* parent, AnimeListModel* model,
-                             AnimeListProxyModel* proxyModel, MainWindow* mainWindow)
-    : m_base(new ListViewBase(this, this, model, proxyModel, mainWindow)) {
+                             AnimeListProxyModel* proxyModel)
+    : m_base(new ListViewBase(this, this, model, proxyModel)) {
   setFrameShape(QFrame::Shape::NoFrame);
 
   setItemDelegate(new ListItemDelegateCards(this));

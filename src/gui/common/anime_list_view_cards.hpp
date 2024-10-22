@@ -25,15 +25,13 @@ namespace gui {
 class AnimeListModel;
 class AnimeListProxyModel;
 class ListViewBase;
-class MainWindow;
 
 class ListViewCards final : public QListView {
   Q_OBJECT
   Q_DISABLE_COPY_MOVE(ListViewCards)
 
 public:
-  ListViewCards(QWidget* parent, AnimeListModel* model, AnimeListProxyModel* proxyModel,
-                MainWindow* mainWindow);
+  ListViewCards(QWidget* parent, AnimeListModel* model, AnimeListProxyModel* proxyModel);
   ~ListViewCards() = default;
 
   ListViewBase* baseView() {
@@ -42,7 +40,7 @@ public:
 
 protected:
   void keyPressEvent(QKeyEvent* event) override;
-  void wheelEvent(QWheelEvent *event) override;
+  void wheelEvent(QWheelEvent* event) override;
 
 private:
   ListViewBase* m_base = nullptr;

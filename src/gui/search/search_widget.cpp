@@ -30,12 +30,11 @@
 
 namespace gui {
 
-SearchWidget::SearchWidget(QWidget* parent, MainWindow* mainWindow)
+SearchWidget::SearchWidget(QWidget* parent)
     : PageWidget(parent),
       m_model(new AnimeListModel(this)),
       m_proxyModel(new AnimeListProxyModel(this)),
-      m_listViewCards(new ListViewCards(this, m_model, m_proxyModel, mainWindow)),
-      m_mainWindow(mainWindow),
+      m_listViewCards(new ListViewCards(this, m_model, m_proxyModel)),
       m_comboYear(new ComboBox(this)),
       m_comboSeason(new ComboBox(this)),
       m_comboType(new ComboBox(this)),

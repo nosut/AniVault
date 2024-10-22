@@ -98,4 +98,6 @@ private:
   TrayIcon* m_trayIcon = nullptr;
 };
 
+MainWindow* mainWindow();
+
 }  // namespace gui
