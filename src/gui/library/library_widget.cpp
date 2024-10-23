@@ -23,9 +23,11 @@
 #include <QLayout>
 #include <QUrl>
 
+#include "gui/main/main_window.hpp"
 #include "gui/models/library_model.hpp"
 #include "gui/utils/theme.hpp"
 #include "taiga/settings.hpp"
+#include "ui_main_window.h"
 
 namespace gui {
 
@@ -58,8 +60,17 @@ LibraryWidget::LibraryWidget(QWidget* parent)
   }
 
   // Toolbar
-  const auto actionMore = new QAction(theme.getIcon("more_horiz"), tr("More"), this);
-  m_toolbar->addAction(actionMore);
+  {
+    // Play next episode
+    m_toolbar->addAction(mainWindow()->ui()->actionPlayNextEpisode);
+
+    // Play random anime
+    m_toolbar->addAction(mainWindow()->ui()->actionPlayRandomAnime);
+
+    // More
+    const auto actionMore = new QAction(theme.getIcon("more_horiz"), tr("More"), this);
+    m_toolbar->addAction(actionMore);
+  }
 
   m_view->setObjectName("libraryView");
   m_view->setFrameShape(QFrame::Shape::NoFrame);

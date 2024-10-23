@@ -69,6 +69,10 @@ QLineEdit* MainWindow::searchBox() const {
   return m_searchBox;
 }
 
+Ui::MainWindow* MainWindow::ui() const {
+  return ui_;
+}
+
 void MainWindow::init() {
   initActions();
   initIcons();

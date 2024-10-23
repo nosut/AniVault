@@ -56,6 +56,7 @@ public:
   NavigationWidget* navigation() const;
   NowPlayingWidget* nowPlaying() const;
   QLineEdit* searchBox() const;
+  Ui::MainWindow* ui() const;
 
   void init();
 
