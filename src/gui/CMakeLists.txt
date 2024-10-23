@@ -1,6 +1,14 @@
 add_library(taiga-gui STATIC)
 
+# TODO: Switch to qt_add_ui after Qt 6.8
+qt_wrap_ui(QT_UI_HEADERS
+	main/main_window.ui
+	media/media_dialog.ui
+	settings/settings_dialog.ui
+)
+
 target_sources(taiga-gui PRIVATE
+	${QT_UI_HEADERS}
 	common/anime_list_item_delegate.cpp
 	common/anime_list_item_delegate_cards.cpp
 	common/anime_list_view.cpp
@@ -26,12 +34,6 @@ target_sources(taiga-gui PRIVATE
 	utils/svg_icon_engine.cpp
 	utils/theme.cpp
 	utils/tray_icon.cpp
-)
-
-target_sources(taiga-gui PRIVATE
-	main/main_window.ui
-	media/media_dialog.ui
-	settings/settings_dialog.ui
 )
 
 target_link_libraries(taiga-gui
