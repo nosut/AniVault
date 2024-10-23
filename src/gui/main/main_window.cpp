@@ -272,6 +272,7 @@ void MainWindow::addNewFolder() {
 
 void MainWindow::setPage(MainWindowPage page) {
   initPage(page);
+  ui_->statusbar->clearMessage();
   ui_->stackedWidget->setCurrentIndex(static_cast<int>(page));
 }
 
