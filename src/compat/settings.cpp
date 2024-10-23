@@ -19,11 +19,12 @@
 #include "settings.hpp"
 
 #include <QFile>
+#include <QVariant>
 #include <QXmlStreamReader>
 
 namespace compat::v1 {
 
-QMap<QString, QString> read_settings(const std::string& path) {
+QVariantMap read_settings(const std::string& path) {
   QFile file(QString::fromStdString(path));
 
   if (!file.open(QIODevice::ReadOnly)) return {};
@@ -33,17 +34,16 @@ QMap<QString, QString> read_settings(const std::string& path) {
   if (!xml.readNextStartElement()) return {};
   if (xml.name() != u"settings") return {};
 
-  QString service;
-  QString username;
-  QString library;
+  QVariantMap settings;
+  QStringList libraryFolders;
 
   while (xml.readNextStartElement()) {
     if (xml.name() == u"account") {
       while (xml.readNextStartElement()) {
         if (xml.name() == u"update") {
-          service = xml.attributes().value(u"activeservice").toString();
-        } else if (xml.name() == service) {
-          username = xml.attributes().value(u"username").toString();
+          settings["service"] = xml.attributes().value(u"activeservice").toString();
+        } else if (xml.name() == settings["service"].toString()) {
+          settings["username"] = xml.attributes().value(u"username").toString();
         }
         xml.skipCurrentElement();
       }
@@ -51,8 +51,8 @@ QMap<QString, QString> read_settings(const std::string& path) {
       while (xml.readNextStartElement()) {
         if (xml.name() == u"folders") {
           while (xml.readNextStartElement()) {
-            if (xml.name() == u"root" && library.isEmpty()) {
-              library = xml.attributes().value(u"folder").toString();
+            if (xml.name() == u"root") {
+              libraryFolders.append(xml.attributes().value(u"folder").toString());
             }
             xml.skipCurrentElement();
           }
@@ -64,11 +64,9 @@ QMap<QString, QString> read_settings(const std::string& path) {
     }
   }
 
-  return {
-      {"service", service},
-      {"username", username},
-      {"library", library},
-  };
+  settings["library.folders"] = libraryFolders;
+
+  return settings;
 }
 
 }  // namespace compat::v1

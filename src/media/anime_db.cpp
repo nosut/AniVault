@@ -16,9 +16,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "anime_db.hpp"
+
 #include <format>
 
-#include "anime_db.hpp"
 #include "compat/anime.hpp"
 #include "compat/list.hpp"
 #include "taiga/path.hpp"
@@ -35,8 +36,8 @@ QList<ListEntry> readListEntries() {
   const auto data_path = taiga::get_data_path();
   const auto settings = taiga::read_settings();
   return compat::v1::read_list_entries(std::format("{}/v1/user/{}@{}/anime.xml", data_path,
-                                                   settings["username"].toStdString(),
-                                                   settings["service"].toStdString()));
+                                                   settings["username"].toString().toStdString(),
+                                                   settings["service"].toString().toStdString()));
 }
 
 }  // namespace anime

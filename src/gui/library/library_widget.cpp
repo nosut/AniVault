@@ -30,11 +30,32 @@
 namespace gui {
 
 LibraryWidget::LibraryWidget(QWidget* parent)
-    : PageWidget{parent}, m_model(new LibraryModel(parent)), m_view(new QTreeView(parent)) {
+    : PageWidget{parent},
+      m_model(new LibraryModel(parent)),
+      m_comboRoot(new ComboBox(this)),
+      m_view(new QTreeView(parent)) {
   const auto settings = taiga::read_settings();
-  const auto rootPath = settings["library"];
+  const auto libraryFolders = settings["library.folders"].toStringList();
+  const auto rootPath = !libraryFolders.isEmpty() ? libraryFolders.front() : QString{};
 
   m_model->setRootPath(rootPath);
+
+  auto filtersLayout = new QHBoxLayout(this);
+  filtersLayout->setSpacing(4);
+  m_toolbarLayout->insertLayout(0, filtersLayout);
+
+  // Root
+  {
+    m_comboRoot->setPlaceholderText("Location");
+    m_comboRoot->setDisabled(rootPath.isEmpty());
+    for (const auto& folder : libraryFolders) {
+      m_comboRoot->addItem(folder);
+    }
+    m_comboRoot->setCurrentText(rootPath);
+    connect(m_comboRoot, &QComboBox::currentIndexChanged, this,
+            [this](int index) { m_model->setRootPath(m_comboRoot->itemText(index)); });
+    filtersLayout->addWidget(m_comboRoot);
+  }
 
   // Toolbar
   const auto actionMore = new QAction(theme.getIcon("more_horiz"), tr("More"), this);
@@ -62,6 +83,9 @@ LibraryWidget::LibraryWidget(QWidget* parent)
   m_view->setSortingEnabled(true);
 
   layout()->addWidget(m_view);
+
+  connect(m_model, &QFileSystemModel::rootPathChanged, this,
+          [this](const QString& newPath) { m_view->setRootIndex(m_model->index(newPath)); });
 
   connect(m_view, &QTreeView::doubleClicked, this, [this](const QModelIndex& index) {
     if (!index.isValid()) return;

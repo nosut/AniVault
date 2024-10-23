@@ -18,8 +18,7 @@
 
 #pragma once
 
-#include <QMap>
-#include <QString>
+#include <QVariant>
 #include <string>
 
 #include "compat/settings.hpp"
@@ -27,7 +26,7 @@
 
 namespace taiga {
 
-inline QMap<QString, QString> read_settings() {
+inline QVariantMap read_settings() {
   const auto data_path = taiga::get_data_path();
   return compat::v1::read_settings(std::format("{}/v1/settings.xml", data_path));
 }

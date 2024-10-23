@@ -20,6 +20,7 @@
 
 #include <QTreeView>
 
+#include "gui/common/combobox.hpp"
 #include "gui/common/page_widget.hpp"
 
 namespace gui {
@@ -36,6 +37,7 @@ public:
 
 private:
   LibraryModel* m_model = nullptr;
+  ComboBox* m_comboRoot = nullptr;
   QTreeView* m_view = nullptr;
 };
 
