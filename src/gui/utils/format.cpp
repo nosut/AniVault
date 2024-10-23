@@ -21,6 +21,7 @@
 #include <QDate>
 #include <QDateTime>
 #include <cmath>
+#include <nstd/string.hpp>
 
 #include "base/chrono.hpp"
 #include "media/anime.hpp"
@@ -147,6 +148,11 @@ QString formatListStatus(const anime::list::Status value) {
     default: return "";
   }
   // clang-format on
+}
+
+QString joinStrings(const std::vector<std::string>& list, QString placeholder) {
+  if (list.empty()) return placeholder;
+  return QString::fromStdString(nstd::join(list, ", "));
 }
 
 }  // namespace gui

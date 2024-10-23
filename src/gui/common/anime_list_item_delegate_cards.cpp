@@ -131,15 +131,6 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
 
   // Details
   {
-    static const auto from_vector = [](const std::vector<std::string>& vector) {
-      if (vector.empty()) return u"?"_qs;
-      QStringList list;
-      for (const auto& str : vector) {
-        list.append(QString::fromStdString(str));
-      }
-      return list.join(", ");
-    };
-
     const QString titles =
         "Aired:\n"
         "Genres:\n"
@@ -147,8 +138,8 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
     const QString values = u"%1 to %2 (%3)\n%4\n%5"_qs.arg(formatFuzzyDate(item->date_started))
                                .arg(formatFuzzyDate(item->date_finished))
                                .arg(formatStatus(item->status))
-                               .arg(from_vector(item->genres))
-                               .arg(from_vector(item->studios));
+                               .arg(joinStrings(item->genres))
+                               .arg(joinStrings(item->studios));
 
     detailsFont.setWeight(QFont::Weight::DemiBold);
     painter->setFont(detailsFont);

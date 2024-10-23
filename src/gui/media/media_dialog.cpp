@@ -155,14 +155,6 @@ void MediaDialog::initDetails() {
     return label;
   };
 
-  const auto from_vector = [](const std::vector<std::string>& vector) {
-    QStringList list;
-    for (const auto& str : vector) {
-      list.append(QString::fromStdString(str));
-    }
-    return list.join(", ");
-  };
-
   auto seasonLabel = new QLabel(formatSeason(anime::Season(m_anime.date_started)), this);
   seasonLabel->setCursor(QCursor(Qt::CursorShape::WhatsThisCursor));
   seasonLabel->setToolTip(u"%1 to %2"_qs.arg(formatFuzzyDate(m_anime.date_started))
@@ -170,7 +162,7 @@ void MediaDialog::initDetails() {
 
   if (!m_anime.titles.synonyms.empty()) {
     ui_->infoLayout->addRow(get_row_title(tr("Titles:")),
-                            get_row_label(from_vector(m_anime.titles.synonyms)));
+                            get_row_label(joinStrings(m_anime.titles.synonyms)));
   }
   ui_->infoLayout->addRow(get_row_title(tr("Type:")), get_row_label(formatType(m_anime.type)));
   ui_->infoLayout->addRow(get_row_title(tr("Episodes:")),
@@ -186,18 +178,19 @@ void MediaDialog::initDetails() {
   ui_->infoLayout->addRow(get_row_title(tr("Score:")), get_row_label(formatScore(m_anime.score)));
   if (!m_anime.genres.empty()) {
     ui_->infoLayout->addRow(get_row_title(tr("Genres:")),
-                            get_row_label(from_vector(m_anime.genres)));
+                            get_row_label(joinStrings(m_anime.genres)));
   }
   if (!m_anime.tags.empty()) {
-    ui_->infoLayout->addRow(get_row_title(tr("Tags:")), get_row_label(from_vector(m_anime.tags)));
+    ui_->infoLayout->addRow(get_row_title(tr("Tags:")),
+                            get_row_label(joinStrings(m_anime.tags)));
   }
   if (!m_anime.studios.empty()) {
     ui_->infoLayout->addRow(get_row_title(tr("Studios:")),
-                            get_row_label(from_vector(m_anime.studios)));
+                            get_row_label(joinStrings(m_anime.studios)));
   }
   if (!m_anime.producers.empty()) {
     ui_->infoLayout->addRow(get_row_title(tr("Producers:")),
-                            get_row_label(from_vector(m_anime.producers)));
+                            get_row_label(joinStrings(m_anime.producers)));
   }
 
   const auto synopsis = QString::fromStdString(m_anime.synopsis);

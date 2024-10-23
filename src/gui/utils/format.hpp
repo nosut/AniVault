@@ -21,6 +21,8 @@
 #include <QDate>
 #include <QString>
 #include <chrono>
+#include <string>
+#include <vector>
 
 namespace base {
 
@@ -66,5 +68,7 @@ QString formatStatus(const anime::Status value);
 QString formatType(const anime::Type value);
 
 QString formatListStatus(const anime::list::Status value);
+
+QString joinStrings(const std::vector<std::string>& list, QString placeholder = "?");
 
 }  // namespace gui
