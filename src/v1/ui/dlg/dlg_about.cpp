@@ -21,7 +21,6 @@
 #include <nlohmann/json.hpp>
 #include <rapidjson/rapidjson.h>
 #include <utf8proc/utf8proc.h>
-#include <zlib/zlib.h>
 
 #include "base/file.h"
 #include "base/gfx.h"
@@ -44,7 +43,6 @@ enum ThirdPartyLibrary {
   kRandom,
   kRapidJson,
   kUtf8proc,
-  kZlib,
 };
 
 static std::wstring GetLibraryVersion(ThirdPartyLibrary library) {
@@ -77,9 +75,6 @@ static std::wstring GetLibraryVersion(ThirdPartyLibrary library) {
           RAPIDJSON_PATCH_VERSION).to_string());
     case kUtf8proc:
       return StrToWstr(utf8proc_version());
-    case kZlib:
-      return StrToWstr(ZLIB_VERSION);
-      break;
   }
 
   return std::wstring();
@@ -116,7 +111,6 @@ BOOL AboutDialog::OnInitDialog() {
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/effolkronium/random\"}}{\\fldrslt{Random " + GetLibraryVersion(kRandom) + L"}}}, "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/Tencent/rapidjson\"}}{\\fldrslt{RapidJSON " + GetLibraryVersion(kRapidJson) + L"}}}, "
       L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/JuliaLang/utf8proc\"}}{\\fldrslt{utf8proc " + GetLibraryVersion(kUtf8proc) + L"}}}, "
-      L"{\\field{\\*\\fldinst{HYPERLINK \"https://github.com/madler/zlib\"}}{\\fldrslt{zlib " + GetLibraryVersion(kZlib) + L"}}}\\line\\par "
       L"\\b Links:\\b0\\line "
       L"\u2022 {\\field{\\*\\fldinst{HYPERLINK \"https://taiga.moe\"}}{\\fldrslt{Home page}}}\\line "
       L"\u2022 {\\field{\\*\\fldinst{HYPERLINK \"https://github.com/erengy/taiga\"}}{\\fldrslt{GitHub repository}}}\\line "
