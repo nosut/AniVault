@@ -53,17 +53,11 @@ public:
   MainWindow();
   ~MainWindow() = default;
 
-  NowPlayingWidget* nowPlaying() {
-    return m_nowPlayingWidget;
-  }
+  NavigationWidget* navigation() const;
+  NowPlayingWidget* nowPlaying() const;
+  QLineEdit* searchBox() const;
 
-  NavigationWidget* navigation() {
-    return m_navigationWidget;
-  }
-
-  QLineEdit* searchBox() {
-    return m_searchBox;
-  }
+  void init();
 
 public slots:
   void addNewFolder();

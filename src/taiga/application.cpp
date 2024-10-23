@@ -35,9 +35,11 @@ Application::Application(int argc, char* argv[]) : QApplication(argc, argv) {
   setApplicationVersion(QString::fromStdString(taiga::version().to_string()));
   setWindowIcon(gui::theme.getIcon("taiga", "png"));
 
+  parseCommandLine();
   init();
 
   window_ = new gui::MainWindow();
+  window_->init();
   window_->show();
 }
 
@@ -64,7 +66,6 @@ gui::MainWindow* Application::mainWindow() const {
 }
 
 void Application::init() {
-  parseCommandLine();
   initLogger();
 
   const auto last_modified = QFileInfo{QCoreApplication::applicationFilePath()}

@@ -49,6 +49,27 @@ MainWindow::MainWindow() : QMainWindow(), ui_(new Ui::MainWindow) {
   enableMicaBackground(this);
 #endif
 
+  // Do not call `init()` here, as it relies on the main window pointer being
+  // available through the application instance.
+}
+
+MainWindow* mainWindow() {
+  return taiga::app()->mainWindow();
+}
+
+NavigationWidget* MainWindow::navigation() const {
+  return m_navigationWidget;
+}
+
+NowPlayingWidget* MainWindow::nowPlaying() const {
+  return m_nowPlayingWidget;
+}
+
+QLineEdit* MainWindow::searchBox() const {
+  return m_searchBox;
+}
+
+void MainWindow::init() {
   initActions();
   initIcons();
   initTrayIcon();
@@ -57,10 +78,6 @@ MainWindow::MainWindow() : QMainWindow(), ui_(new Ui::MainWindow) {
   initStatusbar();
   initNowPlaying();
   updateTitle();
-}
-
-MainWindow* mainWindow() {
-  return taiga::app()->mainWindow();
 }
 
 void MainWindow::initActions() {
