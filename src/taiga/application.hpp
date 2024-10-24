@@ -20,6 +20,7 @@
 
 #include <QApplication>
 #include <QPointer>
+#include <QSharedMemory>
 #include <QStringList>
 
 namespace gui {
@@ -45,7 +46,7 @@ public:
   Application(int argc, char* argv[]);
   ~Application() override;
 
-  int run() const;
+  int run();
 
   bool isDebug() const;
   bool isVerbose() const;
@@ -53,12 +54,14 @@ public:
   gui::MainWindow* mainWindow() const;
 
 private:
+  bool hasPreviousInstance();
   void init();
   void initLogger() const;
   void parseCommandLine();
 
   detail::CommandLineOptions options_;
   QStringList parsed_option_names_;
+  QSharedMemory shared_memory_;
   QPointer<gui::MainWindow> window_;
 };
 

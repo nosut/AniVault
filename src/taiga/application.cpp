@@ -29,18 +29,11 @@
 
 namespace taiga {
 
-Application::Application(int argc, char* argv[]) : QApplication(argc, argv) {
+Application::Application(int argc, char* argv[])
+    : QApplication(argc, argv), shared_memory_("Taiga") {
   setApplicationName("taiga");
   setApplicationDisplayName("Taiga");
   setApplicationVersion(QString::fromStdString(taiga::version().to_string()));
-  setWindowIcon(gui::theme.getIcon("taiga", "png"));
-
-  parseCommandLine();
-  init();
-
-  window_ = new gui::MainWindow();
-  window_->init();
-  window_->show();
 }
 
 Application::~Application() {
@@ -49,7 +42,19 @@ Application::~Application() {
   }
 }
 
-int Application::run() const {
+int Application::run() {
+  parseCommandLine();
+  init();
+
+  if (hasPreviousInstance()) {
+    LOGD("Another instance of Taiga is running.");
+    return 0;
+  }
+
+  window_ = new gui::MainWindow();
+  window_->init();
+  window_->show();
+
   return QApplication::exec();
 }
 
@@ -63,6 +68,10 @@ bool Application::isVerbose() const {
 
 gui::MainWindow* Application::mainWindow() const {
   return window_.get();
+}
+
+bool Application::hasPreviousInstance() {
+  return !shared_memory_.create(1);
 }
 
 void Application::init() {
@@ -80,6 +89,7 @@ void Application::init() {
   }
 
   gui::theme.initStyle();
+  setWindowIcon(gui::theme.getIcon("taiga", "png"));
 }
 
 void Application::initLogger() const {
