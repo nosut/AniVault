@@ -19,12 +19,15 @@
 #include "application.hpp"
 
 #include <QCommandLineParser>
+#include <QDir>
 #include <QFileInfo>
+#include <format>
 
 #include "base/log.hpp"
 #include "gui/main/main_window.hpp"
 #include "gui/utils/theme.hpp"
 #include "taiga/config.h"
+#include "taiga/path.hpp"
 #include "taiga/version.hpp"
 
 namespace taiga {
@@ -95,8 +98,11 @@ void Application::init() {
 void Application::initLogger() const {
   using monolog::Level;
 
-  const auto path =
-      u"%1/%2.log"_qs.arg(QCoreApplication::applicationDirPath(), TAIGA_APP_NAME).toStdString();
+  const auto directory = std::format("{}/logs", get_data_path());
+  QDir().mkpath(QString::fromStdString(directory));
+
+  const auto date = QDate::currentDate().toString(Qt::DateFormat::ISODate).toStdString();
+  const auto path = std::format("{}/{}_{}.log", directory, TAIGA_APP_NAME, date);
 
   monolog::log.enable_console_output(false);
   monolog::log.set_path(path);
