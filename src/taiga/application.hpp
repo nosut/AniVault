@@ -19,24 +19,15 @@
 #pragma once
 
 #include <QApplication>
+#include <QCommandLineParser>
 #include <QPointer>
 #include <QSharedMemory>
-#include <QStringList>
 
 namespace gui {
 class MainWindow;
 }
 
 namespace taiga {
-
-namespace detail {
-
-struct CommandLineOptions {
-  bool debug = false;
-  bool verbose = false;
-};
-
-}  // namespace detail
 
 class Application final : public QApplication {
   Q_OBJECT
@@ -55,12 +46,15 @@ public:
 
 private:
   bool hasPreviousInstance();
-  void init();
   void initLogger() const;
   void parseCommandLine();
 
-  detail::CommandLineOptions options_;
-  QStringList parsed_option_names_;
+  struct Options {
+    bool debug = false;
+    bool verbose = false;
+  } options_;
+
+  QCommandLineParser parser_;
   QSharedMemory shared_memory_;
   QPointer<gui::MainWindow> window_;
 };

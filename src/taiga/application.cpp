@@ -18,7 +18,6 @@
 
 #include "application.hpp"
 
-#include <QCommandLineParser>
 #include <QDir>
 #include <QFileInfo>
 #include <format>
@@ -47,12 +46,28 @@ Application::~Application() {
 
 int Application::run() {
   parseCommandLine();
-  init();
+
+  initLogger();
+
+  LOGD("Version {} ({})", taiga::version().to_string(),
+       QFileInfo{QCoreApplication::applicationFilePath()}
+           .lastModified()
+           .toString(Qt::DateFormat::ISODate)
+           .toStdString());
+  if (!parser_.optionNames().isEmpty()) {
+    LOGD("Options: {}", parser_.optionNames().join(", ").toStdString());
+  }
 
   if (hasPreviousInstance()) {
+    // @TODO: Activate previous instance
     LOGD("Another instance of Taiga is running.");
     return 0;
   }
+
+  // @TODO: Read settings, database, list, etc.
+
+  gui::theme.initStyle();
+  setWindowIcon(gui::theme.getIcon("taiga", "png"));
 
   window_ = new gui::MainWindow();
   window_->init();
@@ -77,24 +92,6 @@ bool Application::hasPreviousInstance() {
   return !shared_memory_.create(1);
 }
 
-void Application::init() {
-  initLogger();
-
-  const auto last_modified = QFileInfo{QCoreApplication::applicationFilePath()}
-                                 .lastModified()
-                                 .toString(Qt::DateFormat::ISODate)
-                                 .toStdString();
-
-  LOGD("Version {} ({})", taiga::version().to_string(), last_modified);
-
-  if (!parsed_option_names_.isEmpty()) {
-    LOGD("Options: {}", parsed_option_names_.join(", ").toStdString());
-  }
-
-  gui::theme.initStyle();
-  setWindowIcon(gui::theme.getIcon("taiga", "png"));
-}
-
 void Application::initLogger() const {
   using monolog::Level;
 
@@ -110,25 +107,21 @@ void Application::initLogger() const {
 }
 
 void Application::parseCommandLine() {
-  QCommandLineParser parser;
-
-  parser.addOptions({
+  parser_.addOptions({
       {"debug", QCoreApplication::translate("main", "Enable debug mode")},
       {"verbose", QCoreApplication::translate("main", "Enable verbose output")},
   });
 
   // Note that `QCommandLineParser::process()` stops the current process in case
   // of an error (e.g. an unknown option was passed).
-  parser.process(QApplication::arguments());
-
-  parsed_option_names_ = parser.optionNames();
+  parser_.process(QApplication::arguments());
 
 #ifdef _DEBUG
   options_.debug = true;
 #else
-  options_.debug = parser.isSet("debug");
+  options_.debug = parser_.isSet("debug");
 #endif
-  options_.verbose = parser.isSet("verbose");
+  options_.verbose = parser_.isSet("verbose");
 }
 
 }  // namespace taiga
