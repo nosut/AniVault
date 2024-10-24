@@ -39,6 +39,8 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
   enableMicaBackground(this);
 #endif
 
+  ui_->posterLabel->setFrameShape(QFrame::Shape::NoFrame);
+
   ui_->splitter->setSizes({ui_->posterLabel->minimumWidth(), ui_->posterLabel->minimumWidth() * 4});
 
   ui_->verticalLayoutRewatching->setAlignment(Qt::AlignBottom);
@@ -264,13 +266,16 @@ void MediaDialog::loadPosterImage() {
 
 void MediaDialog::resizePosterImage() {
   const auto& posterPixmap = ui_->posterLabel->pixmap();
+  const int label_w = ui_->posterLabel->width();
 
-  if (posterPixmap.isNull()) return;
+  if (posterPixmap.isNull()) {
+    ui_->posterLabel->setFixedHeight(label_w * 3 / 2);
+    return;
+  }
 
   const int w = posterPixmap.width();
   const int h = posterPixmap.height();
-  const int poster_w = ui_->posterLabel->width();
-  const int height = h * (poster_w / static_cast<float>(w));
+  const int height = h * (label_w / static_cast<float>(w));
 
   ui_->posterLabel->setFixedHeight(height);
 }

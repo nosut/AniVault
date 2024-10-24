@@ -68,12 +68,6 @@
          <property name="cursor">
           <cursorShape>PointingHandCursor</cursorShape>
          </property>
-         <property name="frameShape">
-          <enum>QFrame::Shape::Panel</enum>
-         </property>
-         <property name="frameShadow">
-          <enum>QFrame::Shadow::Sunken</enum>
-         </property>
          <property name="scaledContents">
           <bool>true</bool>
          </property>
