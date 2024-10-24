@@ -135,11 +135,11 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
         "Aired:\n"
         "Genres:\n"
         "Studios:";
-    const QString values = u"%1 to %2 (%3)\n%4\n%5"_qs.arg(formatFuzzyDate(item->date_started))
-                               .arg(formatFuzzyDate(item->date_finished))
-                               .arg(formatStatus(item->status))
-                               .arg(joinStrings(item->genres))
-                               .arg(joinStrings(item->studios));
+    const QString values =
+        u"%1 (%2)\n%3\n%4"_qs.arg(formatFuzzyDateRange(item->date_started, item->date_finished))
+            .arg(formatStatus(item->status))
+            .arg(joinStrings(item->genres))
+            .arg(joinStrings(item->studios));
 
     detailsFont.setWeight(QFont::Weight::DemiBold);
     painter->setFont(detailsFont);

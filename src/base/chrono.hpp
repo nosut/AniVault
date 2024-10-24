@@ -57,6 +57,7 @@ public:
   explicit operator Date() const;
   int operator-(const FuzzyDate& date) const;
   std::strong_ordering operator<=>(const FuzzyDate& date) const;
+  bool operator==(const FuzzyDate& date) const;
 
   [[nodiscard]] bool empty() const;
   [[nodiscard]] std::string to_string() const;

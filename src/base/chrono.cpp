@@ -111,6 +111,10 @@ std::strong_ordering FuzzyDate::operator<=>(const FuzzyDate& date) const {
   return std::strong_ordering::equal;
 }
 
+bool FuzzyDate::operator==(const FuzzyDate& date) const {
+  return *this <=> date == std::strong_ordering::equal;
+}
+
 bool FuzzyDate::empty() const {
   return !year() && !month() && !day();
 }

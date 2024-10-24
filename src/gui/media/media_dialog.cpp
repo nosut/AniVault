@@ -157,8 +157,7 @@ void MediaDialog::initDetails() {
 
   auto seasonLabel = new QLabel(formatSeason(anime::Season(m_anime.date_started)), this);
   seasonLabel->setCursor(QCursor(Qt::CursorShape::WhatsThisCursor));
-  seasonLabel->setToolTip(u"%1 to %2"_qs.arg(formatFuzzyDate(m_anime.date_started))
-                              .arg(formatFuzzyDate(m_anime.date_finished)));
+  seasonLabel->setToolTip(formatFuzzyDateRange(m_anime.date_started, m_anime.date_finished));
 
   if (!m_anime.titles.synonyms.empty()) {
     ui_->infoLayout->addRow(get_row_title(tr("Titles:")),
@@ -181,8 +180,7 @@ void MediaDialog::initDetails() {
                             get_row_label(joinStrings(m_anime.genres)));
   }
   if (!m_anime.tags.empty()) {
-    ui_->infoLayout->addRow(get_row_title(tr("Tags:")),
-                            get_row_label(joinStrings(m_anime.tags)));
+    ui_->infoLayout->addRow(get_row_title(tr("Tags:")), get_row_label(joinStrings(m_anime.tags)));
   }
   if (!m_anime.studios.empty()) {
     ui_->infoLayout->addRow(get_row_title(tr("Studios:")),

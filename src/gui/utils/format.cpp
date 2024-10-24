@@ -59,6 +59,13 @@ QString formatFuzzyDate(const base::FuzzyDate& fuzzyDate, QString placeholder) {
   return fuzzyDate ? date.toString(Qt::RFC2822Date) : placeholder;
 }
 
+QString formatFuzzyDateRange(const base::FuzzyDate& from, const base::FuzzyDate& to,
+                             QString placeholder) {
+  if (from == to) return formatFuzzyDate(from, placeholder);
+  return u"%1 to %2"_qs.arg(formatFuzzyDate(from, placeholder))
+      .arg(formatFuzzyDate(to, placeholder));
+}
+
 QString formatAsRelativeTime(const qint64 time) {
   if (!time) return u"Unknown"_qs;
 

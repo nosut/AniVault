@@ -59,6 +59,8 @@ QString formatListScore(const int value, QString placeholder = "-");
 QString formatDate(const base::Date& date, QString placeholder = "?");
 QString formatDate(const QDate date, QString placeholder = "?");
 QString formatFuzzyDate(const base::FuzzyDate& date, QString placeholder = "?");
+QString formatFuzzyDateRange(const base::FuzzyDate& from, const base::FuzzyDate& to,
+                             QString placeholder = "?");
 QString formatAsRelativeTime(const qint64 time);
 QString formatTimestamp(const qint64 time);
 
