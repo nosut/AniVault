@@ -31,6 +31,7 @@
 #include "gui/models/anime_list_model.hpp"
 #include "gui/models/anime_list_proxy_model.hpp"
 #include "gui/utils/theme.hpp"
+#include "taiga/session.hpp"
 
 namespace gui {
 
@@ -40,11 +41,10 @@ ListWidget::ListWidget(QWidget* parent)
       m_proxyModel(new AnimeListProxyModel(this)),
       m_sortMenu(new QMenu(this)),
       m_viewMenu(new QMenu(this)) {
-  // @TODO: Use settings from the previous session
-  m_proxyModel->sort(AnimeListModel::COLUMN_LAST_UPDATED, Qt::SortOrder::DescendingOrder);
+  m_proxyModel->sort(taiga::session.animeListSortColumn(), taiga::session.animeListSortOrder());
 
   initToolbar();
-  setViewMode(ListViewMode::List);
+  setViewMode(taiga::session.animeListViewMode());
 
   connect(m_sortMenu, &QMenu::aboutToShow, this, &ListWidget::initSortMenu);
   connect(m_viewMenu, &QMenu::aboutToShow, this, &ListWidget::initViewMenu);
@@ -89,6 +89,12 @@ void ListWidget::setViewMode(ListViewMode mode) {
       m_listViewCards->show();
       break;
   }
+}
+
+void ListWidget::saveState() {
+  taiga::session.setAnimeListSortColumn(m_proxyModel->sortColumn());
+  taiga::session.setAnimeListSortOrder(m_proxyModel->sortOrder());
+  taiga::session.setAnimeListViewMode(m_viewMode);
 }
 
 void ListWidget::initToolbar() {

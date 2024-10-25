@@ -266,6 +266,7 @@ void MainWindow::initTrayIcon() {
 
 void MainWindow::closeEvent(QCloseEvent* event) {
   taiga::session.setMainWindowGeometry(saveGeometry());
+  if (m_listWidget) m_listWidget->saveState();
   event->accept();
 }
 

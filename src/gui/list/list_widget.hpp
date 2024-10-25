@@ -45,6 +45,8 @@ public:
   ListViewMode viewMode() const;
   void setViewMode(ListViewMode mode);
 
+  void saveState();
+
 private:
   void initToolbar();
   void initSortMenu();

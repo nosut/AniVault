@@ -20,6 +20,8 @@
 
 #include <QByteArray>
 
+#include "gui/list/list_widget.hpp"
+#include "gui/models/anime_list_model.hpp"
 #include "taiga/path.hpp"
 
 namespace taiga {
@@ -30,12 +32,37 @@ QString Session::fileName() const {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+int Session::animeListSortColumn() const {
+  return value("animeList.sortColumn", gui::AnimeListModel::COLUMN_TITLE).toInt();
+}
+
+Qt::SortOrder Session::animeListSortOrder() const {
+  return value("animeList.sortOrder", Qt::SortOrder::AscendingOrder).value<Qt::SortOrder>();
+}
+
+gui::ListViewMode Session::animeListViewMode() const {
+  return value("animeList.viewMode", static_cast<int>(gui::ListViewMode::List))
+      .value<gui::ListViewMode>();
+}
+
 QByteArray Session::mainWindowGeometry() const {
   const auto geometry = value("mainWindow.geometry", QByteArray{}).toByteArray();
   return QByteArray::fromBase64(geometry);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+void Session::setAnimeListSortColumn(const int column) const {
+  setValue("animeList.sortColumn", column);
+}
+
+void Session::setAnimeListSortOrder(const Qt::SortOrder order) const {
+  setValue("animeList.sortOrder", order);
+}
+
+void Session::setAnimeListViewMode(const gui::ListViewMode mode) const {
+  setValue("animeList.viewMode", static_cast<int>(mode));
+}
 
 void Session::setMainWindowGeometry(const QByteArray& geometry) const {
   setValue("mainWindow.geometry", geometry.toBase64());

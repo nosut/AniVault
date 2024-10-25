@@ -23,12 +23,22 @@
 
 #include "base/settings.hpp"
 
+namespace gui {
+enum class ListViewMode;
+}
+
 namespace taiga {
 
 class Session final : public base::Settings {
 public:
+  int animeListSortColumn() const;
+  Qt::SortOrder animeListSortOrder() const;
+  gui::ListViewMode animeListViewMode() const;
   QByteArray mainWindowGeometry() const;
 
+  void setAnimeListSortColumn(const int column) const;
+  void setAnimeListSortOrder(const Qt::SortOrder order) const;
+  void setAnimeListViewMode(const gui::ListViewMode mode) const;
   void setMainWindowGeometry(const QByteArray& geometry) const;
 
 private:
