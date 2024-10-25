@@ -18,11 +18,14 @@
 
 #pragma once
 
-#include <QVariant>
 #include <string>
+
+namespace taiga {
+class Settings;
+}
 
 namespace compat::v1 {
 
-QVariantMap read_settings(const std::string& path);
+void readSettings(const std::string& path, const taiga::Settings& settings);
 
 }  // namespace compat::v1

@@ -19,31 +19,31 @@
 #include "settings.hpp"
 
 #include <QFile>
-#include <QVariant>
 #include <QXmlStreamReader>
+
+#include "taiga/settings.hpp"
 
 namespace compat::v1 {
 
-QVariantMap read_settings(const std::string& path) {
+void readSettings(const std::string& path, const taiga::Settings& settings) {
   QFile file(QString::fromStdString(path));
 
-  if (!file.open(QIODevice::ReadOnly)) return {};
+  if (!file.open(QIODevice::ReadOnly)) return;
 
   QXmlStreamReader xml(&file);
 
-  if (!xml.readNextStartElement()) return {};
-  if (xml.name() != u"settings") return {};
+  if (!xml.readNextStartElement()) return;
+  if (xml.name() != u"settings") return;
 
-  QVariantMap settings;
-  QStringList libraryFolders;
+  std::vector<std::string> libraryFolders;
 
   while (xml.readNextStartElement()) {
     if (xml.name() == u"account") {
       while (xml.readNextStartElement()) {
         if (xml.name() == u"update") {
-          settings["service"] = xml.attributes().value(u"activeservice").toString();
-        } else if (xml.name() == settings["service"].toString()) {
-          settings["username"] = xml.attributes().value(u"username").toString();
+          settings.setService(xml.attributes().value(u"activeservice").toString().toStdString());
+        } else if (xml.name() == QString::fromStdString(settings.service())) {
+          settings.setUsername(xml.attributes().value(u"username").toString().toStdString());
         }
         xml.skipCurrentElement();
       }
@@ -52,7 +52,7 @@ QVariantMap read_settings(const std::string& path) {
         if (xml.name() == u"folders") {
           while (xml.readNextStartElement()) {
             if (xml.name() == u"root") {
-              libraryFolders.append(xml.attributes().value(u"folder").toString());
+              libraryFolders.push_back(xml.attributes().value(u"folder").toString().toStdString());
             }
             xml.skipCurrentElement();
           }
@@ -64,9 +64,7 @@ QVariantMap read_settings(const std::string& path) {
     }
   }
 
-  settings["library.folders"] = libraryFolders;
-
-  return settings;
+  settings.setLibraryFolders(libraryFolders);
 }
 
 }  // namespace compat::v1

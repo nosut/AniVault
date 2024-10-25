@@ -34,10 +34,9 @@ QList<Anime> readDatabase() {
 
 QList<ListEntry> readListEntries() {
   const auto data_path = taiga::get_data_path();
-  const auto settings = taiga::read_settings();
   return compat::v1::read_list_entries(std::format("{}/v1/user/{}@{}/anime.xml", data_path,
-                                                   settings["username"].toString().toStdString(),
-                                                   settings["service"].toString().toStdString()));
+                                                   taiga::settings.username(),
+                                                   taiga::settings.service()));
 }
 
 }  // namespace anime

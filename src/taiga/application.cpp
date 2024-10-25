@@ -27,6 +27,7 @@
 #include "gui/utils/theme.hpp"
 #include "taiga/config.h"
 #include "taiga/path.hpp"
+#include "taiga/settings.hpp"
 #include "taiga/version.hpp"
 
 namespace taiga {
@@ -36,6 +37,8 @@ Application::Application(int argc, char* argv[])
   setApplicationName("taiga");
   setApplicationDisplayName("Taiga");
   setApplicationVersion(QString::fromStdString(taiga::version().to_string()));
+  setOrganizationDomain("taiga.moe");
+  setOrganizationName("erengy");
 }
 
 Application::~Application() {
@@ -65,6 +68,7 @@ int Application::run() {
   }
 
   // @TODO: Read settings, database, list, etc.
+  taiga::settings.migrate();
 
   gui::theme.initStyle();
   setWindowIcon(gui::theme.getIcon("taiga", "png"));
@@ -112,8 +116,7 @@ void Application::parseCommandLine() {
       {"verbose", QCoreApplication::translate("main", "Enable verbose output")},
   });
 
-  // Note that `QCommandLineParser::process()` stops the current process in case
-  // of an error (e.g. an unknown option was passed).
+  // This stops the current process in case of an error (e.g. an unknown option was passed).
   parser_.process(QApplication::arguments());
 
 #ifdef _DEBUG

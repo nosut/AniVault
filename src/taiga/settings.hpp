@@ -18,17 +18,29 @@
 
 #pragma once
 
-#include <QVariant>
+#include <QSettings>
 #include <string>
-
-#include "compat/settings.hpp"
-#include "taiga/path.hpp"
+#include <vector>
 
 namespace taiga {
 
-inline QVariantMap read_settings() {
-  const auto data_path = taiga::get_data_path();
-  return compat::v1::read_settings(std::format("{}/v1/settings.xml", data_path));
-}
+class Settings final {
+public:
+  void migrate() const;
+
+  std::string service() const;
+  std::string username() const;
+  std::vector<std::string> libraryFolders() const;
+
+  void setService(const std::string& service) const;
+  void setUsername(const std::string& username) const;
+  void setLibraryFolders(std::vector<std::string> folders) const;
+
+private:
+  QString fileName() const;
+  QSettings settings() const;
+};
+
+inline Settings settings;
 
 }  // namespace taiga

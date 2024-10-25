@@ -36,9 +36,9 @@ LibraryWidget::LibraryWidget(QWidget* parent)
       m_model(new LibraryModel(parent)),
       m_comboRoot(new ComboBox(this)),
       m_view(new QTreeView(parent)) {
-  const auto settings = taiga::read_settings();
-  const auto libraryFolders = settings["library.folders"].toStringList();
-  const auto rootPath = !libraryFolders.isEmpty() ? libraryFolders.front() : QString{};
+  const auto libraryFolders = taiga::settings.libraryFolders();
+  const auto rootPath =
+      !libraryFolders.empty() ? QString::fromStdString(libraryFolders.front()) : QString{};
 
   m_model->setRootPath(rootPath);
 
@@ -51,7 +51,7 @@ LibraryWidget::LibraryWidget(QWidget* parent)
     m_comboRoot->setPlaceholderText("Location");
     m_comboRoot->setDisabled(rootPath.isEmpty());
     for (const auto& folder : libraryFolders) {
-      m_comboRoot->addItem(folder);
+      m_comboRoot->addItem(QString::fromStdString(folder));
     }
     m_comboRoot->setCurrentText(rootPath);
     connect(m_comboRoot, &QComboBox::currentIndexChanged, this,
