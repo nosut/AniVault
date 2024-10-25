@@ -4,6 +4,7 @@ add_executable(taiga)
 
 target_sources(taiga PRIVATE
 	base/chrono.cpp
+	base/settings.cpp
 	base/xml.cpp
 	compat/anime.cpp
 	compat/list.cpp

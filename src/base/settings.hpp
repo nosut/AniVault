@@ -18,29 +18,22 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <QSettings>
+#include <QString>
+#include <string_view>
 
-#include "base/settings.hpp"
+namespace base {
 
-namespace taiga {
+class Settings {
+protected:
+  virtual QString fileName() const = 0;
 
-class Settings final : public base::Settings {
-public:
-  void migrate() const;
+  QVariant value(QAnyStringView key) const;
+  QVariant value(QAnyStringView key, const QVariant& defaultValue) const;
+  void setValue(QAnyStringView key, const QVariant& value) const;
+  void setValue(QAnyStringView key, const std::string_view value) const;
 
-  std::string service() const;
-  std::string username() const;
-  std::vector<std::string> libraryFolders() const;
-
-  void setService(const std::string& service) const;
-  void setUsername(const std::string& username) const;
-  void setLibraryFolders(std::vector<std::string> folders) const;
-
-private:
-  QString fileName() const override;
+  QSettings settings() const;
 };
 
-inline Settings settings;
-
-}  // namespace taiga
+}  // namespace base

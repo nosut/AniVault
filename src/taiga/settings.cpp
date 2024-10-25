@@ -20,40 +20,47 @@
 
 #include <QFile>
 #include <QJsonArray>
-#include <QSettings>
 #include <ranges>
 
 #include "compat/settings.hpp"
 #include "taiga/path.hpp"
+#include "taiga/version.hpp"
 
 namespace taiga {
 
 void Settings::migrate() const {
+  const auto appVersion = taiga::version().to_string();
+
+  // v1 to v2
   if (!QFile::exists(fileName())) {
     compat::v1::readSettings(std::format("{}/v1/settings.xml", get_data_path()), *this);
+    setValue("meta.version", appVersion);
+    return;
+  }
+
+  // v2.x
+  const auto fileVersion = value("meta.version").toString().toStdString();
+  if (fileVersion != appVersion) {
+    setValue("meta.version", appVersion);
   }
 }
 
 QString Settings::fileName() const {
-  return u"%1/settings.ini"_qs.arg(QString::fromStdString(get_data_path()));
-}
-
-QSettings Settings::settings() const {
-  return QSettings(fileName(), QSettings::IniFormat);
+  return u"%1/settings.json"_qs.arg(QString::fromStdString(get_data_path()));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 std::string Settings::service() const {
-  return settings().value("v1/service").toString().toStdString();
+  return value("v1.service").toString().toStdString();
 }
 
 std::string Settings::username() const {
-  return settings().value("v1/username").toString().toStdString();
+  return value("v1.username").toString().toStdString();
 }
 
 std::vector<std::string> Settings::libraryFolders() const {
-  return settings().value("library/folders").toJsonArray().toVariantList() |
+  return value("library.folders").toJsonArray().toVariantList() |
          std::views::transform([](const QVariant& v) { return v.toString().toStdString(); }) |
          std::ranges::to<std::vector>();
 }
@@ -61,11 +68,11 @@ std::vector<std::string> Settings::libraryFolders() const {
 ////////////////////////////////////////////////////////////////////////////////
 
 void Settings::setService(const std::string& service) const {
-  settings().setValue("v1/service", QString::fromStdString(service));
+  setValue("v1.service", service);
 }
 
 void Settings::setUsername(const std::string& username) const {
-  settings().setValue("v1/username", QString::fromStdString(username));
+  setValue("v1.username", username);
 }
 
 void Settings::setLibraryFolders(std::vector<std::string> folders) const {
@@ -73,7 +80,7 @@ void Settings::setLibraryFolders(std::vector<std::string> folders) const {
       folders |
       std::views::transform([](const std::string& s) { return QString::fromStdString(s); }) |
       std::ranges::to<QList>();
-  settings().setValue("library/folders", QJsonArray::fromStringList(list));
+  setValue("library.folders", QJsonArray::fromStringList(list));
 }
 
 }  // namespace taiga
