@@ -72,6 +72,9 @@ private slots:
   void support() const;
   void profile();
 
+protected:
+  void closeEvent(QCloseEvent *event) override;
+
 private:
   void initActions();
   void initIcons();

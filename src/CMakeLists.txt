@@ -14,6 +14,7 @@ target_sources(taiga PRIVATE
 	taiga/application.cpp
 	taiga/orange.cpp
 	taiga/path.cpp
+	taiga/session.cpp
 	taiga/settings.cpp
 	taiga/version.cpp
 	main.cpp

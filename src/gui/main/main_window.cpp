@@ -31,6 +31,7 @@
 #include "gui/utils/theme.hpp"
 #include "gui/utils/tray_icon.hpp"
 #include "taiga/application.hpp"
+#include "taiga/session.hpp"
 #include "taiga/version.hpp"
 #include "ui_main_window.h"
 
@@ -48,6 +49,10 @@ MainWindow::MainWindow() : QMainWindow(), ui_(new Ui::MainWindow) {
 #ifdef Q_OS_WINDOWS
   enableMicaBackground(this);
 #endif
+
+  if (const auto geometry = taiga::session.mainWindowGeometry(); !geometry.isEmpty()) {
+    restoreGeometry(geometry);
+  }
 
   // Do not call `init()` here, as it relies on the main window pointer being
   // available through the application instance.
@@ -257,6 +262,11 @@ void MainWindow::initTrayIcon() {
   connect(m_trayIcon, &TrayIcon::activated, this, &MainWindow::displayWindow);
   connect(m_trayIcon, &TrayIcon::messageClicked, this,
           []() { QMessageBox::information(nullptr, "Taiga", tr("Clicked message")); });
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+  taiga::session.setMainWindowGeometry(saveGeometry());
+  event->accept();
 }
 
 void MainWindow::addNewFolder() {
