@@ -42,9 +42,12 @@ public:
 
 private slots:
   void addToList(const anime::list::Status status) const;
+  void editEpisode() const;
+  void editNotes() const;
   void editStatus(const anime::list::Status status) const;
   void playEpisode(int number) const;
   void removeFromList() const;
+  void search() const;
   void searchAniDB() const;
   void searchAniList() const;
   void searchANN() const;

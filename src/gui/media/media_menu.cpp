@@ -19,12 +19,14 @@
 #include "media_menu.hpp"
 
 #include <QDesktopServices>
+#include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QMessageBox>
 #include <QUrl>
 #include <QUrlQuery>
 #include <ranges>
 
+#include "gui/main/main_window.hpp"
 #include "gui/media/media_dialog.hpp"
 #include "gui/utils/format.hpp"
 #include "gui/utils/theme.hpp"
@@ -72,6 +74,32 @@ void MediaMenu::addToList(const anime::list::Status status) const {
                            u"Status: %1"_qs.arg(formatListStatus(status)));  // @TODO
 }
 
+void MediaMenu::editEpisode() const {
+  QSet<int> watchedEpisodes;
+  int maxValue = anime::kMaxEpisodeCount;
+
+  for (const auto& item : m_items) {
+    if (const auto entry = getEntry(item.id)) watchedEpisodes.insert(entry->watched_episodes);
+    if (item.episode_count > 0) maxValue = std::min(maxValue, item.episode_count);
+  }
+
+  const int initalValue = watchedEpisodes.size() == 1 ? watchedEpisodes.values().front() : 0;
+
+  bool ok = false;
+  const auto value = QInputDialog::getInt(parentWidget(), tr("Edit Episodes Watched"),
+                                          tr("Enter a number:"), initalValue, 0, maxValue, 1, &ok);
+  if (!ok) return;
+  QMessageBox::information(nullptr, "TODO", QString::number(value));  // @TODO
+}
+
+void MediaMenu::editNotes() const {
+  bool ok = false;
+  const auto notes =
+      QInputDialog::getMultiLineText(parentWidget(), tr("Edit Notes"), tr("Enter notes:"), "", &ok);
+  if (!ok) return;
+  QMessageBox::information(nullptr, "TODO", notes);  // @TODO
+}
+
 void MediaMenu::editStatus(const anime::list::Status status) const {
   QMessageBox::information(nullptr, "TODO",
                            u"Status: %1"_qs.arg(formatListStatus(status)));  // @TODO
@@ -101,6 +129,12 @@ void MediaMenu::removeFromList() const {
   if (msgBox.clickedButton() == reinterpret_cast<QAbstractButton*>(removeButton)) {
     // @TODO: Add to queue
   }
+}
+
+void MediaMenu::search() const {
+  const auto& item = m_items.front();
+  mainWindow()->setPage(MainWindowPage::Search);
+  mainWindow()->searchBox()->setText(QString::fromStdString(item.titles.romaji));
 }
 
 void MediaMenu::searchAniDB() const {
@@ -203,7 +237,7 @@ void MediaMenu::addMediaItems() {
     // View details
     addAction(theme.getIcon("info"), tr("Details"), tr("Enter"), this, &MediaMenu::viewDetails);
     // Search
-    addAction(theme.getIcon("search"), tr("Search"), this, &MediaMenu::test);
+    addAction(theme.getIcon("search"), tr("Search"), this, &MediaMenu::search);
   }
 
   // External
@@ -269,8 +303,8 @@ void MediaMenu::addListItems() {
         return menu;
       }());
 
-      menu->addAction(tr("Episode..."), this, &MediaMenu::test);
-      menu->addAction(tr("Notes..."), this, &MediaMenu::test);
+      menu->addAction(tr("Episode..."), this, &MediaMenu::editEpisode);
+      menu->addAction(tr("Notes..."), this, &MediaMenu::editNotes);
 
       menu->addMenu([this]() {
         auto menu = new QMenu(tr("Score"), this);
@@ -284,7 +318,6 @@ void MediaMenu::addListItems() {
         auto menu = new QMenu(tr("Status"), this);
         for (const auto status : anime::list::kStatuses) {
           auto action = new QAction(formatListStatus(status), this);
-          action->setCheckable(true);
           menu->addAction(action);
           connect(action, &QAction::triggered, this, [this, status]() { editStatus(status); });
         }
