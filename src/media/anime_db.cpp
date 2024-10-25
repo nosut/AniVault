@@ -29,14 +29,14 @@ namespace anime {
 
 QList<Anime> readDatabase() {
   const auto data_path = taiga::get_data_path();
-  return compat::v1::read_anime_database(std::format("{}/v1/db/anime.xml", data_path));
+  return compat::v1::readAnimeDatabase(std::format("{}/v1/db/anime.xml", data_path));
 }
 
 QList<ListEntry> readListEntries() {
   const auto data_path = taiga::get_data_path();
-  return compat::v1::read_list_entries(std::format("{}/v1/user/{}@{}/anime.xml", data_path,
-                                                   taiga::settings.username(),
-                                                   taiga::settings.service()));
+  return compat::v1::readListEntries(std::format("{}/v1/user/{}@{}/anime.xml", data_path,
+                                                 taiga::settings.username(),
+                                                 taiga::settings.service()));
 }
 
 }  // namespace anime

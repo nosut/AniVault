@@ -25,7 +25,10 @@ namespace compat::v1 {
 // This regex is used to remove the extra root element from v1's XML documents so that they
 // can be read by `QXmlStreamReader` without an "Extra content at end of document" error.
 // See #842 for more information.
-inline const QRegularExpression meta_element_regex{"<meta>.+</meta>",
-                                                   QRegularExpression::DotMatchesEverythingOption};
+inline void removeMetaElement(QString& str) {
+  static const QRegularExpression meta_element_regex{
+      "<meta>.+</meta>", QRegularExpression::DotMatchesEverythingOption};
+  str.remove(meta_element_regex);
+}
 
 }  // namespace compat::v1

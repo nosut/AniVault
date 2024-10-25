@@ -16,15 +16,29 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#include "xml.hpp"
 
-#include <QList>
-#include <string>
+namespace base {
 
-#include "media/anime_list.hpp"
+const QFile& XmlFileReader::file() const {
+  return file_;
+}
 
-namespace compat::v1 {
+bool XmlFileReader::open(const QString& name, std::function<void(QString&)> preprocessor) {
+  file_.setFileName(name);
 
-QList<ListEntry> readListEntries(const std::string& path);
+  if (!file_.open(QIODevice::ReadOnly)) return false;
 
-}  // namespace compat::v1
+  QString data{file_.readAll()};
+  if (preprocessor) preprocessor(data);
+
+  QXmlStreamReader::addData(data);
+
+  return true;
+}
+
+bool XmlFileReader::readElement(QAnyStringView name) {
+  return QXmlStreamReader::readNextStartElement() && QXmlStreamReader::name() == name;
+}
+
+}  // namespace base

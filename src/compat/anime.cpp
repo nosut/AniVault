@@ -18,102 +18,142 @@
 
 #include "anime.hpp"
 
-#include <QFile>
 #include <QXmlStreamReader>
+#include <ranges>
 
+#include "base/log.hpp"
+#include "base/xml.hpp"
 #include "compat/common.hpp"
+
+#define XML_ELEMENT xml.readElementText()
+
+namespace {
+
+[[nodiscard]] std::string toStdString(const QString& s) {
+  return s.toStdString();
+}
+
+std::vector<std::string> toVector(const QStringList& list) {
+  return list | std::views::transform(toStdString) | std::ranges::to<std::vector>();
+}
+
+}  // namespace
 
 namespace compat::v1 {
 
-QList<Anime> read_anime_database(const std::string& path) {
-  QFile file(QString::fromStdString(path));
+Anime parseAnimeElement(QXmlStreamReader& xml);
 
-  if (!file.open(QIODevice::ReadOnly)) return {};
+QList<Anime> readAnimeDatabase(const std::string& path) {
+  base::XmlFileReader xml;
 
-  QString str{file.readAll()};
-  str.remove(meta_element_regex);
-
-  QXmlStreamReader xml(str);
-
-  if (!xml.readNextStartElement()) return {};
-  if (xml.name() != u"database") return {};
-
-  QList<Anime> data;
-
-  while (xml.readNextStartElement()) {
-    if (xml.name() != u"anime") break;
-
-    Anime anime;
-
-    static const auto to_vector = [](const QStringList& list) {
-      std::vector<std::string> vector;
-      for (const auto& str : list) {
-        vector.push_back(str.toStdString());
-      }
-      return vector;
-    };
-
-    while (xml.readNextStartElement()) {
-      if (xml.name() == u"id") {
-        // @TODO: Store ID from current `source`
-        anime.id = xml.readElementText().toInt();
-      } else if (xml.name() == u"slug") {
-        anime.slug = xml.readElementText().toStdString();
-      } else if (xml.name() == u"title") {
-        anime.titles.romaji = xml.readElementText().toStdString();
-      } else if (xml.name() == u"english") {
-        anime.titles.english = xml.readElementText().toStdString();
-      } else if (xml.name() == u"japanese") {
-        anime.titles.japanese = xml.readElementText().toStdString();
-      } else if (xml.name() == u"synonym") {
-        anime.titles.synonyms.push_back(xml.readElementText().toStdString());
-      } else if (xml.name() == u"type") {
-        anime.type = static_cast<anime::Type>(xml.readElementText().toInt());
-      } else if (xml.name() == u"status") {
-        anime.status = static_cast<anime::Status>(xml.readElementText().toInt());
-      } else if (xml.name() == u"episode_count") {
-        anime.episode_count = xml.readElementText().toInt();
-      } else if (xml.name() == u"episode_length") {
-        anime.episode_length = xml.readElementText().toInt();
-      } else if (xml.name() == u"date_start") {
-        anime.date_started = FuzzyDate(xml.readElementText().toStdString());
-      } else if (xml.name() == u"date_end") {
-        anime.date_finished = FuzzyDate(xml.readElementText().toStdString());
-      } else if (xml.name() == u"image") {
-        anime.image_url = xml.readElementText().toStdString();
-      } else if (xml.name() == u"trailer_id") {
-        anime.trailer_id = xml.readElementText().toStdString();
-      } else if (xml.name() == u"age_rating") {
-        anime.age_rating = static_cast<anime::AgeRating>(xml.readElementText().toInt());
-      } else if (xml.name() == u"genres") {
-        anime.genres = to_vector(xml.readElementText().split(", "));
-      } else if (xml.name() == u"tags") {
-        anime.tags = to_vector(xml.readElementText().split(", "));
-      } else if (xml.name() == u"producers") {
-        anime.producers = to_vector(xml.readElementText().split(", "));
-      } else if (xml.name() == u"studios") {
-        anime.studios = to_vector(xml.readElementText().split(", "));
-      } else if (xml.name() == u"score") {
-        anime.score = xml.readElementText().toFloat();
-      } else if (xml.name() == u"popularity") {
-        anime.popularity_rank = xml.readElementText().toInt();
-      } else if (xml.name() == u"synopsis") {
-        anime.synopsis = xml.readElementText().toStdString();
-      } else if (xml.name() == u"last_aired_episode") {
-        anime.last_aired_episode = xml.readElementText().toInt();
-      } else if (xml.name() == u"next_episode_time") {
-        anime.next_episode_time = xml.readElementText().toInt();
-      } else if (xml.name() == u"modified") {
-        anime.last_modified = xml.readElementText().toInt();
-      } else {
-        xml.skipCurrentElement();
-      }
-    }
-
-    data.emplace_back(anime);
+  if (!xml.open(QString::fromStdString(path), removeMetaElement)) {
+    LOGE("{}", xml.file().errorString().toStdString());
+    return {};
   }
 
-  return data;
+  if (!xml.readElement(u"database")) {
+    xml.raiseError("Invalid anime database file.");
+  }
+
+  QList<Anime> db;
+
+  while (xml.readElement(u"anime")) {
+    db.emplace_back(parseAnimeElement(xml));
+  }
+
+  if (xml.hasError()) {
+    LOGE("{}", xml.errorString().toStdString());
+  }
+
+  return db;
+}
+
+Anime parseAnimeElement(QXmlStreamReader& xml) {
+  Anime anime;
+
+  while (xml.readNextStartElement()) {
+    if (xml.name() == u"id") {
+      // @TODO: Store ID from current `source`
+      anime.id = XML_ELEMENT.toInt();
+
+    } else if (xml.name() == u"slug") {
+      anime.slug = XML_ELEMENT.toStdString();
+
+    } else if (xml.name() == u"title") {
+      anime.titles.romaji = XML_ELEMENT.toStdString();
+
+    } else if (xml.name() == u"english") {
+      anime.titles.english = XML_ELEMENT.toStdString();
+
+    } else if (xml.name() == u"japanese") {
+      anime.titles.japanese = XML_ELEMENT.toStdString();
+
+    } else if (xml.name() == u"synonym") {
+      anime.titles.synonyms.push_back(XML_ELEMENT.toStdString());
+
+    } else if (xml.name() == u"type") {
+      anime.type = static_cast<anime::Type>(XML_ELEMENT.toInt());
+
+    } else if (xml.name() == u"status") {
+      anime.status = static_cast<anime::Status>(XML_ELEMENT.toInt());
+
+    } else if (xml.name() == u"episode_count") {
+      anime.episode_count = XML_ELEMENT.toInt();
+
+    } else if (xml.name() == u"episode_length") {
+      anime.episode_length = XML_ELEMENT.toInt();
+
+    } else if (xml.name() == u"date_start") {
+      anime.date_started = FuzzyDate(XML_ELEMENT.toStdString());
+
+    } else if (xml.name() == u"date_end") {
+      anime.date_finished = FuzzyDate(XML_ELEMENT.toStdString());
+
+    } else if (xml.name() == u"image") {
+      anime.image_url = XML_ELEMENT.toStdString();
+
+    } else if (xml.name() == u"trailer_id") {
+      anime.trailer_id = XML_ELEMENT.toStdString();
+
+    } else if (xml.name() == u"age_rating") {
+      anime.age_rating = static_cast<anime::AgeRating>(XML_ELEMENT.toInt());
+
+    } else if (xml.name() == u"genres") {
+      anime.genres = toVector(XML_ELEMENT.split(", "));
+
+    } else if (xml.name() == u"tags") {
+      anime.tags = toVector(XML_ELEMENT.split(", "));
+
+    } else if (xml.name() == u"producers") {
+      anime.producers = toVector(XML_ELEMENT.split(", "));
+
+    } else if (xml.name() == u"studios") {
+      anime.studios = toVector(XML_ELEMENT.split(", "));
+
+    } else if (xml.name() == u"score") {
+      anime.score = XML_ELEMENT.toFloat();
+
+    } else if (xml.name() == u"popularity") {
+      anime.popularity_rank = XML_ELEMENT.toInt();
+
+    } else if (xml.name() == u"synopsis") {
+      anime.synopsis = XML_ELEMENT.toStdString();
+
+    } else if (xml.name() == u"last_aired_episode") {
+      anime.last_aired_episode = XML_ELEMENT.toInt();
+
+    } else if (xml.name() == u"next_episode_time") {
+      anime.next_episode_time = XML_ELEMENT.toInt();
+
+    } else if (xml.name() == u"modified") {
+      anime.last_modified = XML_ELEMENT.toInt();
+
+    } else {
+      xml.skipCurrentElement();
+    }
+  }
+
+  return anime;
 }
 
 }  // namespace compat::v1

@@ -18,47 +18,78 @@
 
 #include "settings.hpp"
 
-#include <QFile>
 #include <QXmlStreamReader>
 
+#include "base/log.hpp"
+#include "base/xml.hpp"
 #include "taiga/settings.hpp"
+
+#define XML_ATTR(name) xml.attributes().value(name)
+#define XML_ATTR_STR(name) XML_ATTR(name).toString().toStdString()
 
 namespace compat::v1 {
 
+void parseAccountElement(QXmlStreamReader& xml, const taiga::Settings& settings);
+void parseAnimeElement(QXmlStreamReader& xml, const taiga::Settings& settings);
+
 void readSettings(const std::string& path, const taiga::Settings& settings) {
-  QFile file(QString::fromStdString(path));
+  base::XmlFileReader xml;
 
-  if (!file.open(QIODevice::ReadOnly)) return;
+  if (!xml.open(QString::fromStdString(path))) {
+    LOGE("{}", xml.file().errorString().toStdString());
+    return;
+  }
 
-  QXmlStreamReader xml(&file);
-
-  if (!xml.readNextStartElement()) return;
-  if (xml.name() != u"settings") return;
-
-  std::vector<std::string> libraryFolders;
+  if (!xml.readElement(u"settings")) {
+    xml.raiseError("Invalid settings file.");
+  }
 
   while (xml.readNextStartElement()) {
     if (xml.name() == u"account") {
-      while (xml.readNextStartElement()) {
-        if (xml.name() == u"update") {
-          settings.setService(xml.attributes().value(u"activeservice").toString().toStdString());
-        } else if (xml.name() == QString::fromStdString(settings.service())) {
-          settings.setUsername(xml.attributes().value(u"username").toString().toStdString());
-        }
-        xml.skipCurrentElement();
-      }
+      parseAccountElement(xml, settings);
     } else if (xml.name() == u"anime") {
+      parseAnimeElement(xml, settings);
+    } else {
+      // @TODO: recognition, program, announce, rss
+      xml.skipCurrentElement();
+    }
+  }
+
+  if (xml.hasError()) {
+    LOGE("{}", xml.errorString().toStdString());
+  }
+}
+
+void parseAccountElement(QXmlStreamReader& xml, const taiga::Settings& settings) {
+  while (xml.readNextStartElement()) {
+    if (xml.name() == u"update") {
+      settings.setService(XML_ATTR_STR(u"activeservice"));
+      xml.skipCurrentElement();
+
+    } else if (xml.name() == QString::fromStdString(settings.service())) {
+      settings.setUsername(XML_ATTR_STR(u"username"));
+      xml.skipCurrentElement();
+
+    } else {
+      xml.skipCurrentElement();
+    }
+  }
+}
+
+void parseAnimeElement(QXmlStreamReader& xml, const taiga::Settings& settings) {
+  std::vector<std::string> libraryFolders;
+
+  while (xml.readNextStartElement()) {
+    if (xml.name() == u"folders") {
       while (xml.readNextStartElement()) {
-        if (xml.name() == u"folders") {
-          while (xml.readNextStartElement()) {
-            if (xml.name() == u"root") {
-              libraryFolders.push_back(xml.attributes().value(u"folder").toString().toStdString());
-            }
-            xml.skipCurrentElement();
-          }
+        if (xml.name() == u"root") {
+          libraryFolders.push_back(XML_ATTR_STR(u"folder"));
+          xml.skipCurrentElement();
+        } else {
+          xml.skipCurrentElement();
         }
-        xml.skipCurrentElement();
       }
+
     } else {
       xml.skipCurrentElement();
     }

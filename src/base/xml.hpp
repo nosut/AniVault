@@ -18,13 +18,22 @@
 
 #pragma once
 
-#include <QList>
-#include <string>
+#include <QFile>
+#include <QString>
+#include <QXmlStreamReader>
+#include <functional>
 
-#include "media/anime_list.hpp"
+namespace base {
 
-namespace compat::v1 {
+class XmlFileReader : public QXmlStreamReader {
+public:
+  const QFile& file() const;
 
-QList<ListEntry> readListEntries(const std::string& path);
+  bool open(const QString& name, std::function<void(QString&)> preprocessor = {});
+  bool readElement(QAnyStringView name);
 
-}  // namespace compat::v1
+private:
+  QFile file_;
+};
+
+}  // namespace base
