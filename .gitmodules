@@ -10,26 +10,6 @@
 	path = deps/src/anitomy
 	url = https://github.com/erengy/anitomy.git
 
-[submodule "curl"]
-	path = deps/src/curl
-	url = https://github.com/curl/curl.git
-
-[submodule "discord-rpc"]
-	path = deps/src/discord-rpc
-	url = https://github.com/erengy/discord-rpc.git
-
-[submodule "hypp"]
-	path = deps/src/hypp
-	url = https://github.com/erengy/hypp.git
-
-[submodule "hypr"]
-	path = deps/src/hypr
-	url = https://github.com/erengy/hypr.git
-
-[submodule "json"]
-	path = deps/src/json
-	url = https://github.com/nlohmann/json.git
-
 [submodule "monolog"]
 	path = deps/src/monolog
 	url = https://github.com/erengy/monolog.git
@@ -37,14 +17,6 @@
 [submodule "nstd"]
 	path = deps/src/nstd
 	url = https://github.com/erengy/nstd.git
-
-[submodule "random"]
-	path = deps/src/random
-	url = https://github.com/effolkronium/random.git
-
-[submodule "rapidjson"]
-	path = deps/src/rapidjson
-	url = https://github.com/Tencent/rapidjson.git
 
 [submodule "semaver"]
 	path = deps/src/semaver
