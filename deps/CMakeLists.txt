@@ -8,7 +8,7 @@ target_link_libraries(taiga-deps
 	taiga-config
 )
 
-add_subdirectory(src/anitomy)
-add_subdirectory(src/monolog)
-add_subdirectory(src/nstd)
-add_subdirectory(src/semaver)
+add_subdirectory(anitomy)
+add_subdirectory(monolog)
+add_subdirectory(nstd)
+add_subdirectory(semaver)
