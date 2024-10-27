@@ -268,18 +268,6 @@ public:
   void SetShareMircFormat(const std::wstring& format);
   std::wstring GetShareMircService() const;
   void SetShareMircService(const std::wstring& service);
-  bool GetShareTwitterEnabled() const;
-  void SetShareTwitterEnabled(const bool enabled);
-  std::wstring GetShareTwitterFormat() const;
-  void SetShareTwitterFormat(const std::wstring& format);
-  std::wstring GetShareTwitterOauthToken() const;
-  void SetShareTwitterOauthToken(const std::wstring& oauth_token);
-  std::wstring GetShareTwitterOauthSecret() const;
-  void SetShareTwitterOauthSecret(const std::wstring& oauth_secret);
-  std::wstring GetShareTwitterReplyTo() const;
-  void SetShareTwitterReplyTo(const std::wstring& status_id);
-  std::wstring GetShareTwitterUsername() const;
-  void SetShareTwitterUsername(const std::wstring& username);
 
   // Torrents
   std::wstring GetTorrentDiscoverySource() const;

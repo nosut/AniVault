@@ -124,12 +124,6 @@ enum class AppSettingKey {
   ShareMircChannels,
   ShareMircFormat,
   ShareMircService,
-  ShareTwitterEnabled,
-  ShareTwitterFormat,
-  ShareTwitterOauthToken,
-  ShareTwitterOauthSecret,
-  ShareTwitterReplyTo,
-  ShareTwitterUsername,
 
   // Torrents
   TorrentDiscoverySource,

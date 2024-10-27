@@ -46,15 +46,6 @@
 
 namespace taiga {
 
-constexpr auto kDefaultExternalLinks =
-    L"MALgraph|https://anime.plus/\r\n"
-    L"-\r\n"
-    L"AniChart|https://anichart.net/airing\r\n"
-    L"Monthly.moe|https://www.monthly.moe/weekly\r\n"
-    L"Senpai Anime Charts|https://www.senpai.moe/?mode=calendar\r\n"
-    L"-\r\n"
-    L"Anime Scene Search Engine|https://trace.moe/\r\n"
-    L"Anime Streaming Search Engine|https://because.moe/";
 constexpr auto kDefaultFormatHttp =
     L"user=%user%"
     L"&name=%title%"
@@ -68,10 +59,6 @@ constexpr auto kDefaultFormatMirc =
     L"$if(%episode%, \00303%episode%$if(%total%,/%total%))\003 "
     L"$if(%score%,\00314[Score: %score%]\003) "
     L"\00312%animeurl%";
-constexpr auto kDefaultFormatTwitter =
-    L"$ifequal(%episode%,%total%,Just completed: %title%"
-    L"$if(%score%, (Score: %score%)) %animeurl%,"
-    L"$ifequal(%episode%,1,Started watching: %title% %animeurl%))";
 constexpr auto kDefaultFormatBalloon =
     L"$if(%title%,%title%)\\n"
     L"$if(%episode%,Episode %episode%$if(%total%,/%total%) )"
@@ -195,12 +182,6 @@ void Settings::InitKeyMap() const {
       {AppSettingKey::ShareMircChannels, {"announce/mirc/channels", std::wstring{L"#kitsu, #myanimelist, #taiga"}}},
       {AppSettingKey::ShareMircFormat, {"announce/mirc/format", std::wstring{kDefaultFormatMirc}}},
       {AppSettingKey::ShareMircService, {"announce/mirc/service", std::wstring{L"mIRC"}}},
-      {AppSettingKey::ShareTwitterEnabled, {"announce/twitter/enabled", false}},
-      {AppSettingKey::ShareTwitterFormat, {"announce/twitter/format", std::wstring{kDefaultFormatTwitter}}},
-      {AppSettingKey::ShareTwitterOauthToken, {"announce/twitter/oauth_token", std::wstring{}}},
-      {AppSettingKey::ShareTwitterOauthSecret, {"announce/twitter/oauth_secret", std::wstring{}}},
-      {AppSettingKey::ShareTwitterReplyTo, {"announce/twitter/reply_to", std::wstring{}}},
-      {AppSettingKey::ShareTwitterUsername, {"announce/twitter/user", std::wstring{}}},
 
       // Torrents
       {AppSettingKey::TorrentDiscoverySource, {"rss/torrent/source/address", std::wstring{kDefaultTorrentSource}}},
@@ -1108,54 +1089,6 @@ std::wstring Settings::GetShareMircService() const {
 
 void Settings::SetShareMircService(const std::wstring& service) {
   set_value(AppSettingKey::ShareMircService, service);
-}
-
-bool Settings::GetShareTwitterEnabled() const {
-  return value<bool>(AppSettingKey::ShareTwitterEnabled);
-}
-
-void Settings::SetShareTwitterEnabled(const bool enabled) {
-  set_value(AppSettingKey::ShareTwitterEnabled, enabled);
-}
-
-std::wstring Settings::GetShareTwitterFormat() const {
-  return value<std::wstring>(AppSettingKey::ShareTwitterFormat);
-}
-
-void Settings::SetShareTwitterFormat(const std::wstring& format) {
-  set_value(AppSettingKey::ShareTwitterFormat, format);
-}
-
-std::wstring Settings::GetShareTwitterOauthToken() const {
-  return value<std::wstring>(AppSettingKey::ShareTwitterOauthToken);
-}
-
-void Settings::SetShareTwitterOauthToken(const std::wstring& oauth_token) {
-  set_value(AppSettingKey::ShareTwitterOauthToken, oauth_token);
-}
-
-std::wstring Settings::GetShareTwitterOauthSecret() const {
-  return value<std::wstring>(AppSettingKey::ShareTwitterOauthSecret);
-}
-
-void Settings::SetShareTwitterOauthSecret(const std::wstring& oauth_secret) {
-  set_value(AppSettingKey::ShareTwitterOauthSecret, oauth_secret);
-}
-
-std::wstring Settings::GetShareTwitterReplyTo() const {
-  return value<std::wstring>(AppSettingKey::ShareTwitterReplyTo);
-}
-
-void Settings::SetShareTwitterReplyTo(const std::wstring& status_id) {
-  set_value(AppSettingKey::ShareTwitterReplyTo, status_id);
-}
-
-std::wstring Settings::GetShareTwitterUsername() const {
-  return value<std::wstring>(AppSettingKey::ShareTwitterUsername);
-}
-
-void Settings::SetShareTwitterUsername(const std::wstring& username) {
-  set_value(AppSettingKey::ShareTwitterUsername, username);
 }
 
 // Torrents
