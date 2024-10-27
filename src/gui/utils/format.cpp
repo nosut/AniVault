@@ -66,8 +66,8 @@ QString formatFuzzyDateRange(const base::FuzzyDate& from, const base::FuzzyDate&
       .arg(formatFuzzyDate(to, placeholder));
 }
 
-QString formatAsRelativeTime(const qint64 time) {
-  if (!time) return u"Unknown"_qs;
+QString formatAsRelativeTime(const qint64 time, QString placeholder) {
+  if (!time) return placeholder;
 
   const QDateTime datetime = QDateTime::fromSecsSinceEpoch(time);
   const QDateTime now = QDateTime::currentDateTimeUtc();

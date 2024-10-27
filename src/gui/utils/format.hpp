@@ -61,7 +61,7 @@ QString formatDate(const QDate date, QString placeholder = "?");
 QString formatFuzzyDate(const base::FuzzyDate& date, QString placeholder = "?");
 QString formatFuzzyDateRange(const base::FuzzyDate& from, const base::FuzzyDate& to,
                              QString placeholder = "?");
-QString formatAsRelativeTime(const qint64 time);
+QString formatAsRelativeTime(const qint64 time, QString placeholder = "Unknown");
 QString formatTimestamp(const qint64 time);
 
 QString formatSeason(const anime::Season season);

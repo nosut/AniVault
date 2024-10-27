@@ -90,7 +90,7 @@ QVariant AnimeListModel::data(const QModelIndex& index, int role) const {
           if (entry) return formatFuzzyDate(entry->date_completed);
           break;
         case COLUMN_LAST_UPDATED:
-          if (entry) return formatAsRelativeTime(entry->last_updated);
+          if (entry) return formatAsRelativeTime(entry->last_updated, "-");
           break;
         case COLUMN_NOTES:
           if (entry) return QString::fromStdString(entry->notes);
