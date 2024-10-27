@@ -315,6 +315,8 @@ void MainWindow::about() {
   const auto donators =
       "Farfie, snickler, Nydaleclya, WizardTim, Kinzer, MeGaNeKo, WhatsCPS, Jerico64";
 
+  const auto components = u"Material Symbols, Qt %1"_qs.arg(QT_VERSION_STR);
+
   const QStringList lines{
       u"<big><b>Taiga</b> %1</big>"_qs.arg(version),
       tr("This version is a work in progress. For more information, visit the "
@@ -327,6 +329,7 @@ void MainWindow::about() {
       u"<b>%1:</b><br>%2 %3"_qs.arg(tr("Donators"))
           .arg(donators)
           .arg(tr("and other anonymous supporters")),
+      u"<b>%1:</b><br>%2"_qs.arg(tr("Third-party components")).arg(components),
   };
 
   QMessageBox::about(this, tr("About Taiga"), lines.join("<br><br>"));
