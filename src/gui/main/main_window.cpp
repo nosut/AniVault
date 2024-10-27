@@ -18,6 +18,8 @@
 
 #include "main_window.hpp"
 
+#include <utf8proc.h>
+
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QtWidgets>
@@ -315,13 +317,15 @@ void MainWindow::about() {
   const auto donators =
       "Farfie, snickler, Nydaleclya, WizardTim, Kinzer, MeGaNeKo, WhatsCPS, Jerico64";
 
-  const auto components = u"Material Symbols, Qt %1"_qs.arg(QT_VERSION_STR);
+  const auto components =
+      u"Material Symbols, Qt %1, utf8proc %2"_qs.arg(QT_VERSION_STR).arg(utf8proc_version());
 
   const QStringList lines{
       u"<big><b>Taiga</b> %1</big>"_qs.arg(version),
-      tr("This version is a work in progress. For more information, visit the "
-         "<a href='%1'>GitHub repository</a> or the "
-         "<a href='%2'>Discord server</a>.")
+      tr("<a href='%1'>Website</a> · "
+         "<a href='%2'>GitHub</a> · "
+         "<a href='%3'>Discord</a>")
+          .arg("https:/taiga.moe/")
           .arg("https://github.com/erengy/taiga")
           .arg("https://discord.gg/yeGNktZ"),
       u"<b>%1:</b><br>erengy (Eren Okka)"_qs.arg(tr("Author")),
