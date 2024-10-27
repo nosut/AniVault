@@ -26,6 +26,3 @@
 	path = deps/utf8proc
 	url = https://github.com/JuliaStrings/utf8proc.git
 
-[submodule "windows"]
-	path = deps/windows
-	url = https://github.com/erengy/windows.git
