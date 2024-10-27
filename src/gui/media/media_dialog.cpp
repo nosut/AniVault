@@ -59,13 +59,13 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
     const int status =
         static_cast<int>(isChecked ? anime::list::Status::Watching : m_entry->status);
     if (const int index = ui_->comboStatus->findData(status); index > -1) {
-      ui_->comboStatus->setCurrentIndex(index);
+      ui_->comboStatus->setCurrentIndex(index);  // @TODO: Don't do this for MyAnimeList
     }
 
     // Reset progress
     if (isChecked) {
-      if (m_entry->status == anime::list::Status::Completed &&
-          progress == m_entry->watched_episodes) {
+      const bool isCompleted = m_entry->status == anime::list::Status::Completed;
+      if (isCompleted && progress == m_entry->watched_episodes) {
         ui_->spinProgress->setValue(0);
       }
     } else {
