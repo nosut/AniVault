@@ -8,7 +8,7 @@ set(CMAKE_AUTOUIC OFF)
 add_library(taiga-config INTERFACE)
 
 target_compile_definitions(taiga-config INTERFACE
-	QT_DISABLE_DEPRECATED_UP_TO=0x060700
+	QT_DISABLE_DEPRECATED_UP_TO=0x060800
 )
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
