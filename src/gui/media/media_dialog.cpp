@@ -51,7 +51,7 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
 
   connect(ui_->splitter, &QSplitter::splitterMoved, this, [this]() { resizePosterImage(); });
 
-  connect(ui_->checkRewatching, &QCheckBox::stateChanged, this, [this](int state) {
+  connect(ui_->checkRewatching, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
     const bool isChecked = state == Qt::CheckState::Checked;
     const int progress = ui_->spinProgress->value();
 
@@ -83,10 +83,13 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
     ui_->spinProgress->setValue(m_anime.episode_count);
   });
 
-  connect(ui_->checkDateStarted, &QCheckBox::stateChanged, this,
-          [this](int state) { ui_->dateStarted->setEnabled(state == Qt::CheckState::Checked); });
-  connect(ui_->checkDateCompleted, &QCheckBox::stateChanged, this,
-          [this](int state) { ui_->dateCompleted->setEnabled(state == Qt::CheckState::Checked); });
+  connect(ui_->checkDateStarted, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {
+    ui_->dateStarted->setEnabled(state == Qt::CheckState::Checked);
+  });
+  connect(ui_->checkDateCompleted, &QCheckBox::checkStateChanged, this,
+          [this](Qt::CheckState state) {
+            ui_->dateCompleted->setEnabled(state == Qt::CheckState::Checked);
+          });
 }
 
 void MediaDialog::resizeEvent(QResizeEvent* event) {
