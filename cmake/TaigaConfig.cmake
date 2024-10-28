@@ -1,10 +1,3 @@
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC OFF)
-
 add_library(taiga-config INTERFACE)
 
 target_compile_definitions(taiga-config INTERFACE
