@@ -22,6 +22,7 @@
 #include <QFile>
 #include <QStyleHints>
 
+#include "base/string.hpp"
 #include "gui/utils/svg_icon_engine.hpp"
 
 namespace gui {
@@ -33,7 +34,7 @@ const QIcon& Theme::getIcon(const QString& key, const QString& extension, bool u
     if (extension == "svg" && useSvgIconEngine) {
       m_icons[key] = QIcon(new SvgIconEngine(key));
     } else {
-      m_icons[key] = QIcon(u":/icons/%1.%2"_qs.arg(key, extension));
+      m_icons[key] = QIcon(u":/icons/%1.%2"_s.arg(key, extension));
     }
   }
 
@@ -55,7 +56,7 @@ bool Theme::isDark() const {
 }
 
 QString Theme::readStylesheet(const QString& name) const {
-  QFile styleFile(u":/styles/%1.qss"_qs.arg(name));
+  QFile styleFile(u":/styles/%1.qss"_s.arg(name));
   styleFile.open(QFile::ReadOnly);
   return styleFile.readAll();
 }

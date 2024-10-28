@@ -23,6 +23,7 @@
 #include <QPainterPath>
 #include <QScrollBar>
 
+#include "base/string.hpp"
 #include "gui/models/anime_list_model.hpp"
 #include "gui/utils/format.hpp"
 #include "gui/utils/image_provider.hpp"
@@ -138,7 +139,7 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
         "Genres:\n"
         "Studios:";
     const QString values =
-        u"%1 (%2)\n%3\n%4"_qs.arg(formatFuzzyDateRange(item->date_started, item->date_finished))
+        u"%1 (%2)\n%3\n%4"_s.arg(formatFuzzyDateRange(item->date_started, item->date_finished))
             .arg(formatStatus(item->status))
             .arg(joinStrings(item->genres))
             .arg(joinStrings(item->studios));

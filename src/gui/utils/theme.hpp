@@ -31,7 +31,7 @@ class Theme final : public QObject {
 public:
   Theme();
 
-  const QIcon& getIcon(const QString& key, const QString& extension = u"svg"_qs,
+  const QIcon& getIcon(const QString& key, const QString& extension = QString{u"svg"},
                        bool useSvgIconEngine = true);
   void initStyle();
   bool isDark() const;

@@ -20,6 +20,7 @@
 
 #include <QByteArray>
 
+#include "base/string.hpp"
 #include "gui/list/list_widget.hpp"
 #include "gui/models/anime_list_model.hpp"
 #include "taiga/path.hpp"
@@ -27,7 +28,7 @@
 namespace taiga {
 
 QString Session::fileName() const {
-  return u"%1/session.json"_qs.arg(QString::fromStdString(get_data_path()));
+  return u"%1/session.json"_s.arg(QString::fromStdString(get_data_path()));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

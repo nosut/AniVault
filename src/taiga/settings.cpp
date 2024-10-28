@@ -22,6 +22,7 @@
 #include <QJsonArray>
 #include <ranges>
 
+#include "base/string.hpp"
 #include "compat/settings.hpp"
 #include "taiga/path.hpp"
 #include "taiga/version.hpp"
@@ -46,7 +47,7 @@ void Settings::migrate() const {
 }
 
 QString Settings::fileName() const {
-  return u"%1/settings.json"_qs.arg(QString::fromStdString(get_data_path()));
+  return u"%1/settings.json"_s.arg(QString::fromStdString(get_data_path()));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

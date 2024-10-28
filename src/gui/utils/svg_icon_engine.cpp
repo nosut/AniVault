@@ -22,6 +22,8 @@
 #include <QPainter>
 #include <QPalette>
 
+#include "base/string.hpp"
+
 namespace gui {
 
 SvgIconEngine::SvgIconEngine(const QString& iconName) : m_iconName(iconName) {}
@@ -29,7 +31,7 @@ SvgIconEngine::SvgIconEngine(const QString& iconName) : m_iconName(iconName) {}
 SvgIconEngine::~SvgIconEngine() {}
 
 QString SvgIconEngine::key() const {
-  return u"SvgIconEngine"_qs;
+  return u"SvgIconEngine"_s;
 }
 
 QIconEngine* SvgIconEngine::clone() const {
@@ -77,7 +79,7 @@ QPixmap SvgIconEngine::scaledPixmap(const QSize& size, QIcon::Mode mode, QIcon::
 
     QPainter painter(&m_pixmap);
 
-    const auto icon = QIcon(u":/icons/%1.svg"_qs.arg(m_iconName));
+    const auto icon = QIcon(u":/icons/%1.svg"_s.arg(m_iconName));
 
     icon.paint(&painter, rect, Qt::AlignCenter);
     painter.setCompositionMode(QPainter::CompositionMode_SourceIn);

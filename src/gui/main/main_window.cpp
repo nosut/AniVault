@@ -24,6 +24,7 @@
 #include <QFileDialog>
 #include <QtWidgets>
 
+#include "base/string.hpp"
 #include "gui/library/library_widget.hpp"
 #include "gui/list/list_widget.hpp"
 #include "gui/main/navigation_widget.hpp"
@@ -290,12 +291,12 @@ void MainWindow::setPage(MainWindowPage page) {
 }
 
 void MainWindow::updateTitle() {
-  auto title = u"Taiga"_qs;
+  auto title = u"Taiga"_s;
 
   const auto app = static_cast<taiga::Application*>(qApp);
 
   if (app->isDebug()) {
-    title += u" [debug]"_qs;
+    title += u" [debug]"_s;
   }
 
   setWindowTitle(title);
@@ -318,22 +319,22 @@ void MainWindow::about() {
       "Farfie, snickler, Nydaleclya, WizardTim, Kinzer, MeGaNeKo, WhatsCPS, Jerico64";
 
   const auto components =
-      u"Material Symbols, Qt %1, utf8proc %2"_qs.arg(QT_VERSION_STR).arg(utf8proc_version());
+      u"Material Symbols, Qt %1, utf8proc %2"_s.arg(QT_VERSION_STR).arg(utf8proc_version());
 
   const QStringList lines{
-      u"<big><b>Taiga</b> %1</big>"_qs.arg(version),
+      u"<big><b>Taiga</b> %1</big>"_s.arg(version),
       tr("<a href='%1'>Website</a> · "
          "<a href='%2'>GitHub</a> · "
          "<a href='%3'>Discord</a>")
           .arg("https:/taiga.moe/")
           .arg("https://github.com/erengy/taiga")
           .arg("https://discord.gg/yeGNktZ"),
-      u"<b>%1:</b><br>erengy (Eren Okka)"_qs.arg(tr("Author")),
-      u"<b>%1:</b><br>%2"_qs.arg(tr("Contributors")).arg(contributors),
-      u"<b>%1:</b><br>%2 %3"_qs.arg(tr("Donators"))
+      u"<b>%1:</b><br>erengy (Eren Okka)"_s.arg(tr("Author")),
+      u"<b>%1:</b><br>%2"_s.arg(tr("Contributors")).arg(contributors),
+      u"<b>%1:</b><br>%2 %3"_s.arg(tr("Donators"))
           .arg(donators)
           .arg(tr("and other anonymous supporters")),
-      u"<b>%1:</b><br>%2"_qs.arg(tr("Third-party components")).arg(components),
+      u"<b>%1:</b><br>%2"_s.arg(tr("Third-party components")).arg(components),
   };
 
   QMessageBox::about(this, tr("About Taiga"), lines.join("<br><br>"));

@@ -16,34 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "image_provider.hpp"
+#pragma once
 
-#include <QImage>
-#include <QImageReader>
+#include <QString>
 
-#include "base/string.hpp"
-#include "taiga/path.hpp"
-
-namespace gui {
-
-const QPixmap& ImageProvider::loadPoster(int id) {
-  if (const auto it = m_pixmaps.find(id); it != m_pixmaps.end()) {
-    return it.value();
-  }
-
-  const auto path = QString::fromStdString(taiga::get_data_path());
-  QImageReader reader(u"%1/v1/db/image/%2.jpg"_s.arg(path).arg(id));
-  const QImage image = reader.read();
-
-  m_pixmaps[id] = !image.isNull() ? QPixmap::fromImage(image) : QPixmap{};
-
-  return m_pixmaps[id];
-}
-
-void ImageProvider::reloadPoster(int id) {
-  m_pixmaps.remove(id);
-  loadPoster(id);
-  emit posterChanged(id);
-}
-
-}  // namespace gui
+using namespace Qt::Literals::StringLiterals;

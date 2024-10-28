@@ -22,6 +22,8 @@
 #include <anitomy/detail/keyword.hpp>  // don't try this at home
 #include <ranges>
 
+#include "base/string.hpp"
+
 namespace gui {
 
 LibraryModel::LibraryModel(QObject* parent) : QFileSystemModel(parent) {
@@ -29,7 +31,7 @@ LibraryModel::LibraryModel(QObject* parent) : QFileSystemModel(parent) {
     QStringList filters;
     for (const auto& [key, keyword] : anitomy::detail::keywords) {
       if (keyword.kind != anitomy::detail::KeywordKind::FileExtension) continue;
-      filters.emplace_back(u"*.%1"_qs.arg(QString::fromStdString(key.data())));
+      filters.emplace_back(u"*.%1"_s.arg(QString::fromStdString(key.data())));
     }
     return filters;
   }());

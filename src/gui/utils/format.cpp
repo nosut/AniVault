@@ -24,6 +24,7 @@
 #include <nstd/string.hpp>
 
 #include "base/chrono.hpp"
+#include "base/string.hpp"
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
 #include "media/anime_season.hpp"
@@ -35,15 +36,15 @@ QString formatNumber(const int value, QString placeholder) {
 }
 
 QString formatEpisodeLength(const int minutes, QString placeholder) {
-  return minutes > 0 ? u"%1m"_qs.arg(minutes) : placeholder;
+  return minutes > 0 ? u"%1m"_s.arg(minutes) : placeholder;
 }
 
 QString formatScore(const double value) {
-  return u"%1%"_qs.arg(value * 10.0, 0, 'g', 4);
+  return u"%1%"_s.arg(value * 10.0, 0, 'g', 4);
 }
 
 QString formatListScore(const int value, QString placeholder) {
-  return value > 0 ? u"%1"_qs.arg(value / 10.0) : placeholder;
+  return value > 0 ? u"%1"_s.arg(value / 10.0) : placeholder;
 }
 
 QString formatDate(const base::Date& date, QString placeholder) {
@@ -62,7 +63,7 @@ QString formatFuzzyDate(const base::FuzzyDate& fuzzyDate, QString placeholder) {
 QString formatFuzzyDateRange(const base::FuzzyDate& from, const base::FuzzyDate& to,
                              QString placeholder) {
   if (from == to) return formatFuzzyDate(from, placeholder);
-  return u"%1 to %2"_qs.arg(formatFuzzyDate(from, placeholder))
+  return u"%1 to %2"_s.arg(formatFuzzyDate(from, placeholder))
       .arg(formatFuzzyDate(to, placeholder));
 }
 
@@ -75,15 +76,15 @@ QString formatAsRelativeTime(const qint64 time, QString placeholder) {
   const Duration duration(std::chrono::seconds{std::abs(timeDiff)});
 
   const QString str = [&duration]() {
-    if (duration.seconds() < 90) return u"a moment"_qs;
-    if (duration.minutes() < 45) return u"%1 minute(s)"_qs.arg(std::lround(duration.minutes()));
-    if (duration.hours() < 22) return u"%1 hour(s)"_qs.arg(std::lround(duration.hours()));
-    if (duration.days() < 25) return u"%1 day(s)"_qs.arg(std::lround(duration.days()));
-    if (duration.days() < 345) return u"%1 month(s)"_qs.arg(std::lround(duration.months()));
-    return u"%1 year(s)"_qs.arg(std::lround(duration.years()));
+    if (duration.seconds() < 90) return u"a moment"_s;
+    if (duration.minutes() < 45) return u"%1 minute(s)"_s.arg(std::lround(duration.minutes()));
+    if (duration.hours() < 22) return u"%1 hour(s)"_s.arg(std::lround(duration.hours()));
+    if (duration.days() < 25) return u"%1 day(s)"_s.arg(std::lround(duration.days()));
+    if (duration.days() < 345) return u"%1 month(s)"_s.arg(std::lround(duration.months()));
+    return u"%1 year(s)"_s.arg(std::lround(duration.years()));
   }();
 
-  return timeDiff < 0 ? u"in %1"_qs.arg(str) : u"%1 ago"_qs.arg(str);
+  return timeDiff < 0 ? u"in %1"_s.arg(str) : u"%1 ago"_s.arg(str);
 }
 
 QString formatTimestamp(const qint64 time) {
@@ -92,7 +93,7 @@ QString formatTimestamp(const qint64 time) {
 }
 
 QString formatSeason(const anime::Season season) {
-  return u"%1 %2"_qs.arg(formatSeasonName(season.name)).arg(static_cast<int>(season.year));
+  return u"%1 %2"_s.arg(formatSeasonName(season.name)).arg(static_cast<int>(season.year));
 }
 
 QString formatSeasonName(const anime::SeasonName name) {

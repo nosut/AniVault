@@ -21,6 +21,7 @@
 #include <QMessageBox>
 #include <QResizeEvent>
 
+#include "base/string.hpp"
 #include "gui/utils/format.hpp"
 #include "gui/utils/image_provider.hpp"
 #include "media/anime_season.hpp"
@@ -173,7 +174,7 @@ void MediaDialog::initDetails() {
                           get_row_label(formatNumber(m_anime.episode_count, "?")));
   if (m_anime.episode_length > 0 && m_anime.type != anime::Type::Tv) {
     const auto duration = formatEpisodeLength(m_anime.episode_length);
-    const auto label = m_anime.episode_count == 1 ? duration : u"%1 per episode"_qs.arg(duration);
+    const auto label = m_anime.episode_count == 1 ? duration : u"%1 per episode"_s.arg(duration);
     ui_->infoLayout->addRow(get_row_title(tr("Duration:")), get_row_label(label));
   }
   ui_->infoLayout->addRow(get_row_title(tr("Status:")),
@@ -299,14 +300,14 @@ void MediaDialog::accept() {
 
   // @TEMP
   const QList<QString> list{
-      u"Progress: %1"_qs.arg(progress),
-      u"Rewatches: %1"_qs.arg(rewatches),
-      u"Rewatching: %1"_qs.arg(rewatching ? "Yes" : "No"),
-      u"Status: %1"_qs.arg(formatListStatus(static_cast<anime::list::Status>(status))),
-      u"Score: %1"_qs.arg(score),
-      u"Date started: %1"_qs.arg(date_started ? formatDate(*date_started) : "-"),
-      u"Date completed: %1"_qs.arg(date_completed ? formatDate(*date_completed) : "-"),
-      u"Notes: %1"_qs.arg(notes),
+      u"Progress: %1"_s.arg(progress),
+      u"Rewatches: %1"_s.arg(rewatches),
+      u"Rewatching: %1"_s.arg(rewatching ? "Yes" : "No"),
+      u"Status: %1"_s.arg(formatListStatus(static_cast<anime::list::Status>(status))),
+      u"Score: %1"_s.arg(score),
+      u"Date started: %1"_s.arg(date_started ? formatDate(*date_started) : "-"),
+      u"Date completed: %1"_s.arg(date_completed ? formatDate(*date_completed) : "-"),
+      u"Notes: %1"_s.arg(notes),
   };
   QMessageBox::information(this, "Media", list.join("\n"));
 

@@ -18,6 +18,7 @@
 
 #include "settings_dialog.hpp"
 
+#include "base/string.hpp"
 #include "gui/utils/theme.hpp"
 #include "ui_settings_dialog.h"
 
@@ -79,7 +80,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::S
             if (current) {
               auto text = current->text(0);
               if (current->parent()) {
-                text = u"%1 / %2"_qs.arg(current->parent()->text(0), text);
+                text = u"%1 / %2"_s.arg(current->parent()->text(0), text);
               }
               ui_->titleLabel->setText(text);
             }

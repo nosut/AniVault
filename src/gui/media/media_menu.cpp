@@ -26,6 +26,7 @@
 #include <QUrlQuery>
 #include <ranges>
 
+#include "base/string.hpp"
 #include "gui/main/main_window.hpp"
 #include "gui/media/media_dialog.hpp"
 #include "gui/utils/format.hpp"
@@ -71,7 +72,7 @@ bool MediaMenu::isNowPlaying() const {
 
 void MediaMenu::addToList(const anime::list::Status status) const {
   QMessageBox::information(nullptr, "TODO",
-                           u"Status: %1"_qs.arg(formatListStatus(status)));  // @TODO
+                           u"Status: %1"_s.arg(formatListStatus(status)));  // @TODO
 }
 
 void MediaMenu::editEpisode() const {
@@ -102,11 +103,11 @@ void MediaMenu::editNotes() const {
 
 void MediaMenu::editStatus(const anime::list::Status status) const {
   QMessageBox::information(nullptr, "TODO",
-                           u"Status: %1"_qs.arg(formatListStatus(status)));  // @TODO
+                           u"Status: %1"_s.arg(formatListStatus(status)));  // @TODO
 }
 
 void MediaMenu::playEpisode(int number) const {
-  QMessageBox::information(nullptr, "TODO", u"Episode: %1"_qs.arg(number));  // @TODO
+  QMessageBox::information(nullptr, "TODO", u"Episode: %1"_s.arg(number));  // @TODO
 }
 
 void MediaMenu::removeFromList() const {
@@ -116,9 +117,9 @@ void MediaMenu::removeFromList() const {
 
   QList<QString> titles;
   for (const auto& item : m_items) {
-    titles.push_back(u"<li>%1</li>"_qs.arg(QString::fromStdString(item.titles.romaji)));
+    titles.push_back(u"<li>%1</li>"_s.arg(QString::fromStdString(item.titles.romaji)));
   }
-  msgBox.setInformativeText(u"<ul>%1</ul>"_qs.arg(titles.join("")));
+  msgBox.setInformativeText(u"<ul>%1</ul>"_s.arg(titles.join("")));
 
   auto removeButton = msgBox.addButton(tr("Remove"), QMessageBox::ButtonRole::DestructiveRole);
   msgBox.addButton(QMessageBox::Cancel);
@@ -182,7 +183,7 @@ void MediaMenu::searchReddit() const {
     QUrl url{"https://www.reddit.com/search"};
     const auto title = QString::fromStdString(item.titles.romaji);
     url.setQuery({
-        {"q", u"subreddit:anime title:%1 episode discussion"_qs.arg(title)},
+        {"q", u"subreddit:anime title:%1 episode discussion"_s.arg(title)},
         {"sort", "new"},
     });
     QDesktopServices::openUrl(url);
@@ -200,7 +201,7 @@ void MediaMenu::searchWikipedia() const {
 void MediaMenu::searchYouTube() const {
   for (const auto& item : m_items) {
     if (!item.trailer_id.empty()) {
-      QUrl url{u"https://youtu.be/%1"_qs.arg(QString::fromStdString(item.trailer_id))};
+      QUrl url{u"https://youtu.be/%1"_s.arg(QString::fromStdString(item.trailer_id))};
       QDesktopServices::openUrl(url);
     } else {
       QUrl url{"https://www.youtube.com/results"};
@@ -218,7 +219,7 @@ void MediaMenu::test() const {
     titles.push_back(QString::fromStdString(item.titles.romaji));
   }
 
-  const auto text = u"Action: %1\n\n%2"_qs.arg(action).arg(titles.join("\n"));
+  const auto text = u"Action: %1\n\n%2"_s.arg(action).arg(titles.join("\n"));
 
   QMessageBox::information(nullptr, "TODO", text);
 }
@@ -375,7 +376,7 @@ void MediaMenu::addLibraryItems() {
       menu->addMenu([this, total_episodes, last_episode]() {
         auto menu = new QMenu(tr("Episode"), this);
         for (int i = 1; i <= total_episodes; ++i) {
-          auto action = new QAction(u"#%1"_qs.arg(i), this);
+          auto action = new QAction(u"#%1"_s.arg(i), this);
           action->setCheckable(true);
           action->setChecked(i <= last_episode);
           menu->addAction(action);
