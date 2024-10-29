@@ -59,6 +59,10 @@ target_link_libraries(taiga PRIVATE
 	taiga-resources
 )
 
+if (TAIGA_PORTABLE)
+	target_compile_definitions(taiga PRIVATE TAIGA_PORTABLE)
+endif()
+
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 	set_target_properties(taiga PROPERTIES OUTPUT_NAME Taiga)
 	set_target_properties(taiga PROPERTIES WIN32_EXECUTABLE ON)

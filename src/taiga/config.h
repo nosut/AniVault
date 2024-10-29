@@ -46,6 +46,3 @@
     STRINGIZE(TAIGA_VERSION_MAJOR) "." \
     STRINGIZE(TAIGA_VERSION_MINOR) "." \
     STRINGIZE(TAIGA_VERSION_PATCH) "\0"
-
-// Store data at the same directory as the executable
-#define TAIGA_PORTABLE
