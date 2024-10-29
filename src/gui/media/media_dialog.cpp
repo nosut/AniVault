@@ -25,6 +25,7 @@
 #include "gui/utils/format.hpp"
 #include "gui/utils/image_provider.hpp"
 #include "media/anime_season.hpp"
+#include "taiga/session.hpp"
 #include "ui_media_dialog.h"
 
 #ifdef Q_OS_WINDOWS
@@ -40,9 +41,16 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
   enableMicaBackground(this);
 #endif
 
+  if (const auto geometry = taiga::session.mediaDialogGeometry(); !geometry.isEmpty()) {
+    restoreGeometry(geometry);
+  }
+
   ui_->posterLabel->setFrameShape(QFrame::Shape::NoFrame);
 
   ui_->splitter->setSizes({ui_->posterLabel->minimumWidth(), ui_->posterLabel->minimumWidth() * 4});
+  if (const auto state = taiga::session.mediaDialogSplitterState(); !state.isEmpty()) {
+    ui_->splitter->restoreState(state);
+  }
 
   ui_->verticalLayoutRewatching->setAlignment(Qt::AlignBottom);
 
@@ -91,6 +99,12 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
           [this](Qt::CheckState state) {
             ui_->dateCompleted->setEnabled(state == Qt::CheckState::Checked);
           });
+}
+
+void MediaDialog::closeEvent(QCloseEvent* event) {
+  taiga::session.setMediaDialogGeometry(saveGeometry());
+  taiga::session.setMediaDialogSplitterState(ui_->splitter->saveState());
+  event->accept();
 }
 
 void MediaDialog::resizeEvent(QResizeEvent* event) {

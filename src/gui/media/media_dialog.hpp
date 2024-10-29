@@ -41,14 +41,16 @@ public:
   MediaDialog(QWidget* parent);
   ~MediaDialog() = default;
 
-  void resizeEvent(QResizeEvent* event) override;
-  void showEvent(QShowEvent* event) override;
-
   static void show(QWidget* parent, const Anime& anime, const std::optional<ListEntry> entry);
 
 public slots:
   void accept() override;
   void setAnime(const Anime& anime, const std::optional<ListEntry> entry);
+
+protected:
+  void closeEvent(QCloseEvent *event) override;
+  void resizeEvent(QResizeEvent* event) override;
+  void showEvent(QShowEvent* event) override;
 
 private:
   void initTitles();

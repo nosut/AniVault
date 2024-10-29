@@ -35,11 +35,15 @@ public:
   Qt::SortOrder animeListSortOrder() const;
   gui::ListViewMode animeListViewMode() const;
   QByteArray mainWindowGeometry() const;
+  QByteArray mediaDialogGeometry() const;
+  QByteArray mediaDialogSplitterState() const;
 
   void setAnimeListSortColumn(const int column) const;
   void setAnimeListSortOrder(const Qt::SortOrder order) const;
   void setAnimeListViewMode(const gui::ListViewMode mode) const;
   void setMainWindowGeometry(const QByteArray& geometry) const;
+  void setMediaDialogGeometry(const QByteArray& geometry) const;
+  void setMediaDialogSplitterState(const QByteArray& state) const;
 
 private:
   QString fileName() const override;

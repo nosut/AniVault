@@ -47,8 +47,15 @@ gui::ListViewMode Session::animeListViewMode() const {
 }
 
 QByteArray Session::mainWindowGeometry() const {
-  const auto geometry = value("mainWindow.geometry", QByteArray{}).toByteArray();
-  return QByteArray::fromBase64(geometry);
+  return QByteArray::fromBase64(value("mainWindow.geometry", QByteArray{}).toByteArray());
+}
+
+QByteArray Session::mediaDialogGeometry() const {
+  return QByteArray::fromBase64(value("mediaDialog.geometry", QByteArray{}).toByteArray());
+}
+
+QByteArray Session::mediaDialogSplitterState() const {
+  return QByteArray::fromBase64(value("mediaDialog.splitterState", QByteArray{}).toByteArray());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -67,6 +74,14 @@ void Session::setAnimeListViewMode(const gui::ListViewMode mode) const {
 
 void Session::setMainWindowGeometry(const QByteArray& geometry) const {
   setValue("mainWindow.geometry", geometry.toBase64());
+}
+
+void Session::setMediaDialogGeometry(const QByteArray& geometry) const {
+  setValue("mediaDialog.geometry", geometry.toBase64());
+}
+
+void Session::setMediaDialogSplitterState(const QByteArray& state) const {
+  setValue("mediaDialog.splitterState", state.toBase64());
 }
 
 }  // namespace taiga
