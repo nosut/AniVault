@@ -66,6 +66,8 @@ target_sources(taiga-gui PRIVATE
 	utils/theme.hpp
 	utils/tray_icon.cpp
 	utils/tray_icon.hpp
+	utils/widgets.cpp
+	utils/widgets.hpp
 )
 
 target_link_libraries(taiga-gui

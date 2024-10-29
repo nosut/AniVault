@@ -33,6 +33,7 @@
 #include "gui/settings/settings_dialog.hpp"
 #include "gui/utils/theme.hpp"
 #include "gui/utils/tray_icon.hpp"
+#include "gui/utils/widgets.hpp"
 #include "taiga/application.hpp"
 #include "taiga/session.hpp"
 #include "taiga/version.hpp"
@@ -55,6 +56,7 @@ MainWindow::MainWindow() : QMainWindow(), ui_(new Ui::MainWindow) {
 
   if (const auto geometry = taiga::session.mainWindowGeometry(); !geometry.isEmpty()) {
     restoreGeometry(geometry);
+    centerWidgetToScreen(this);
   }
 
   // Do not call `init()` here, as it relies on the main window pointer being

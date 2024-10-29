@@ -24,6 +24,7 @@
 #include "base/string.hpp"
 #include "gui/utils/format.hpp"
 #include "gui/utils/image_provider.hpp"
+#include "gui/utils/widgets.hpp"
 #include "media/anime_season.hpp"
 #include "taiga/session.hpp"
 #include "ui_media_dialog.h"
@@ -43,6 +44,7 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
 
   if (const auto geometry = taiga::session.mediaDialogGeometry(); !geometry.isEmpty()) {
     restoreGeometry(geometry);
+    centerWidgetToScreen(this);
   }
 
   ui_->posterLabel->setFrameShape(QFrame::Shape::NoFrame);
