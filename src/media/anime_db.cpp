@@ -22,6 +22,7 @@
 
 #include "compat/anime.hpp"
 #include "compat/list.hpp"
+#include "taiga/accounts.hpp"
 #include "taiga/path.hpp"
 #include "taiga/settings.hpp"
 
@@ -34,9 +35,17 @@ QList<Anime> readDatabase() {
 
 QList<ListEntry> readListEntries() {
   const auto data_path = taiga::get_data_path();
-  return compat::v1::readListEntries(std::format("{}/v1/user/{}@{}/anime.xml", data_path,
-                                                 taiga::settings.username(),
-                                                 taiga::settings.service()));
+
+  const auto service = taiga::settings.service();
+  const auto username = [service]() {
+    if (service == "anilist") return taiga::accounts.anilistUsername();
+    if (service == "kitsu") return taiga::accounts.kitsuUsername();
+    if (service == "myanimelist") return taiga::accounts.myanimelistUsername();
+    return std::string{};
+  }();
+
+  return compat::v1::readListEntries(
+      std::format("{}/v1/user/{}@{}/anime.xml", data_path, username, service));
 }
 
 }  // namespace anime

@@ -22,6 +22,7 @@
 
 #include "base/log.hpp"
 #include "base/xml.hpp"
+#include "taiga/accounts.hpp"
 #include "taiga/settings.hpp"
 
 #define XML_ATTR(name) xml.attributes().value(name)
@@ -29,10 +30,12 @@
 
 namespace compat::v1 {
 
-void parseAccountElement(QXmlStreamReader& xml, const taiga::Settings& settings);
+void parseAccountElement(QXmlStreamReader& xml, const taiga::Settings& settings,
+                         const taiga::Accounts& accounts);
 void parseAnimeElement(QXmlStreamReader& xml, const taiga::Settings& settings);
 
-void readSettings(const std::string& path, const taiga::Settings& settings) {
+void readSettings(const std::string& path, const taiga::Settings& settings,
+                  const taiga::Accounts& accounts) {
   base::XmlFileReader xml;
 
   if (!xml.open(QString::fromStdString(path))) {
@@ -46,7 +49,7 @@ void readSettings(const std::string& path, const taiga::Settings& settings) {
 
   while (xml.readNextStartElement()) {
     if (xml.name() == u"account") {
-      parseAccountElement(xml, settings);
+      parseAccountElement(xml, settings, accounts);
     } else if (xml.name() == u"anime") {
       parseAnimeElement(xml, settings);
     } else {
@@ -60,14 +63,28 @@ void readSettings(const std::string& path, const taiga::Settings& settings) {
   }
 }
 
-void parseAccountElement(QXmlStreamReader& xml, const taiga::Settings& settings) {
+void parseAccountElement(QXmlStreamReader& xml, const taiga::Settings& settings,
+                         const taiga::Accounts& accounts) {
   while (xml.readNextStartElement()) {
     if (xml.name() == u"update") {
       settings.setService(XML_ATTR_STR(u"activeservice"));
       xml.skipCurrentElement();
 
-    } else if (xml.name() == QString::fromStdString(settings.service())) {
-      settings.setUsername(XML_ATTR_STR(u"username"));
+    } else if (xml.name() == u"anilist") {
+      accounts.setAnilistUsername(XML_ATTR_STR(u"username"));
+      accounts.setAnilistToken(XML_ATTR_STR(u"token"));
+      xml.skipCurrentElement();
+
+    } else if (xml.name() == u"kitsu") {
+      accounts.setKitsuEmail(XML_ATTR_STR(u"email"));
+      accounts.setKitsuUsername(XML_ATTR_STR(u"username"));
+      accounts.setKitsuPassword(XML_ATTR_STR(u"password"));
+      xml.skipCurrentElement();
+
+    } else if (xml.name() == u"myanimelist") {
+      accounts.setMyanimelistUsername(XML_ATTR_STR(u"username"));
+      accounts.setMyanimelistAccessToken(XML_ATTR_STR(u"accesstoken"));
+      accounts.setMyanimelistRefreshToken(XML_ATTR_STR(u"refreshtoken"));
       xml.skipCurrentElement();
 
     } else {

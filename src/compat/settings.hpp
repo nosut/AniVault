@@ -21,11 +21,13 @@
 #include <string>
 
 namespace taiga {
+class Accounts;
 class Settings;
-}
+}  // namespace taiga
 
 namespace compat::v1 {
 
-void readSettings(const std::string& path, const taiga::Settings& settings);
+void readSettings(const std::string& path, const taiga::Settings& settings,
+                  const taiga::Accounts& accounts);
 
 }  // namespace compat::v1

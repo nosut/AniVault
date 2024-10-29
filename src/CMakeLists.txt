@@ -30,6 +30,8 @@ target_sources(taiga PRIVATE
 	media/anime_season.hpp
 	media/anime.hpp
 
+	taiga/accounts.cpp
+	taiga/accounts.hpp
 	taiga/application.cpp
 	taiga/application.hpp
 	taiga/config.h

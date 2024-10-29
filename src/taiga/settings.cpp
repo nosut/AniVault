@@ -24,6 +24,7 @@
 
 #include "base/string.hpp"
 #include "compat/settings.hpp"
+#include "taiga/accounts.hpp"
 #include "taiga/path.hpp"
 #include "taiga/version.hpp"
 
@@ -34,7 +35,7 @@ void Settings::migrate() const {
 
   // v1 to v2
   if (!QFile::exists(fileName())) {
-    compat::v1::readSettings(std::format("{}/v1/settings.xml", get_data_path()), *this);
+    compat::v1::readSettings(std::format("{}/v1/settings.xml", get_data_path()), *this, accounts);
     setValue("meta.version", appVersion);
     return;
   }
@@ -56,10 +57,6 @@ std::string Settings::service() const {
   return value("v1.service").toString().toStdString();
 }
 
-std::string Settings::username() const {
-  return value("v1.username").toString().toStdString();
-}
-
 std::vector<std::string> Settings::libraryFolders() const {
   return value("library.folders").toJsonArray().toVariantList() |
          std::views::transform([](const QVariant& v) { return v.toString().toStdString(); }) |
@@ -70,10 +67,6 @@ std::vector<std::string> Settings::libraryFolders() const {
 
 void Settings::setService(const std::string& service) const {
   setValue("v1.service", service);
-}
-
-void Settings::setUsername(const std::string& username) const {
-  setValue("v1.username", username);
 }
 
 void Settings::setLibraryFolders(std::vector<std::string> folders) const {

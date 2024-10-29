@@ -30,11 +30,9 @@ public:
   void migrate() const;
 
   std::string service() const;
-  std::string username() const;
   std::vector<std::string> libraryFolders() const;
 
   void setService(const std::string& service) const;
-  void setUsername(const std::string& username) const;
   void setLibraryFolders(std::vector<std::string> folders) const;
 
 private:
