@@ -28,23 +28,14 @@ namespace season {
 
 using Month = std::chrono::month;
 
-enum class Order {
-  Default,
-  Shifted,
-};
-
-constexpr SeasonName from_month(const Month month, const Order order) noexcept {
-  auto m = static_cast<unsigned int>(month);
-
-  if (order == Order::Shifted) m = (m + 1) % 12;
-
+constexpr SeasonName from_month(const Month month) noexcept {
   // clang-format off
-  switch (m) {
+  switch (static_cast<unsigned int>(month)) {
     default: return Unknown;
-    case  1: case  2: case  3: return Winter;
-    case  4: case  5: case  6: return Spring;
-    case  7: case  8: case  9: return Summer;
-    case 10: case 11: case 12: return Fall;
+    case 12: case  1: case  2: return Winter;
+    case  3: case  4: case  5: return Spring;
+    case  6: case  7: case  8: return Summer;
+    case  9: case 10: case 11: return Fall;
   }
   // clang-format on
 }
@@ -73,39 +64,30 @@ constexpr SeasonName prev(const SeasonName name) noexcept {
   // clang-format on
 }
 
-constexpr std::pair<Month, Month> to_months(const SeasonName name, const Order order) noexcept {
+constexpr std::pair<Month, Month> to_months(const SeasonName name) noexcept {
   using namespace std::chrono;
 
   // clang-format off
-  if (order == Order::Shifted) {
-    switch (name) {
-      default:     return {};
-      case Winter: return {December, February};
-      case Spring: return {March, May};
-      case Summer: return {June, August};
-      case Fall:   return {September, November};
-    }
-  } else {
-    switch (name) {
-      default:     return {};
-      case Winter: return {January, March};
-      case Spring: return {April, June};
-      case Summer: return {July, September};
-      case Fall:   return {October, December};
-    }
+  switch (name) {
+    default:     return {};
+    case Winter: return {December, February};
+    case Spring: return {March, May};
+    case Summer: return {June, August};
+    case Fall:   return {September, November};
   }
   // clang-format on
 }
 
-std::pair<Date, Date> to_date_range(const Season& season, const Order order) noexcept {
+std::pair<Date, Date> to_date_range(const Season& season) noexcept {
   if (!season) return {};
 
-  const auto months = season::to_months(season.name, order);
+  const auto months = season::to_months(season.name);
 
-  const Date date_first{order == Order::Shifted && season.name == Winter
-                            ? season.year - std::chrono::years{1}
-                            : season.year,
-                        months.first, std::chrono::day{1}};
+  const Date date_first{
+      season.name == Winter ? season.year - std::chrono::years{1} : season.year,
+      months.first,
+      std::chrono::day{1},
+  };
 
   const Date date_last =
       std::chrono::year_month_day_last{season.year, std::chrono::month_day_last(months.second)};
@@ -122,16 +104,13 @@ Season::Season(SeasonName name, std::chrono::year year) : name{name}, year{year}
 Season::Season(const Date& date) : Season{FuzzyDate{date}} {}
 
 Season::Season(const FuzzyDate& date) {
-  const bool is_shifted = true;  // @TODO
-
   if (date.month()) {
-    const auto order = is_shifted ? season::Order::Shifted : season::Order::Default;
-    name = season::from_month(std::chrono::month{date.month()}, order);
+    name = season::from_month(std::chrono::month{date.month()});
   }
 
   if (date.year()) {
     year = std::chrono::year{date.year()};
-    if (is_shifted && date.month() && std::chrono::month{date.month()} == std::chrono::December) {
+    if (date.month() && std::chrono::month{date.month()} == std::chrono::December) {
       ++year;  // e.g. December 2018 -> Winter 2019
     }
   }
