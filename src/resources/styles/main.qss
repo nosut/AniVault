@@ -5,6 +5,12 @@ https://doc.qt.io/qt-6/stylesheet-reference.html
 https://doc.qt.io/qt-6/stylesheet-examples.html
 */
 
+/* Menubar */
+
+QMenuBar {
+  background-color: transparent;
+}
+
 /* Toolbar */
 
 QMainWindow > QToolBar {
