@@ -27,6 +27,11 @@ namespace gui {
 class AnimeListModel;
 class AnimeListProxyModel;
 
+enum class ListViewMode {
+  List,
+  Cards,
+};
+
 class ListViewBase final : public QObject {
   Q_OBJECT
   Q_DISABLE_COPY_MOVE(ListViewBase)

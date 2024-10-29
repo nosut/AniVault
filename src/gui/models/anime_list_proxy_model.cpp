@@ -49,6 +49,15 @@ AnimeListProxyModel::AnimeListProxyModel(QObject* parent) : QSortFilterProxyMode
   setSortRole(Qt::UserRole);
 }
 
+const AnimeListProxyModelFilter& AnimeListProxyModel::filters() const {
+  return m_filter;
+}
+
+void AnimeListProxyModel::setFilters(const AnimeListProxyModelFilter& filters) {
+  m_filter = filters;
+  invalidateRowsFilter();
+}
+
 void AnimeListProxyModel::setYearFilter(std::optional<int> year) {
   m_filter.year = year;
   invalidateRowsFilter();

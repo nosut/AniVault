@@ -27,6 +27,7 @@
 #include "gui/utils/theme.hpp"
 #include "media/anime.hpp"
 #include "media/anime_season.hpp"
+#include "taiga/session.hpp"
 
 namespace gui {
 
@@ -39,12 +40,8 @@ SearchWidget::SearchWidget(QWidget* parent)
       m_comboSeason(new ComboBox(this)),
       m_comboType(new ComboBox(this)),
       m_comboStatus(new ComboBox(this)) {
-  // @TODO: Use settings from the previous session
-  m_proxyModel->sort(AnimeListModel::COLUMN_AVERAGE, Qt::SortOrder::DescendingOrder);
-  m_proxyModel->setYearFilter(QDate::currentDate().year());
-  m_proxyModel->setSeasonFilter(
-      static_cast<int>(anime::Season{QDate::currentDate().toStdSysDays()}.name));
-  m_proxyModel->setTypeFilter(static_cast<int>(anime::Type::Tv));
+  m_proxyModel->sort(taiga::session.searchListSortColumn(), taiga::session.searchListSortOrder());
+  m_proxyModel->setFilters(taiga::session.searchListFilters());
 
   static const auto filterValue = [](QComboBox* combo, int index) {
     return index > -1 ? std::optional<int>{combo->itemData(index).toInt()} : std::nullopt;
@@ -133,6 +130,13 @@ SearchWidget::SearchWidget(QWidget* parent)
 
   // List
   layout()->addWidget(m_listViewCards);
+}
+
+void SearchWidget::saveState() {
+  taiga::session.setSearchListFilters(m_proxyModel->filters());
+  taiga::session.setSearchListSortColumn(m_proxyModel->sortColumn());
+  taiga::session.setSearchListSortOrder(m_proxyModel->sortOrder());
+  taiga::session.setSearchListViewMode(m_viewMode);
 }
 
 }  // namespace gui

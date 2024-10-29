@@ -25,6 +25,7 @@
 
 namespace gui {
 enum class ListViewMode;
+struct AnimeListProxyModelFilter;
 }
 
 namespace taiga {
@@ -37,6 +38,10 @@ public:
   QByteArray mainWindowGeometry() const;
   QByteArray mediaDialogGeometry() const;
   QByteArray mediaDialogSplitterState() const;
+  gui::AnimeListProxyModelFilter searchListFilters() const;
+  int searchListSortColumn() const;
+  Qt::SortOrder searchListSortOrder() const;
+  gui::ListViewMode searchListViewMode() const;
 
   void setAnimeListSortColumn(const int column) const;
   void setAnimeListSortOrder(const Qt::SortOrder order) const;
@@ -44,6 +49,10 @@ public:
   void setMainWindowGeometry(const QByteArray& geometry) const;
   void setMediaDialogGeometry(const QByteArray& geometry) const;
   void setMediaDialogSplitterState(const QByteArray& state) const;
+  void setSearchListFilters(const gui::AnimeListProxyModelFilter& filters) const;
+  void setSearchListSortColumn(const int column) const;
+  void setSearchListSortOrder(const Qt::SortOrder order) const;
+  void setSearchListViewMode(const gui::ListViewMode mode) const;
 
 private:
   QString fileName() const override;

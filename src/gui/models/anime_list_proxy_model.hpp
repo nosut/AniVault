@@ -45,9 +45,8 @@ public:
   AnimeListProxyModel(QObject* parent);
   ~AnimeListProxyModel() = default;
 
-  const AnimeListProxyModelFilter& filters() const {
-    return m_filter;
-  }
+  const AnimeListProxyModelFilter& filters() const;
+  void setFilters(const AnimeListProxyModelFilter& filters);
 
   void setYearFilter(std::optional<int> year);
   void setSeasonFilter(std::optional<int> season);

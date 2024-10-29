@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include "gui/common/anime_list_view_base.hpp"
 #include "gui/common/combobox.hpp"
 #include "gui/common/page_widget.hpp"
 
@@ -35,6 +36,8 @@ public:
   SearchWidget(QWidget* parent);
   ~SearchWidget() = default;
 
+  void saveState();
+
 private:
   AnimeListModel* m_model = nullptr;
   AnimeListProxyModel* m_proxyModel = nullptr;
@@ -43,6 +46,7 @@ private:
   ComboBox* m_comboType = nullptr;
   ComboBox* m_comboStatus = nullptr;
   ListViewCards* m_listViewCards = nullptr;
+  ListViewMode m_viewMode = ListViewMode::Cards;
 };
 
 }  // namespace gui

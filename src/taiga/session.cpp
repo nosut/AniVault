@@ -19,10 +19,14 @@
 #include "session.hpp"
 
 #include <QByteArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include "base/string.hpp"
-#include "gui/list/list_widget.hpp"
+#include "gui/common/anime_list_view_base.hpp"
 #include "gui/models/anime_list_model.hpp"
+#include "gui/models/anime_list_proxy_model.hpp"
+#include "media/anime_season.hpp"
 #include "taiga/path.hpp"
 
 namespace taiga {
@@ -58,6 +62,44 @@ QByteArray Session::mediaDialogSplitterState() const {
   return QByteArray::fromBase64(value("mediaDialog.splitterState", QByteArray{}).toByteArray());
 }
 
+gui::AnimeListProxyModelFilter Session::searchListFilters() const {
+  const auto json = QJsonDocument::fromJson(
+      QByteArray::fromBase64(value("searchList.filters", QByteArray{}).toByteArray()));
+
+  // clang-format off
+  if (json.isEmpty()) {
+    return gui::AnimeListProxyModelFilter{
+        .year   = QDate::currentDate().year(),
+        .season = static_cast<int>(anime::Season{QDate::currentDate().toStdSysDays()}.name),
+        .type   = static_cast<int>(anime::Type::Tv),
+    };
+  } else {
+    static const auto optionalInt = [](const QJsonValue& value) {
+      return value.isDouble() ? value.toInt() : std::optional<int>{};
+    };
+    return gui::AnimeListProxyModelFilter{
+        .year   = optionalInt(json["year"]),
+        .season = optionalInt(json["season"]),
+        .type   = optionalInt(json["type"]),
+        .status = optionalInt(json["status"]),
+    };
+  }
+  // clang-format on
+}
+
+int Session::searchListSortColumn() const {
+  return value("searchList.sortColumn", gui::AnimeListModel::COLUMN_AVERAGE).toInt();
+}
+
+Qt::SortOrder Session::searchListSortOrder() const {
+  return value("searchList.sortOrder", Qt::SortOrder::DescendingOrder).value<Qt::SortOrder>();
+}
+
+gui::ListViewMode Session::searchListViewMode() const {
+  return value("searchList.viewMode", static_cast<int>(gui::ListViewMode::Cards))
+      .value<gui::ListViewMode>();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 void Session::setAnimeListSortColumn(const int column) const {
@@ -82,6 +124,30 @@ void Session::setMediaDialogGeometry(const QByteArray& geometry) const {
 
 void Session::setMediaDialogSplitterState(const QByteArray& state) const {
   setValue("mediaDialog.splitterState", state.toBase64());
+}
+
+void Session::setSearchListFilters(const gui::AnimeListProxyModelFilter& filters) const {
+  // clang-format off
+  const QJsonObject object{
+      {"year",   filters.year   ? *filters.year   : QJsonValue{}},
+      {"season", filters.season ? *filters.season : QJsonValue{}},
+      {"type",   filters.type   ? *filters.type   : QJsonValue{}},
+      {"status", filters.status ? *filters.status : QJsonValue{}},
+  };
+  // clang-format on
+  setValue("searchList.filters", QJsonDocument{object}.toJson(QJsonDocument::Compact).toBase64());
+}
+
+void Session::setSearchListSortColumn(const int column) const {
+  setValue("searchList.sortColumn", column);
+}
+
+void Session::setSearchListSortOrder(const Qt::SortOrder order) const {
+  setValue("searchList.sortOrder", order);
+}
+
+void Session::setSearchListViewMode(const gui::ListViewMode mode) const {
+  setValue("searchList.viewMode", static_cast<int>(mode));
 }
 
 }  // namespace taiga

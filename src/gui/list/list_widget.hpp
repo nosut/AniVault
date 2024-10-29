@@ -20,6 +20,7 @@
 
 #include <QMenu>
 
+#include "gui/common/anime_list_view_base.hpp"
 #include "gui/common/page_widget.hpp"
 
 namespace gui {
@@ -28,11 +29,6 @@ class AnimeListModel;
 class AnimeListProxyModel;
 class ListView;
 class ListViewCards;
-
-enum class ListViewMode {
-  List,
-  Cards,
-};
 
 class ListWidget final : public PageWidget {
   Q_OBJECT
