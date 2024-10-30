@@ -29,19 +29,26 @@ using Date = std::chrono::year_month_day;
 
 class Duration {
 public:
-  explicit Duration(const std::chrono::seconds seconds);
+  using seconds_t = std::chrono::seconds;
+  using minutes_t = std::chrono::duration<float, std::chrono::minutes::period>;
+  using hours_t = std::chrono::duration<float, std::chrono::hours::period>;
+  using days_t = std::chrono::duration<float, std::chrono::days::period>;
+  using months_t = std::chrono::duration<float, std::chrono::months::period>;
+  using years_t = std::chrono::duration<float, std::chrono::years::period>;
 
-  Duration& operator=(const std::chrono::seconds seconds);
+  explicit Duration(const seconds_t seconds);
 
-  std::chrono::seconds::rep seconds() const;
-  std::chrono::minutes::rep minutes() const;
-  std::chrono::hours::rep hours() const;
-  std::chrono::days::rep days() const;
-  std::chrono::months::rep months() const;
-  std::chrono::years::rep years() const;
+  Duration& operator=(const seconds_t seconds);
+
+  seconds_t::rep seconds() const;
+  minutes_t::rep minutes() const;
+  hours_t::rep hours() const;
+  days_t::rep days() const;
+  months_t::rep months() const;
+  years_t::rep years() const;
 
 private:
-  std::chrono::seconds seconds_;
+  seconds_t seconds_;
 };
 
 class FuzzyDate final {

@@ -23,35 +23,35 @@
 
 namespace base {
 
-Duration::Duration(const std::chrono::seconds seconds) : seconds_(seconds) {}
+Duration::Duration(const seconds_t seconds) : seconds_{seconds} {}
 
-Duration& Duration::operator=(const std::chrono::seconds seconds) {
+Duration& Duration::operator=(const seconds_t seconds) {
   seconds_ = seconds;
   return *this;
 }
 
-std::chrono::seconds::rep Duration::seconds() const {
+Duration::seconds_t::rep Duration::seconds() const {
   return seconds_.count();
 }
 
-std::chrono::minutes::rep Duration::minutes() const {
-  return std::chrono::duration_cast<std::chrono::minutes>(seconds_).count();
+Duration::minutes_t::rep Duration::minutes() const {
+  return std::chrono::duration_cast<minutes_t>(seconds_).count();
 }
 
-std::chrono::hours::rep Duration::hours() const {
-  return std::chrono::duration_cast<std::chrono::hours>(seconds_).count();
+Duration::hours_t::rep Duration::hours() const {
+  return std::chrono::duration_cast<hours_t>(seconds_).count();
 }
 
-std::chrono::days::rep Duration::days() const {
-  return std::chrono::duration_cast<std::chrono::days>(seconds_).count();
+Duration::days_t::rep Duration::days() const {
+  return std::chrono::duration_cast<days_t>(seconds_).count();
 }
 
-std::chrono::months::rep Duration::months() const {
-  return std::chrono::duration_cast<std::chrono::months>(seconds_).count();
+Duration::months_t::rep Duration::months() const {
+  return std::chrono::duration_cast<months_t>(seconds_).count();
 }
 
-std::chrono::years::rep Duration::years() const {
-  return std::chrono::duration_cast<std::chrono::years>(seconds_).count();
+Duration::years_t::rep Duration::years() const {
+  return std::chrono::duration_cast<years_t>(seconds_).count();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
