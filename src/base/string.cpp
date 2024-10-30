@@ -18,6 +18,7 @@
 
 #include "string.hpp"
 
+#include <nstd/string.hpp>
 #include <ranges>
 
 namespace {
@@ -27,6 +28,11 @@ namespace {
 }
 
 }  // namespace
+
+QString joinStrings(const std::vector<std::string>& list, QString placeholder) {
+  if (list.empty()) return placeholder;
+  return QString::fromStdString(nstd::join(list, ", "));
+}
 
 std::vector<std::string> toVector(const QStringList& list) {
   return list | std::views::transform(toStdString) | std::ranges::to<std::vector>();

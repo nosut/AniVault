@@ -25,4 +25,5 @@
 
 using namespace Qt::Literals::StringLiterals;
 
+QString joinStrings(const std::vector<std::string>& list, QString placeholder = "?");
 std::vector<std::string> toVector(const QStringList& list);

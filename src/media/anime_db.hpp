@@ -20,6 +20,7 @@
 
 #include <QMap>
 #include <QSqlDatabase>
+#include <QSqlQuery>
 
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
@@ -42,6 +43,9 @@ public:
   const QMap<int, Anime>& items() const;
   const QMap<int, ListEntry>& entries() const;
 
+  void updateItem(const int id);
+  void updateEntry(const int id);
+
 private:
   QString fileName() const;
   QString sql(const QString& name) const;
@@ -51,6 +55,12 @@ private:
 
   void readItems();
   void readEntries();
+
+  void bindItemToQuery(const Anime& item, QSqlQuery& q) const;
+  void bindEntryToQuery(const ListEntry& entry, QSqlQuery& q) const;
+
+  Anime itemFromQuery(const QSqlQuery& q) const;
+  ListEntry entryFromQuery(const QSqlQuery& q) const;
 
   void migrateItemsFromV1();
   void migrateListEntriesFromV1();

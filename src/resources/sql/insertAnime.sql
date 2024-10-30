@@ -1,4 +1,4 @@
-INSERT INTO
+INSERT OR REPLACE INTO
   anime(
     id,
     title,
