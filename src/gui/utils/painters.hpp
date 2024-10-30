@@ -18,33 +18,11 @@
 
 #pragma once
 
-#include <QListView>
+#include <QAbstractScrollArea>
+#include <QString>
 
 namespace gui {
 
-class AnimeListModel;
-class AnimeListProxyModel;
-class ListViewBase;
-
-class ListViewCards final : public QListView {
-  Q_OBJECT
-  Q_DISABLE_COPY_MOVE(ListViewCards)
-
-public:
-  ListViewCards(QWidget* parent, AnimeListModel* model, AnimeListProxyModel* proxyModel);
-  ~ListViewCards() = default;
-
-  ListViewBase* baseView() {
-    return m_base;
-  }
-
-protected:
-  void keyPressEvent(QKeyEvent* event) override;
-  void paintEvent(QPaintEvent* event) override;
-  void wheelEvent(QWheelEvent* event) override;
-
-private:
-  ListViewBase* m_base = nullptr;
-};
+void paintEmptyListText(QAbstractScrollArea* widget, const QString& text);
 
 }  // namespace gui

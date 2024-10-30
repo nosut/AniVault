@@ -60,6 +60,8 @@ target_sources(taiga-gui PRIVATE
 	utils/image_provider.cpp
 	utils/image_provider.hpp
 	utils/painter_state_saver.hpp
+	utils/painters.cpp
+	utils/painters.hpp
 	utils/svg_icon_engine.cpp
 	utils/svg_icon_engine.hpp
 	utils/theme.cpp

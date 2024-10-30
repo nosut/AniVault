@@ -40,6 +40,7 @@ public:
 
 protected:
   void keyPressEvent(QKeyEvent* event) override;
+  void paintEvent(QPaintEvent* event) override;
 
 private:
   ListViewBase* m_base = nullptr;

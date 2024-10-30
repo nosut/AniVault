@@ -26,6 +26,7 @@
 #include "gui/common/anime_list_view_base.hpp"
 #include "gui/models/anime_list_model.hpp"
 #include "gui/models/anime_list_proxy_model.hpp"
+#include "gui/utils/painters.hpp"
 
 namespace gui {
 
@@ -53,6 +54,14 @@ void ListViewCards::keyPressEvent(QKeyEvent* event) {
   }
 
   QListView::keyPressEvent(event);
+}
+
+void ListViewCards::paintEvent(QPaintEvent* event) {
+  if (model() && model()->rowCount() == 0) {
+    paintEmptyListText(this, tr("No items found."));
+  }
+
+  QListView::paintEvent(event);
 }
 
 void ListViewCards::wheelEvent(QWheelEvent* event) {

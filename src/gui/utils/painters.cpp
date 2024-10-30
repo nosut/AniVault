@@ -16,35 +16,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#include "painters.hpp"
 
-#include <QListView>
+#include <QPainter>
 
 namespace gui {
 
-class AnimeListModel;
-class AnimeListProxyModel;
-class ListViewBase;
+void paintEmptyListText(QAbstractScrollArea* area, const QString& text) {
+  QPainter painter(area->viewport());
 
-class ListViewCards final : public QListView {
-  Q_OBJECT
-  Q_DISABLE_COPY_MOVE(ListViewCards)
+  painter.setFont([&painter]() {
+    auto font = painter.font();
+    font.setItalic(true);
+    return font;
+  }());
 
-public:
-  ListViewCards(QWidget* parent, AnimeListModel* model, AnimeListProxyModel* proxyModel);
-  ~ListViewCards() = default;
-
-  ListViewBase* baseView() {
-    return m_base;
-  }
-
-protected:
-  void keyPressEvent(QKeyEvent* event) override;
-  void paintEvent(QPaintEvent* event) override;
-  void wheelEvent(QWheelEvent* event) override;
-
-private:
-  ListViewBase* m_base = nullptr;
-};
+  painter.drawText(area->viewport()->rect(), Qt::AlignCenter, text);
+}
 
 }  // namespace gui
