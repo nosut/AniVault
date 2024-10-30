@@ -43,8 +43,8 @@ public:
   const QMap<int, Anime>& items() const;
   const QMap<int, ListEntry>& entries() const;
 
-  void updateItem(const int id);
-  void updateEntry(const int id);
+  void updateItem(const Anime& item);
+  void updateEntry(const ListEntry& entry);
 
 private:
   QString fileName() const;

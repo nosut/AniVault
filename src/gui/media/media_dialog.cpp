@@ -18,13 +18,13 @@
 
 #include "media_dialog.hpp"
 
-#include <QMessageBox>
 #include <QResizeEvent>
 
 #include "base/string.hpp"
 #include "gui/utils/format.hpp"
 #include "gui/utils/image_provider.hpp"
 #include "gui/utils/widgets.hpp"
+#include "media/anime_db.hpp"
 #include "media/anime_season.hpp"
 #include "taiga/session.hpp"
 #include "ui_media_dialog.h"
@@ -253,7 +253,7 @@ void MediaDialog::initList() {
   // Score
   if (!ui_->comboScore->count()) {
     for (int i = 0; i <= 10; ++i) {
-      ui_->comboScore->addItem(tr("%1").arg(i), i);
+      ui_->comboScore->addItem(tr("%1").arg(i), i * 10);
     }
   }
   ui_->comboScore->setCurrentIndex(m_entry->score / 10);
@@ -301,33 +301,24 @@ void MediaDialog::resizePosterImage() {
 }
 
 void MediaDialog::accept() {
-  const int progress = ui_->spinProgress->value();
-  const int rewatches = ui_->spinRewatches->value();
-  const bool rewatching = ui_->checkRewatching->isChecked();
-  const int status = ui_->comboStatus->currentData().toInt();
-  const int score = ui_->comboScore->currentData().toInt();
-  const auto date_started = ui_->checkDateStarted->isChecked()
-                                ? std::optional<QDate>{ui_->dateStarted->date()}
-                                : std::nullopt;
-  const auto date_completed = ui_->checkDateCompleted->isChecked()
-                                  ? std::optional<QDate>{ui_->dateCompleted->date()}
-                                  : std::nullopt;
-  const auto notes = ui_->plainTextEditNotes->toPlainText();
+  if (!m_entry) return;
 
-  // @TEMP
-  const QList<QString> list{
-      u"Progress: %1"_s.arg(progress),
-      u"Rewatches: %1"_s.arg(rewatches),
-      u"Rewatching: %1"_s.arg(rewatching ? "Yes" : "No"),
-      u"Status: %1"_s.arg(formatListStatus(static_cast<anime::list::Status>(status))),
-      u"Score: %1"_s.arg(score),
-      u"Date started: %1"_s.arg(date_started ? formatDate(*date_started) : "-"),
-      u"Date completed: %1"_s.arg(date_completed ? formatDate(*date_completed) : "-"),
-      u"Notes: %1"_s.arg(notes),
-  };
-  QMessageBox::information(this, "Media", list.join("\n"));
+  m_entry->watched_episodes = ui_->spinProgress->value();
+  m_entry->rewatched_times = ui_->spinRewatches->value();
+  m_entry->rewatching = ui_->checkRewatching->isChecked();
+  m_entry->status = ui_->comboStatus->currentData().value<anime::list::Status>();
+  m_entry->score = ui_->comboScore->currentData().toInt();
+  m_entry->date_started = ui_->checkDateStarted->isChecked()
+                              ? FuzzyDate{ui_->dateStarted->date().toStdSysDays()}
+                              : FuzzyDate{};
+  m_entry->date_completed = ui_->checkDateCompleted->isChecked()
+                                ? FuzzyDate{ui_->dateCompleted->date().toStdSysDays()}
+                                : FuzzyDate{};
+  m_entry->notes = ui_->plainTextEditNotes->toPlainText().toStdString();
+  m_entry->last_updated = QDateTime::currentSecsSinceEpoch();
 
-  // @TODO: Add to queue
+  // @TODO: Add to queue instead
+  anime::db.updateEntry(*m_entry);
 
   QDialog::accept();
 }

@@ -81,28 +81,28 @@ const QMap<int, ListEntry>& Database::entries() const {
   return entries_;
 }
 
-void Database::updateItem(const int id) {
-  if (!items_.contains(id)) return;
-
+void Database::updateItem(const Anime& item) {
   if (!db_.open()) return;
 
   QSqlQuery q{db_};
   if (!q.prepare(sql("insertAnime"))) return;
-  bindItemToQuery(items_[id], q);
+  bindItemToQuery(item, q);
   q.exec();
+
+  items_[item.id] = item;
 
   db_.close();
 }
 
-void Database::updateEntry(const int id) {
-  if (!entries_.contains(id)) return;
-
+void Database::updateEntry(const ListEntry& entry) {
   if (!db_.open()) return;
 
   QSqlQuery q{db_};
   if (!q.prepare(sql("insertAnimeList"))) return;
-  bindEntryToQuery(entries_[id], q);
+  bindEntryToQuery(entry, q);
   q.exec();
+
+  entries_[entry.anime_id] = entry;
 
   db_.close();
 }
@@ -267,7 +267,7 @@ Anime Database::itemFromQuery(const QSqlQuery& q) const {
 
 ListEntry Database::entryFromQuery(const QSqlQuery& q) const {
   return {
-      .id = q.value("library_id").toLongLong(),
+      .id = q.value("id").toLongLong(),
       .anime_id = q.value("media_id").toInt(),
       .watched_episodes = q.value("progress").toInt(),
       .score = q.value("score").toInt(),
