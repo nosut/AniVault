@@ -219,7 +219,7 @@ void Database::bindItemToQuery(const Anime& item, QSqlQuery& q) const {
 }
 
 void Database::bindEntryToQuery(const ListEntry& entry, QSqlQuery& q) const {
-  q.bindValue(":id", QString::fromStdString(entry.id));
+  q.bindValue(":id", entry.id);
   q.bindValue(":media_id", entry.anime_id);
   q.bindValue(":progress", entry.watched_episodes);
   q.bindValue(":date_start", QString::fromStdString(entry.date_started.to_string()));
@@ -267,7 +267,7 @@ Anime Database::itemFromQuery(const QSqlQuery& q) const {
 
 ListEntry Database::entryFromQuery(const QSqlQuery& q) const {
   return {
-      .id = q.value("library_id").toString().toStdString(),
+      .id = q.value("library_id").toLongLong(),
       .anime_id = q.value("media_id").toInt(),
       .watched_episodes = q.value("progress").toInt(),
       .score = q.value("score").toInt(),

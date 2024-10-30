@@ -63,7 +63,7 @@ ListEntry parseListEntryElement(QXmlStreamReader& xml) {
       entry.anime_id = XML_ELEMENT.toInt();
 
     } else if (xml.name() == u"library_id") {
-      entry.id = XML_ELEMENT.toStdString();
+      entry.id = XML_ELEMENT.toLongLong();
 
     } else if (xml.name() == u"progress") {
       entry.watched_episodes = XML_ELEMENT.toInt();

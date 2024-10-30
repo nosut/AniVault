@@ -47,7 +47,7 @@ constexpr std::array<Status, 5> kStatuses{
 constexpr int kUnknownId = 0;
 
 struct Entry {
-  std::string id;
+  int64_t id = kUnknownId;
   int anime_id = kUnknownId;
   int watched_episodes = 0;
   int score = 0;
