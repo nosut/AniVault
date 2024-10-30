@@ -107,7 +107,7 @@ void NavigationItemDelegate::paintCounter(QPainter* painter, QRect rect, const i
   painter->fillRect(rect, theme.isDark() ? lineColorDark : lineColorLight);
 
   painter->setPen(QColor(theme.isDark() ? 0xAAAAAA : 0x666666));
-  painter->drawText(rect, Qt::AlignHCenter | Qt::AlignVCenter | Qt::TextSingleLine, text);
+  painter->drawText(rect, Qt::AlignCenter | Qt::TextSingleLine, text);
 }
 
 void NavigationItemDelegate::paintSeparator(QPainter* painter, const QRect& rect) const {

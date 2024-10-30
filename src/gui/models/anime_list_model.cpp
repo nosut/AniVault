@@ -109,7 +109,7 @@ QVariant AnimeListModel::data(const QModelIndex& index, int role) const {
         case COLUMN_SCORE:
         case COLUMN_AVERAGE:
         case COLUMN_TYPE:
-          return QVariant(Qt::AlignCenter | Qt::AlignVCenter);
+          return QVariant(Qt::AlignHCenter | Qt::AlignVCenter);
         case COLUMN_DURATION:
         case COLUMN_SEASON:
         case COLUMN_STARTED:
@@ -205,7 +205,7 @@ QVariant AnimeListModel::headerData(int section, Qt::Orientation orientation, in
         case COLUMN_SCORE:
         case COLUMN_AVERAGE:
         case COLUMN_TYPE:
-          return QVariant(Qt::AlignCenter | Qt::AlignVCenter);
+          return QVariant(Qt::AlignHCenter | Qt::AlignVCenter);
         case COLUMN_DURATION:
         case COLUMN_SEASON:
         case COLUMN_STARTED:
