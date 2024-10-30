@@ -73,6 +73,7 @@ target_sources(taiga-gui PRIVATE
 target_link_libraries(taiga-gui
 	Qt6::Core
 	Qt6::Gui
+	Qt6::Sql
 	Qt6::Widgets
 	taiga-config
 	taiga-deps

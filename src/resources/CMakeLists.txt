@@ -3,6 +3,7 @@ add_library(taiga-resources STATIC)
 target_sources(taiga-resources PUBLIC
 	icons.qrc
 	styles.qrc
+	sql.qrc
 )
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")

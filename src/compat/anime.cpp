@@ -19,25 +19,13 @@
 #include "anime.hpp"
 
 #include <QXmlStreamReader>
-#include <ranges>
 
 #include "base/log.hpp"
+#include "base/string.hpp"
 #include "base/xml.hpp"
 #include "compat/common.hpp"
 
 #define XML_ELEMENT xml.readElementText()
-
-namespace {
-
-[[nodiscard]] std::string toStdString(const QString& s) {
-  return s.toStdString();
-}
-
-std::vector<std::string> toVector(const QStringList& list) {
-  return list | std::views::transform(toStdString) | std::ranges::to<std::vector>();
-}
-
-}  // namespace
 
 namespace compat::v1 {
 

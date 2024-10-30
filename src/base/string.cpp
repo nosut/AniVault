@@ -16,13 +16,18 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#pragma once
+#include "string.hpp"
 
-#include <QList>
-#include <QString>
-#include <string>
-#include <vector>
+#include <ranges>
 
-using namespace Qt::Literals::StringLiterals;
+namespace {
 
-std::vector<std::string> toVector(const QStringList& list);
+[[nodiscard]] std::string toStdString(const QString& s) {
+  return s.toStdString();
+}
+
+}  // namespace
+
+std::vector<std::string> toVector(const QStringList& list) {
+  return list | std::views::transform(toStdString) | std::ranges::to<std::vector>();
+}

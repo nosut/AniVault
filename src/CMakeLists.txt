@@ -12,6 +12,8 @@ target_sources(taiga PRIVATE
 	base/rss.hpp
 	base/settings.cpp
 	base/settings.hpp
+	base/string.cpp
+	base/string.hpp
 	base/xml.cpp
 	base/xml.hpp
 
@@ -52,6 +54,7 @@ target_sources(taiga PRIVATE
 target_link_libraries(taiga PRIVATE
 	Qt6::Core
 	Qt6::Gui
+	Qt6::Sql
 	Qt6::Widgets
 	taiga-config
 	taiga-deps

@@ -19,6 +19,7 @@
 #pragma once
 
 #include <QMap>
+#include <QSqlDatabase>
 
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
@@ -30,7 +31,7 @@ class Database final : public QObject {
   Q_DISABLE_COPY_MOVE(Database)
 
 public:
-  Database() : QObject{} {}
+  Database();
   ~Database() = default;
 
   void init();
@@ -43,9 +44,18 @@ public:
 
 private:
   QString fileName() const;
+  QString sql(const QString& name) const;
+
+  void createTables();
+  QString currentVersion();
+
+  void readItems();
+  void readEntries();
 
   void migrateItemsFromV1();
   void migrateListEntriesFromV1();
+
+  QSqlDatabase db_;
 
   QMap<int, Anime> items_;
   QMap<int, ListEntry> entries_;

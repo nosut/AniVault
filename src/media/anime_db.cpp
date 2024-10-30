@@ -19,11 +19,16 @@
 #include "anime_db.hpp"
 
 #include <QFile>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QSqlRecord>
+#include <QSqlResult>
 #include <format>
 
 #include "base/string.hpp"
 #include "compat/anime.hpp"
 #include "compat/list.hpp"
+#include "gui/utils/format.hpp"
 #include "taiga/accounts.hpp"
 #include "taiga/path.hpp"
 #include "taiga/settings.hpp"
@@ -42,12 +47,21 @@ std::string serviceUsername(const std::string& service) {
 
 namespace anime {
 
+Database::Database() : QObject{} {}
+
 void Database::init() {
+  db_ = QSqlDatabase::addDatabase("QSQLITE");
+  db_.setDatabaseName(fileName());
+
   if (!QFile::exists(fileName())) {
+    createTables();
     migrateItemsFromV1();
     migrateListEntriesFromV1();
     return;
   }
+
+  readItems();
+  readEntries();
 }
 
 const Anime* Database::item(const int id) const {
@@ -72,28 +86,207 @@ QString Database::fileName() const {
   return u"%1/media.sqlite"_s.arg(QString::fromStdString(taiga::get_data_path()));
 }
 
+QString Database::sql(const QString& name) const {
+  QFile styleFile(u":/sql/%1.sql"_s.arg(name));
+  styleFile.open(QFile::ReadOnly);
+  return styleFile.readAll();
+}
+
+void Database::createTables() {
+  if (!db_.open()) return;
+
+  const auto tables = db_.tables();
+
+  db_.transaction();
+
+  if (!tables.contains("meta")) {
+    QSqlQuery q{db_};
+    q.exec(sql("createMeta"));
+    q.prepare("INSERT INTO meta(name, value) VALUES(:name, :value)");
+    q.bindValue(":name", "version");
+    q.bindValue(":value", QString::fromStdString(taiga::version().to_string()));
+    q.exec();
+  }
+
+  if (!tables.contains("anime")) {
+    QSqlQuery q{db_};
+    q.exec(sql("createAnime"));
+  }
+
+  if (!tables.contains("anime_list")) {
+    QSqlQuery q{db_};
+    q.exec(sql("createAnimeList"));
+  }
+
+  db_.commit();
+  db_.close();
+}
+
+QString Database::currentVersion() {
+  if (!db_.open()) return {};
+
+  QSqlQuery q{db_};
+
+  if (!q.prepare("SELECT value FROM meta WHERE name = :name")) return {};
+
+  q.bindValue(":name", "version");
+  q.exec();
+  const QString version = q.value(0).toString();
+
+  db_.close();
+
+  return version;
+}
+
+void Database::readItems() {
+  if (!db_.open()) return;
+
+  QSqlQuery q{db_};
+  if (!q.exec("SELECT * FROM anime")) return;
+
+  while (q.next()) {
+    const int id = q.value("id").toInt();
+    items_[id] = Anime{
+        .id = id,
+        .last_modified = q.value("modified").toInt(),
+        .episode_count = q.value("episode_count").toInt(),
+        .episode_length = q.value("episode_length").toInt(),
+        .age_rating = q.value("age_rating").value<anime::AgeRating>(),
+        .status = q.value("status").value<anime::Status>(),
+        .type = q.value("type").value<anime::Type>(),
+        .date_started = FuzzyDate(q.value("date_start").toString().toStdString()),
+        .date_finished = FuzzyDate(q.value("date_end").toString().toStdString()),
+        .score = q.value("score").toFloat(),
+        .popularity_rank = q.value("popularity").toInt(),
+        .image_url = q.value("image").toString().toStdString(),
+        .synopsis = q.value("synopsis").toString().toStdString(),
+        .trailer_id = q.value("trailer_id").toString().toStdString(),
+        .titles{
+            .romaji = q.value("title").toString().toStdString(),
+            .english = q.value("english").toString().toStdString(),
+            .japanese = q.value("japanese").toString().toStdString(),
+            .synonyms = toVector(q.value("synonym").toString().split(", ")),
+        },
+        .genres = toVector(q.value("genres").toString().split(", ")),
+        .producers = toVector(q.value("producers").toString().split(", ")),
+        .studios = toVector(q.value("studios").toString().split(", ")),
+        .tags = toVector(q.value("tags").toString().split(", ")),
+        .last_aired_episode = q.value("last_aired_episode").toInt(),
+        .next_episode_time = q.value("next_episode_time").toInt(),
+    };
+  }
+
+  db_.close();
+}
+
+void Database::readEntries() {
+  if (!db_.open()) return;
+
+  QSqlQuery q{db_};
+  if (!q.exec("SELECT * FROM anime_list")) return;
+
+  while (q.next()) {
+    const int id = q.value("media_id").toInt();
+    entries_[id] = ListEntry{
+        .id = q.value("library_id").toString().toStdString(),
+        .anime_id = id,
+        .watched_episodes = q.value("progress").toInt(),
+        .score = q.value("score").toInt(),
+        .status = q.value("status").value<anime::list::Status>(),
+        .is_private = q.value("private").toBool(),
+        .rewatched_times = q.value("rewatched_times").toInt(),
+        .rewatching = q.value("rewatching").toBool(),
+        .rewatching_ep = q.value("rewatching_ep").toInt(),
+        .date_started = FuzzyDate(q.value("date_start").toString().toStdString()),
+        .date_completed = FuzzyDate(q.value("date_end").toString().toStdString()),
+        .last_updated = q.value("last_updated").toInt(),
+        .notes = q.value("notes").toString().toStdString(),
+    };
+  }
+
+  db_.close();
+}
+
 void Database::migrateItemsFromV1() {
+  if (!db_.open()) return;
+
+  QSqlQuery q{db_};
+  if (!q.prepare(sql("insertAnime"))) return;
+
   const auto path = std::format("{}/v1/db/anime.xml", taiga::get_data_path());
 
-  auto items = compat::v1::readAnimeDatabase(path);
+  db_.transaction();
 
-  for (auto&& item : items) {
-    items_[item.id] = std::move(item);
+  for (const auto& item : compat::v1::readAnimeDatabase(path)) {
+    items_[item.id] = item;
+
+    q.bindValue(":id", item.id);
+    q.bindValue(":title", QString::fromStdString(item.titles.romaji));
+    q.bindValue(":english", QString::fromStdString(item.titles.english));
+    q.bindValue(":japanese", QString::fromStdString(item.titles.japanese));
+    q.bindValue(":synonym", gui::joinStrings(item.titles.synonyms, ""));
+    q.bindValue(":type", static_cast<int>(item.type));
+    q.bindValue(":status", static_cast<int>(item.status));
+    q.bindValue(":episode_count", item.episode_count);
+    q.bindValue(":episode_length", item.episode_length);
+    q.bindValue(":date_start", QString::fromStdString(item.date_started.to_string()));
+    q.bindValue(":date_end", QString::fromStdString(item.date_finished.to_string()));
+    q.bindValue(":image", QString::fromStdString(item.image_url));
+    q.bindValue(":trailer_id", QString::fromStdString(item.trailer_id));
+    q.bindValue(":age_rating", static_cast<int>(item.age_rating));
+    q.bindValue(":genres", gui::joinStrings(item.genres, ""));
+    q.bindValue(":tags", gui::joinStrings(item.tags, ""));
+    q.bindValue(":producers", gui::joinStrings(item.producers, ""));
+    q.bindValue(":studios", gui::joinStrings(item.studios, ""));
+    q.bindValue(":score", QString::number(item.score));
+    q.bindValue(":popularity", item.popularity_rank);
+    q.bindValue(":synopsis", QString::fromStdString(item.synopsis));
+    q.bindValue(":last_aired_episode", item.last_aired_episode);
+    q.bindValue(":next_episode_time", QString::number(item.next_episode_time));
+    q.bindValue(":modified", QString::number(item.last_modified));
+    q.exec();
   }
+
+  db_.commit();
+  db_.close();
 }
 
 void Database::migrateListEntriesFromV1() {
+  if (!db_.open()) return;
+
+  QSqlQuery q{db_};
+  if (!q.prepare(sql("insertAnimeList"))) return;
+
   const auto service = taiga::settings.service();
   const auto username = serviceUsername(service);
   const auto path =
       std::format("{}/v1/user/{}@{}/anime.xml", taiga::get_data_path(), username, service);
 
-  auto entries = compat::v1::readListEntries(path);
+  db_.transaction();
 
-  for (auto&& entry : entries) {
+  for (const auto& entry : compat::v1::readListEntries(path)) {
     if (!items_.contains(entry.anime_id)) continue;
-    entries_[entry.anime_id] = std::move(entry);
+
+    entries_[entry.anime_id] = entry;
+
+    q.bindValue(":id", QString::fromStdString(entry.id));
+    q.bindValue(":media_id", entry.anime_id);
+    q.bindValue(":progress", entry.watched_episodes);
+    q.bindValue(":date_start", QString::fromStdString(entry.date_started.to_string()));
+    q.bindValue(":date_end", QString::fromStdString(entry.date_completed.to_string()));
+    q.bindValue(":score", entry.score);
+    q.bindValue(":status", static_cast<int>(entry.status));
+    q.bindValue(":private", entry.is_private);
+    q.bindValue(":rewatched_times", entry.rewatched_times);
+    q.bindValue(":rewatching", entry.rewatching);
+    q.bindValue(":rewatching_ep", entry.rewatching_ep);
+    q.bindValue(":notes", QString::fromStdString(entry.notes));
+    q.bindValue(":last_updated", QString::number(entry.last_updated));
+    q.exec();
   }
+
+  db_.commit();
+  db_.close();
 }
 
 }  // namespace anime

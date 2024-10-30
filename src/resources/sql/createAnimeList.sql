@@ -1,0 +1,16 @@
+CREATE TABLE IF NOT EXISTS anime_list(
+  id INTEGER PRIMARY KEY,
+  media_id INTEGER NOT NULL,
+  progress INTEGER,
+  date_start TEXT,
+  date_end TEXT,
+  score INTEGER,
+  status INTEGER,
+  private INTEGER,
+  rewatched_times INTEGER,
+  rewatching INTEGER,
+  rewatching_ep INTEGER,
+  notes TEXT,
+  last_updated TEXT,
+  FOREIGN KEY (media_id) REFERENCES media (id)
+);
