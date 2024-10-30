@@ -49,6 +49,8 @@ public:
   void setMyanimelistAccessToken(const std::string& accessToken) const;
   void setMyanimelistRefreshToken(const std::string& refreshToken) const;
 
+  std::string serviceUsername(const std::string& service) const;
+
 private:
   QString fileName() const override;
 };

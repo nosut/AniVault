@@ -33,17 +33,6 @@
 #include "taiga/settings.hpp"
 #include "taiga/version.hpp"
 
-namespace {
-
-std::string serviceUsername(const std::string& service) {
-  if (service == "anilist") return taiga::accounts.anilistUsername();
-  if (service == "kitsu") return taiga::accounts.kitsuUsername();
-  if (service == "myanimelist") return taiga::accounts.myanimelistUsername();
-  return std::string{};
-}
-
-}  // namespace
-
 namespace anime {
 
 Database::Database() : QObject{} {}
@@ -312,7 +301,7 @@ void Database::migrateListEntriesFromV1() {
   const auto path = []() {
     const auto service = taiga::settings.service();
     return std::format("{}/v1/user/{}@{}/anime.xml", taiga::get_data_path(),
-                       serviceUsername(service), service);
+                       taiga::accounts.serviceUsername(service), service);
   }();
 
   db_.transaction();

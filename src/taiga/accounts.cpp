@@ -95,4 +95,13 @@ void Accounts::setMyanimelistRefreshToken(const std::string& refreshToken) const
   setValue("myanimelist.refreshToken", refreshToken);
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+std::string Accounts::serviceUsername(const std::string& service) const {
+  if (service == "anilist") return anilistUsername();
+  if (service == "kitsu") return kitsuUsername();
+  if (service == "myanimelist") return myanimelistUsername();
+  return {};
+}
+
 }  // namespace taiga
