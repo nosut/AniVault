@@ -224,6 +224,9 @@ void Database::bindEntryToQuery(const ListEntry& entry, QSqlQuery& q) const {
 }
 
 Anime Database::itemFromQuery(const QSqlQuery& q) const {
+  static const auto splitToVector = [](const QVariant& variant) {
+    return toVector(variant.toString().split(", ", Qt::SkipEmptyParts));
+  };
   return {
       .id = q.value("id").toInt(),
       .last_modified = q.value("modified").toInt(),
@@ -243,12 +246,12 @@ Anime Database::itemFromQuery(const QSqlQuery& q) const {
           .romaji = q.value("title").toString().toStdString(),
           .english = q.value("english").toString().toStdString(),
           .japanese = q.value("japanese").toString().toStdString(),
-          .synonyms = toVector(q.value("synonym").toString().split(", ")),
+          .synonyms = splitToVector(q.value("synonym")),
       },
-      .genres = toVector(q.value("genres").toString().split(", ")),
-      .producers = toVector(q.value("producers").toString().split(", ")),
-      .studios = toVector(q.value("studios").toString().split(", ")),
-      .tags = toVector(q.value("tags").toString().split(", ")),
+      .genres = splitToVector(q.value("genres")),
+      .producers = splitToVector(q.value("producers")),
+      .studios = splitToVector(q.value("studios")),
+      .tags = splitToVector(q.value("tags")),
       .last_aired_episode = q.value("last_aired_episode").toInt(),
       .next_episode_time = q.value("next_episode_time").toInt(),
   };

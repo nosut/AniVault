@@ -107,16 +107,16 @@ Anime parseAnimeElement(QXmlStreamReader& xml) {
       anime.age_rating = static_cast<anime::AgeRating>(XML_ELEMENT.toInt());
 
     } else if (xml.name() == u"genres") {
-      anime.genres = toVector(XML_ELEMENT.split(", "));
+      anime.genres = toVector(XML_ELEMENT.split(", ", Qt::SkipEmptyParts));
 
     } else if (xml.name() == u"tags") {
-      anime.tags = toVector(XML_ELEMENT.split(", "));
+      anime.tags = toVector(XML_ELEMENT.split(", ", Qt::SkipEmptyParts));
 
     } else if (xml.name() == u"producers") {
-      anime.producers = toVector(XML_ELEMENT.split(", "));
+      anime.producers = toVector(XML_ELEMENT.split(", ", Qt::SkipEmptyParts));
 
     } else if (xml.name() == u"studios") {
-      anime.studios = toVector(XML_ELEMENT.split(", "));
+      anime.studios = toVector(XML_ELEMENT.split(", ", Qt::SkipEmptyParts));
 
     } else if (xml.name() == u"score") {
       anime.score = XML_ELEMENT.toFloat();
