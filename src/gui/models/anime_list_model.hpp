@@ -20,7 +20,6 @@
 
 #include <QAbstractListModel>
 #include <QList>
-#include <QMap>
 
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
@@ -68,8 +67,6 @@ public:
 
 private:
   QList<int> m_ids;
-  QMap<int, Anime> m_anime;
-  QMap<int, ListEntry> m_entries;
 };
 
 }  // namespace gui

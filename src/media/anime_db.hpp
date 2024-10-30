@@ -18,14 +18,39 @@
 
 #pragma once
 
-#include <QList>
+#include <QMap>
 
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
 
 namespace anime {
 
-QList<Anime> readDatabase();
-QList<ListEntry> readListEntries();
+class Database final : public QObject {
+  Q_OBJECT
+  Q_DISABLE_COPY_MOVE(Database)
+
+public:
+  Database() : QObject{} {}
+  ~Database() = default;
+
+  void init();
+
+  const Anime* item(const int id) const;
+  const ListEntry* entry(const int id) const;
+
+  const QMap<int, Anime>& items() const;
+  const QMap<int, ListEntry>& entries() const;
+
+private:
+  QString fileName() const;
+
+  void migrateItemsFromV1();
+  void migrateListEntriesFromV1();
+
+  QMap<int, Anime> items_;
+  QMap<int, ListEntry> entries_;
+};
+
+inline Database db;
 
 }  // namespace anime

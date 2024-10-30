@@ -25,6 +25,7 @@
 #include "base/log.hpp"
 #include "gui/main/main_window.hpp"
 #include "gui/utils/theme.hpp"
+#include "media/anime_db.hpp"
 #include "taiga/config.h"
 #include "taiga/path.hpp"
 #include "taiga/settings.hpp"
@@ -67,8 +68,8 @@ int Application::run() {
     return 0;
   }
 
-  // @TODO: Read settings, database, list, etc.
-  taiga::settings.migrate();
+  taiga::settings.init();
+  anime::db.init();
 
   gui::theme.initStyle();
   setWindowIcon(gui::theme.getIcon("taiga", "png"));

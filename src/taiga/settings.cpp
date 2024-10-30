@@ -30,7 +30,7 @@
 
 namespace taiga {
 
-void Settings::migrate() const {
+void Settings::init() const {
   const auto appVersion = taiga::version().to_string();
 
   // v1 to v2

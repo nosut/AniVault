@@ -27,7 +27,7 @@ namespace taiga {
 
 class Settings final : public base::Settings {
 public:
-  void migrate() const;
+  void init() const;
 
   std::string service() const;
   std::vector<std::string> libraryFolders() const;

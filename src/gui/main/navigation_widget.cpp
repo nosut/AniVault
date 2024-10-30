@@ -71,8 +71,7 @@ void NavigationWidget::refresh() {
 
   const auto statusCounts = []() {
     QMap<anime::list::Status, int> statuses;
-    const auto entries = anime::readListEntries();
-    for (const auto& entry : entries) {
+    for (const auto& entry : anime::db.entries()) {
       statuses[entry.status] += 1;
     }
     return statuses;

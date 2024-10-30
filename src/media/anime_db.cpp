@@ -18,34 +18,82 @@
 
 #include "anime_db.hpp"
 
+#include <QFile>
 #include <format>
 
+#include "base/string.hpp"
 #include "compat/anime.hpp"
 #include "compat/list.hpp"
 #include "taiga/accounts.hpp"
 #include "taiga/path.hpp"
 #include "taiga/settings.hpp"
+#include "taiga/version.hpp"
+
+namespace {
+
+std::string serviceUsername(const std::string& service) {
+  if (service == "anilist") return taiga::accounts.anilistUsername();
+  if (service == "kitsu") return taiga::accounts.kitsuUsername();
+  if (service == "myanimelist") return taiga::accounts.myanimelistUsername();
+  return std::string{};
+}
+
+}  // namespace
 
 namespace anime {
 
-QList<Anime> readDatabase() {
-  const auto data_path = taiga::get_data_path();
-  return compat::v1::readAnimeDatabase(std::format("{}/v1/db/anime.xml", data_path));
+void Database::init() {
+  if (!QFile::exists(fileName())) {
+    migrateItemsFromV1();
+    migrateListEntriesFromV1();
+    return;
+  }
 }
 
-QList<ListEntry> readListEntries() {
-  const auto data_path = taiga::get_data_path();
+const Anime* Database::item(const int id) const {
+  const auto it = items_.find(id);
+  return it != items_.end() ? &(*it) : nullptr;
+}
 
+const ListEntry* Database::entry(const int id) const {
+  const auto it = entries_.find(id);
+  return it != entries_.end() ? &(*it) : nullptr;
+}
+
+const QMap<int, Anime>& Database::items() const {
+  return items_;
+}
+
+const QMap<int, ListEntry>& Database::entries() const {
+  return entries_;
+}
+
+QString Database::fileName() const {
+  return u"%1/media.sqlite"_s.arg(QString::fromStdString(taiga::get_data_path()));
+}
+
+void Database::migrateItemsFromV1() {
+  const auto path = std::format("{}/v1/db/anime.xml", taiga::get_data_path());
+
+  auto items = compat::v1::readAnimeDatabase(path);
+
+  for (auto&& item : items) {
+    items_[item.id] = std::move(item);
+  }
+}
+
+void Database::migrateListEntriesFromV1() {
   const auto service = taiga::settings.service();
-  const auto username = [service]() {
-    if (service == "anilist") return taiga::accounts.anilistUsername();
-    if (service == "kitsu") return taiga::accounts.kitsuUsername();
-    if (service == "myanimelist") return taiga::accounts.myanimelistUsername();
-    return std::string{};
-  }();
+  const auto username = serviceUsername(service);
+  const auto path =
+      std::format("{}/v1/user/{}@{}/anime.xml", taiga::get_data_path(), username, service);
 
-  return compat::v1::readListEntries(
-      std::format("{}/v1/user/{}@{}/anime.xml", data_path, username, service));
+  auto entries = compat::v1::readListEntries(path);
+
+  for (auto&& entry : entries) {
+    if (!items_.contains(entry.anime_id)) continue;
+    entries_[entry.anime_id] = std::move(entry);
+  }
 }
 
 }  // namespace anime

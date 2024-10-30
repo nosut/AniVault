@@ -32,19 +32,8 @@
 namespace gui {
 
 AnimeListModel::AnimeListModel(QObject* parent) : QAbstractListModel(parent) {
-  const auto db = anime::readDatabase();
-  const auto entries = anime::readListEntries();
-
-  beginInsertRows({}, 0, db.size());
-
-  for (const auto& anime : db) {
-    m_anime[anime.id] = anime;
-    m_ids.push_back(anime.id);
-  }
-  for (const auto& entry : entries) {
-    m_entries[entry.anime_id] = entry;
-  }
-
+  beginInsertRows({}, 0, anime::db.items().size());
+  m_ids = anime::db.items().keys();
   endInsertRows();
 }
 
@@ -179,11 +168,8 @@ QVariant AnimeListModel::data(const QModelIndex& index, int role) const {
 bool AnimeListModel::setData(const QModelIndex& index, const QVariant& value, int role) {
   if (index.isValid() && role == Qt::EditRole) {
     if (index.column() == COLUMN_SCORE) {
-      // @TODO: Add to queue instead of directly modifying the entry
       const int id = m_ids.at(index.row());
-      const auto entry = m_entries.find(id);
-      entry->score = value.toString().toInt();
-      emit dataChanged(index, index, {role});
+      // @TODO: Add to queue
       return true;
     }
   }
@@ -260,16 +246,12 @@ Qt::ItemFlags AnimeListModel::flags(const QModelIndex& index) const {
 
 const Anime* AnimeListModel::getAnime(const QModelIndex& index) const {
   if (!index.isValid()) return nullptr;
-  const int id = m_ids.at(index.row());
-  const auto it = m_anime.find(id);
-  return it != m_anime.end() ? &*it : nullptr;
+  return anime::db.item(m_ids.at(index.row()));
 }
 
 const ListEntry* AnimeListModel::getListEntry(const QModelIndex& index) const {
   if (!index.isValid()) return nullptr;
-  const int id = m_ids.at(index.row());
-  const auto it = m_entries.find(id);
-  return it != m_entries.end() ? &*it : nullptr;
+  return anime::db.entry(m_ids.at(index.row()));
 }
 
 }  // namespace gui
