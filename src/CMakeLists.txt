@@ -73,3 +73,10 @@ endif()
 
 add_subdirectory(gui)
 add_subdirectory(resources)
+
+qt_add_translations(taiga
+	SOURCE_TARGETS taiga-gui
+	TS_FILE_BASE taiga
+	TS_FILE_DIR resources/translations
+	LUPDATE_OPTIONS -no-obsolete -locations none
+)

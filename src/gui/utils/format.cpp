@@ -18,6 +18,7 @@
 
 #include "format.hpp"
 
+#include <QCoreApplication>
 #include <QDate>
 #include <QDateTime>
 #include <cmath>
@@ -75,12 +76,31 @@ QString formatAsRelativeTime(const qint64 time, QString placeholder) {
   const Duration duration(std::chrono::seconds{std::abs(timeDiff)});
 
   const QString str = [&duration]() {
-    if (duration.seconds() < 90) return u"a moment"_s;
-    if (duration.minutes() < 45) return u"%1 minute(s)"_s.arg(std::lround(duration.minutes()));
-    if (duration.hours() < 22) return u"%1 hour(s)"_s.arg(std::lround(duration.hours()));
-    if (duration.days() < 25) return u"%1 day(s)"_s.arg(std::lround(duration.days()));
-    if (duration.days() < 345) return u"%1 month(s)"_s.arg(std::lround(duration.months()));
-    return u"%1 year(s)"_s.arg(std::lround(duration.years()));
+    // clang-format off
+    if (duration.seconds() < 90) {
+      return QCoreApplication::translate("gui/utils/format", "a moment");
+    }
+    if (duration.minutes() < 45) {
+      const auto n = std::lround(duration.minutes());
+      return QCoreApplication::translate("gui/utils/format", "%n minute(s)", nullptr, n);
+    }
+    if (duration.hours() < 22) {
+      const auto n = std::lround(duration.hours());
+      return QCoreApplication::translate("gui/utils/format", "%n hour(s)", nullptr, n);
+    }
+    if (duration.days() < 25) {
+      const auto n = std::lround(duration.days());
+      return QCoreApplication::translate("gui/utils/format", "%n day(s)", nullptr, n);
+    }
+    if (duration.days() < 345) {
+      const auto n = std::lround(duration.months());
+      return QCoreApplication::translate("gui/utils/format", "%n month(s)", nullptr, n);
+    }
+    {
+      const auto n = std::lround(duration.years());
+      return QCoreApplication::translate("gui/utils/format", "%n year(s)", nullptr, n);
+    }
+    // clang-format on
   }();
 
   return timeDiff < 0 ? u"in %1"_s.arg(str) : u"%1 ago"_s.arg(str);

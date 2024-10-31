@@ -7,6 +7,7 @@ list(APPEND CMAKE_PREFIX_PATH "%QTDIR%/lib/cmake")
 find_package(Qt6 REQUIRED COMPONENTS
 	Core
 	Gui
+	LinguistTools
 	Sql
 	Svg
 	Widgets

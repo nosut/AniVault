@@ -20,6 +20,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QTranslator>
 #include <format>
 
 #include "base/log.hpp"
@@ -73,6 +74,11 @@ int Application::run() {
 
   gui::theme.initStyle();
   setWindowIcon(gui::theme.getIcon("taiga", "png"));
+
+  QTranslator translator;
+  if (translator.load(QLocale::system(), "taiga", "_", ":/i18n")) {
+    installTranslator(&translator);
+  }
 
   window_ = new gui::MainWindow();
   window_->init();
