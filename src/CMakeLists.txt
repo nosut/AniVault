@@ -34,6 +34,9 @@ target_sources(taiga PRIVATE
 	media/anime_season.hpp
 	media/anime.hpp
 
+	sync/service.cpp
+	sync/service.hpp
+
 	taiga/accounts.cpp
 	taiga/accounts.hpp
 	taiga/application.cpp

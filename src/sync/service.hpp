@@ -18,8 +18,7 @@
 
 #pragma once
 
-#include <array>
-#include <string>
+#include <QString>
 
 namespace sync {
 
@@ -30,22 +29,13 @@ enum class ServiceId {
   AniList,
 };
 
-constexpr std::array<ServiceId, 3> kServiceIds{
-  ServiceId::MyAnimeList,
-  ServiceId::Kitsu,
-  ServiceId::AniList
-};
-
 struct Rating {
   int value = 0;
-  std::wstring text;
+  QString text;
 };
 
-ServiceId GetCurrentServiceId();
-std::wstring GetCurrentServiceName();
-std::wstring GetCurrentServiceSlug();
-ServiceId GetServiceIdBySlug(const std::wstring& slug);
-std::wstring GetServiceNameById(const ServiceId service_id);
-std::wstring GetServiceSlugById(const ServiceId service_id);
+ServiceId serviceIdFromSlug(const QString& slug);
+QString serviceName(const ServiceId serviceId);
+QString serviceSlug(const ServiceId serviceId);
 
 }  // namespace sync
