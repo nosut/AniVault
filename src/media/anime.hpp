@@ -78,7 +78,6 @@ constexpr int kUnknownEpisodeCount = -1;
 constexpr int kUnknownEpisodeLength = -1;
 constexpr int kUnknownId = 0;
 constexpr double kUnknownScore = 0.0;
-constexpr int kUserScoreMax = 100;
 
 struct Titles {
   std::string romaji;

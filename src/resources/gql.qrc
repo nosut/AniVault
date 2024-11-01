@@ -1,0 +1,5 @@
+<RCC>
+  <qresource>
+    <file>gql/anilist/Media.gql</file>
+  </qresource>
+</RCC>

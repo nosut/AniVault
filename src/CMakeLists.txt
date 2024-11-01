@@ -34,6 +34,14 @@ target_sources(taiga PRIVATE
 	media/anime_season.hpp
 	media/anime.hpp
 
+	sync/anilist.cpp
+	sync/anilist.hpp
+	sync/anilist_parsers.cpp
+	sync/anilist_parsers.hpp
+	sync/anilist_ratings.cpp
+	sync/anilist_ratings.hpp
+	sync/anilist_utils.cpp
+	sync/anilist_utils.hpp
 	sync/service.cpp
 	sync/service.hpp
 

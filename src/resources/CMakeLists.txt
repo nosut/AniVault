@@ -1,6 +1,7 @@
 add_library(taiga-resources STATIC)
 
 target_sources(taiga-resources PUBLIC
+	gql.qrc
 	icons.qrc
 	styles.qrc
 	sql.qrc

@@ -18,25 +18,26 @@
 
 #pragma once
 
-#include <vector>
-
-namespace sync {
-struct Rating;
-}
+#include <QNetworkRequestFactory>
+#include <QRestAccessManager>
 
 namespace sync::anilist {
 
-enum class RatingSystem {
-  Point_100,
-  Point_10_Decimal,
-  Point_10,
-  Point_5,
-  Point_3,
+class Service : public QObject {
+public:
+  Service();
+
+  void fetchAnime(const int id);
+
+private:
+  QString gql(const QString& name) const;
+
+  void handleError(const QRestReply& reply) const;
+
+  QNetworkRequestFactory api_;
+  QRestAccessManager manager_;
 };
 
-constexpr auto kDefaultRatingSystem = RatingSystem::Point_10;
-
-RatingSystem GetRatingSystem();
-std::vector<sync::Rating> GetMyRatings(const RatingSystem rating_system);
+inline Service service;
 
 }  // namespace sync::anilist

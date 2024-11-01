@@ -45,6 +45,7 @@ constexpr std::array<Status, 5> kStatuses{
 // clang-format on
 
 constexpr int kUnknownId = 0;
+constexpr int kScoreMax = 100;
 
 struct Entry {
   int64_t id = kUnknownId;
