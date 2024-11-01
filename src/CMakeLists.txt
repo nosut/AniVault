@@ -7,6 +7,8 @@ add_executable(taiga)
 target_sources(taiga PRIVATE
 	base/chrono.cpp
 	base/chrono.hpp
+	base/file.cpp
+	base/file.hpp
 	base/log.hpp
 	base/preprocessor.h
 	base/rss.hpp

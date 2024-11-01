@@ -25,6 +25,7 @@
 #include <QSqlResult>
 #include <format>
 
+#include "base/file.hpp"
 #include "base/string.hpp"
 #include "compat/anime.hpp"
 #include "compat/list.hpp"
@@ -101,9 +102,7 @@ QString Database::fileName() const {
 }
 
 QString Database::sql(const QString& name) const {
-  QFile styleFile(u":/sql/%1.sql"_s.arg(name));
-  styleFile.open(QFile::ReadOnly);
-  return styleFile.readAll();
+  return base::readFile(u":/sql/%1.sql"_s.arg(name));
 }
 
 void Database::createTables() {

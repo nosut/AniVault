@@ -19,9 +19,9 @@
 #include "theme.hpp"
 
 #include <QApplication>
-#include <QFile>
 #include <QStyleHints>
 
+#include "base/file.hpp"
 #include "base/string.hpp"
 #include "gui/utils/svg_icon_engine.hpp"
 #include "taiga/settings.hpp"
@@ -61,9 +61,7 @@ bool Theme::isDark() const {
 }
 
 QString Theme::readStylesheet(const QString& name) const {
-  QFile styleFile(u":/styles/%1.qss"_s.arg(name));
-  styleFile.open(QFile::ReadOnly);
-  return styleFile.readAll();
+  return base::readFile(u":/styles/%1.qss"_s.arg(name));
 }
 
 }  // namespace gui
