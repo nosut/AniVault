@@ -8,6 +8,7 @@ find_package(Qt6 REQUIRED COMPONENTS
 	Core
 	Gui
 	LinguistTools
+	Network
 	Sql
 	Svg
 	Widgets

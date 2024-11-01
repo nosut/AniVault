@@ -56,6 +56,7 @@ target_sources(taiga PRIVATE
 target_link_libraries(taiga PRIVATE
 	Qt6::Core
 	Qt6::Gui
+	Qt6::Network
 	Qt6::Sql
 	Qt6::Widgets
 	taiga-config
