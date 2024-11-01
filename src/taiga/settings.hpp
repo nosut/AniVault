@@ -29,9 +29,11 @@ class Settings final : public base::Settings {
 public:
   void init() const;
 
+  Qt::ColorScheme appColorScheme() const;
   std::string service() const;
   std::vector<std::string> libraryFolders() const;
 
+  void setAppColorScheme(const Qt::ColorScheme scheme) const;
   void setService(const std::string& service) const;
   void setLibraryFolders(std::vector<std::string> folders) const;
 

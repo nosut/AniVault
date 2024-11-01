@@ -53,6 +53,11 @@ QString Settings::fileName() const {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+Qt::ColorScheme Settings::appColorScheme() const {
+  return value("app.colorScheme", static_cast<int>(Qt::ColorScheme::Unknown))
+      .value<Qt::ColorScheme>();
+}
+
 std::string Settings::service() const {
   return value("v1.service").toString().toStdString();
 }
@@ -64,6 +69,10 @@ std::vector<std::string> Settings::libraryFolders() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+void Settings::setAppColorScheme(const Qt::ColorScheme scheme) const {
+  setValue("app.colorScheme", static_cast<int>(scheme));
+}
 
 void Settings::setService(const std::string& service) const {
   setValue("v1.service", service);

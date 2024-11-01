@@ -24,6 +24,7 @@
 
 #include "base/string.hpp"
 #include "gui/utils/svg_icon_engine.hpp"
+#include "taiga/settings.hpp"
 
 namespace gui {
 
@@ -42,9 +43,13 @@ const QIcon& Theme::getIcon(const QString& key, const QString& extension, bool u
 }
 
 void Theme::initStyle() {
+  qApp->styleHints()->setColorScheme(taiga::settings.appColorScheme());
+
+  connect(qApp->styleHints(), &QStyleHints::colorSchemeChanged, this,
+          [](Qt::ColorScheme scheme) { qApp->styleHints()->setColorScheme(scheme); });
+
 #ifdef Q_OS_WINDOWS
   qApp->setStyle("fusion");
-  // @TODO: Use QStyleHints::colorSchemeChanged signal to detect changes
   const QString mainStylesheet = readStylesheet("main");
   const QString themeStylesheet = readStylesheet(isDark() ? "dark" : "light");
   qApp->setStyleSheet(mainStylesheet + themeStylesheet);
