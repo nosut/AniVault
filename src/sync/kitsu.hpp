@@ -20,25 +20,17 @@
 
 namespace sync::kitsu {
 
-enum MyPrivacy {
+enum ListPrivacy {
   kPrivate = 1,
-  kPublic
+  kPublic,
 };
 
-enum MyStatus {
+enum ListStatus {
   kCurrentlyWatching = 1,
   kPlanToWatch,
   kCompleted,
   kOnHold,
-  kDropped
+  kDropped,
 };
-
-enum class RatingSystem {
-  Simple,
-  Regular,
-  Advanced,
-};
-
-constexpr auto kDefaultRatingSystem = RatingSystem::Regular;
 
 }  // namespace sync::kitsu
