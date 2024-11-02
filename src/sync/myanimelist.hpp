@@ -18,30 +18,9 @@
 
 #pragma once
 
-#include <string>
-
-namespace anime {
-class Season;
-}
-namespace library {
-struct QueueItem;
-}
-
 namespace sync::myanimelist {
 
-void RequestAccessToken(const std::wstring& authorization_code,
-                        const std::wstring& code_verifier);
-void RefreshAccessToken();
-void GetUser();
-void GetLibraryEntries(const int page_offset = 0);
-void GetMetadataById(const int id);
-void GetSeason(const anime::Season season, const int page_offset = 0);
-void SearchTitle(const std::wstring& title);
-void AddLibraryEntry(const library::QueueItem& queue_item);
-void DeleteLibraryEntry(const int id);
-void UpdateLibraryEntry(const library::QueueItem& queue_item);
-
-bool IsUserAuthenticated();
-void InvalidateUserAuthentication();
+constexpr auto kClientId = "f6e398095cf7525360276786ec4407bc";
+constexpr auto kRedirectUrl = "https://taiga.moe/api/myanimelist/auth";
 
 }  // namespace sync::myanimelist

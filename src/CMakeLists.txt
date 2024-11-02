@@ -42,6 +42,11 @@ target_sources(taiga PRIVATE
 	sync/anilist_ratings.hpp
 	sync/anilist_utils.cpp
 	sync/anilist_utils.hpp
+	sync/myanimelist.hpp
+	sync/myanimelist_parsers.cpp
+	sync/myanimelist_parsers.hpp
+	sync/myanimelist_utils.cpp
+	sync/myanimelist_utils.hpp
 	sync/service.cpp
 	sync/service.hpp
 

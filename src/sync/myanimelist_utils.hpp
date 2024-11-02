@@ -18,30 +18,27 @@
 
 #pragma once
 
+#include <QList>
+#include <QString>
 #include <string>
 
-namespace anime {
-class Season;
+namespace anime::list {
+enum class Status;
 }
-namespace library {
-struct QueueItem;
+
+namespace sync {
+struct Rating;
 }
 
 namespace sync::myanimelist {
 
-void RequestAccessToken(const std::wstring& authorization_code,
-                        const std::wstring& code_verifier);
-void RefreshAccessToken();
-void GetUser();
-void GetLibraryEntries(const int page_offset = 0);
-void GetMetadataById(const int id);
-void GetSeason(const anime::Season season, const int page_offset = 0);
-void SearchTitle(const std::wstring& title);
-void AddLibraryEntry(const library::QueueItem& queue_item);
-void DeleteLibraryEntry(const int id);
-void UpdateLibraryEntry(const library::QueueItem& queue_item);
+int fromListScore(int value);
+QString fromListStatus(const anime::list::Status value);
 
-bool IsUserAuthenticated();
-void InvalidateUserAuthentication();
+QList<sync::Rating> ratingList();
+QString formatRating(const int value);
+
+std::string animePageUrl(const int id);
+std::string authorizationCodeUrl(std::string& codeVerifier);
 
 }  // namespace sync::myanimelist

@@ -18,30 +18,31 @@
 
 #pragma once
 
-#include <string>
+#include <QString>
+
+namespace base {
+class FuzzyDate;
+}
 
 namespace anime {
-class Season;
-}
-namespace library {
-struct QueueItem;
+enum class AgeRating;
+enum class Status;
+enum class Type;
+}  // namespace anime
+
+namespace anime::list {
+enum class Status;
 }
 
 namespace sync::myanimelist {
 
-void RequestAccessToken(const std::wstring& authorization_code,
-                        const std::wstring& code_verifier);
-void RefreshAccessToken();
-void GetUser();
-void GetLibraryEntries(const int page_offset = 0);
-void GetMetadataById(const int id);
-void GetSeason(const anime::Season season, const int page_offset = 0);
-void SearchTitle(const std::wstring& title);
-void AddLibraryEntry(const library::QueueItem& queue_item);
-void DeleteLibraryEntry(const int id);
-void UpdateLibraryEntry(const library::QueueItem& queue_item);
-
-bool IsUserAuthenticated();
-void InvalidateUserAuthentication();
+anime::AgeRating parseAgeRating(const QString& value);
+base::FuzzyDate parseFuzzyDate(const QString& value);
+int parseEpisodeLength(int value);
+anime::Status parseStatus(const QString& value);
+anime::Type parseType(const QString& value);
+std::time_t parseListLastUpdated(const QString& value);
+int parseListScore(int value);
+anime::list::Status parseListStatus(const QString& value);
 
 }  // namespace sync::myanimelist
