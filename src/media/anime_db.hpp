@@ -46,6 +46,10 @@ public:
   void updateItem(const Anime& item);
   void updateEntry(const ListEntry& entry);
 
+signals:
+  void itemUpdated(const int id);
+  void entryUpdated(const int id);
+
 private:
   QString fileName() const;
   QString sql(const QString& name) const;

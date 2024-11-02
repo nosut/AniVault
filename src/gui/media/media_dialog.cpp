@@ -60,6 +60,13 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
     if (id == m_anime.id) loadPosterImage();
   });
 
+  connect(&anime::db, &anime::Database::itemUpdated, this, [this](const int id) {
+    if (id != m_anime.id) return;
+    m_anime = *anime::db.item(id);
+    initTitles();
+    initDetails();
+  });
+
   connect(ui_->splitter, &QSplitter::splitterMoved, this, [this]() { resizePosterImage(); });
 
   connect(ui_->checkRewatching, &QCheckBox::checkStateChanged, this, [this](Qt::CheckState state) {

@@ -79,9 +79,11 @@ void Database::updateItem(const Anime& item) {
   bindItemToQuery(item, q);
   q.exec();
 
+  db_.close();
+
   items_[item.id] = item;
 
-  db_.close();
+  emit itemUpdated(item.id);
 }
 
 void Database::updateEntry(const ListEntry& entry) {
@@ -92,9 +94,11 @@ void Database::updateEntry(const ListEntry& entry) {
   bindEntryToQuery(entry, q);
   q.exec();
 
+  db_.close();
+
   entries_[entry.anime_id] = entry;
 
-  db_.close();
+  emit entryUpdated(entry.anime_id);
 }
 
 QString Database::fileName() const {
