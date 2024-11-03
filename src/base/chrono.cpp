@@ -46,6 +46,10 @@ Duration::days_t::rep Duration::days() const {
   return std::chrono::duration_cast<days_t>(seconds_).count();
 }
 
+Duration::weeks_t::rep Duration::weeks() const {
+  return std::chrono::duration_cast<weeks_t>(seconds_).count();
+}
+
 Duration::months_t::rep Duration::months() const {
   return std::chrono::duration_cast<months_t>(seconds_).count();
 }
@@ -85,10 +89,9 @@ FuzzyDate::operator Date() const {
   return Date{year_, month_, day_};
 }
 
-int FuzzyDate::operator-(const FuzzyDate& date) const {
-  const auto days = std::chrono::sys_days{static_cast<Date>(*this)} -
-                    std::chrono::sys_days{static_cast<Date>(date)};
-  return days.count();
+std::chrono::days FuzzyDate::operator-(const FuzzyDate& date) const {
+  return std::chrono::sys_days{static_cast<Date>(*this)} -
+         std::chrono::sys_days{static_cast<Date>(date)};
 }
 
 std::strong_ordering FuzzyDate::operator<=>(const FuzzyDate& date) const {

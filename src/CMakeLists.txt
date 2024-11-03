@@ -32,6 +32,8 @@ target_sources(taiga PRIVATE
 	media/anime_list.hpp
 	media/anime_season.cpp
 	media/anime_season.hpp
+	media/anime_utils.cpp
+	media/anime_utils.hpp
 	media/anime.hpp
 
 	sync/anilist.cpp

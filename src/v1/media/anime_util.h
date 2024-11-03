@@ -32,17 +32,6 @@ class Item;
 
 bool IsValidId(int anime_id);
 
-SeriesStatus GetAiringStatus(const Item& item);
-bool IsAiredYet(const Item& item);
-bool IsFinishedAiring(const Item& item);
-int EstimateDuration(const Item& item);
-int EstimateLastAiredEpisodeNumber(const Item& item);
-
-bool IsItemOldEnough(const Item& item);
-bool MetadataNeedsRefresh(const Item& item);
-
-bool IsNsfw(const Item& item);
-
 bool StartNewRewatch(int anime_id);
 bool LinkEpisodeToAnime(Episode& episode, int anime_id);
 void StartWatching(Item& item, Episode& episode);
@@ -65,7 +54,6 @@ bool IsValidEpisodeCount(int number);
 bool IsValidEpisodeNumber(int number, int total);
 bool IsValidEpisodeNumber(int number, int total, int watched);
 int GetLastEpisodeNumber(const Item& item);
-int EstimateEpisodeCount(const Item& item);
 
 const std::wstring& GetPreferredTitle(const Item& item);
 void GetAllTitles(int anime_id, std::vector<std::wstring>& titles);

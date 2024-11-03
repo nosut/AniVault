@@ -33,6 +33,7 @@ public:
   using minutes_t = std::chrono::duration<float, std::chrono::minutes::period>;
   using hours_t = std::chrono::duration<float, std::chrono::hours::period>;
   using days_t = std::chrono::duration<float, std::chrono::days::period>;
+  using weeks_t = std::chrono::duration<float, std::chrono::weeks::period>;
   using months_t = std::chrono::duration<float, std::chrono::months::period>;
   using years_t = std::chrono::duration<float, std::chrono::years::period>;
 
@@ -44,6 +45,7 @@ public:
   minutes_t::rep minutes() const;
   hours_t::rep hours() const;
   days_t::rep days() const;
+  weeks_t::rep weeks() const;
   months_t::rep months() const;
   years_t::rep years() const;
 
@@ -62,7 +64,7 @@ public:
 
   explicit operator bool() const;
   explicit operator Date() const;
-  int operator-(const FuzzyDate& date) const;
+  std::chrono::days operator-(const FuzzyDate& date) const;
   std::strong_ordering operator<=>(const FuzzyDate& date) const;
   bool operator==(const FuzzyDate& date) const;
 
