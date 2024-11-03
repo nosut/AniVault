@@ -18,32 +18,57 @@
 
 #include "image_provider.hpp"
 
+#include <QFile>
 #include <QImage>
 #include <QImageReader>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 
 #include "base/string.hpp"
+#include "media/anime_db.hpp"
+#include "taiga/network.hpp"
 #include "taiga/path.hpp"
 
 namespace gui {
 
-const QPixmap& ImageProvider::loadPoster(int id) {
+void ImageProvider::fetchPoster(const int id) {
+  const auto item = anime::db.item(id);
+
+  if (!item || item->image_url.empty()) return;
+
+  const auto url = QString::fromStdString(item->image_url);
+  const auto reply = taiga::network()->get(QNetworkRequest{url});
+
+  connect(reply, &QNetworkReply::finished, this, [this, id, reply]() {
+    QFile file{fileName(id)};
+    if (!file.open(QIODevice::WriteOnly)) return;
+    file.write(reply->readAll());
+    reloadPoster(id);
+  });
+}
+
+const QPixmap* ImageProvider::loadPoster(const int id) {
   if (const auto it = m_pixmaps.find(id); it != m_pixmaps.end()) {
-    return it.value();
+    return &it.value();
   }
 
-  const auto path = QString::fromStdString(taiga::get_data_path());
-  QImageReader reader(u"%1/v1/db/image/%2.jpg"_s.arg(path).arg(id));
+  QImageReader reader(fileName(id));
   const QImage image = reader.read();
 
   m_pixmaps[id] = !image.isNull() ? QPixmap::fromImage(image) : QPixmap{};
 
-  return m_pixmaps[id];
+  return &m_pixmaps[id];
 }
 
-void ImageProvider::reloadPoster(int id) {
+void ImageProvider::reloadPoster(const int id) {
   m_pixmaps.remove(id);
   loadPoster(id);
   emit posterChanged(id);
+}
+
+QString ImageProvider::fileName(const int id) const {
+  const auto path = QString::fromStdString(taiga::get_data_path());
+  return u"%1/v1/db/image/%2.jpg"_s.arg(path).arg(id);  // @TODO: Support other formats (#1191)
 }
 
 }  // namespace gui

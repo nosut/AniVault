@@ -21,6 +21,7 @@
 #include <QMap>
 #include <QObject>
 #include <QPixmap>
+#include <QString>
 
 namespace gui {
 
@@ -31,13 +32,16 @@ class ImageProvider final : public QObject {
 public:
   ImageProvider() = default;
 
-  const QPixmap& loadPoster(int id);
-  void reloadPoster(int id);
+  void fetchPoster(const int id);
+  const QPixmap* loadPoster(const int id);
+  void reloadPoster(const int id);
 
 signals:
-  void posterChanged(int id);
+  void posterChanged(const int id);
 
 private:
+  QString fileName(const int id) const;
+
   QMap<int, QPixmap> m_pixmaps;
 };
 

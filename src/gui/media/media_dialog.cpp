@@ -286,9 +286,10 @@ void MediaDialog::initList() {
 }
 
 void MediaDialog::loadPosterImage() {
-  const auto& posterPixmap = imageProvider.loadPoster(m_anime.id);
-  ui_->posterLabel->setPixmap(posterPixmap);
+  const auto posterPixmap = imageProvider.loadPoster(m_anime.id);
+  ui_->posterLabel->setPixmap(*posterPixmap);
   resizePosterImage();
+  if (posterPixmap->isNull()) imageProvider.fetchPoster(m_anime.id);
 }
 
 void MediaDialog::resizePosterImage() {

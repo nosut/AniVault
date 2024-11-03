@@ -26,7 +26,6 @@
 #include "base/string.hpp"
 #include "gui/models/anime_list_model.hpp"
 #include "gui/utils/format.hpp"
-#include "gui/utils/image_provider.hpp"
 #include "gui/utils/painter_state_saver.hpp"
 #include "gui/utils/theme.hpp"
 
@@ -71,22 +70,25 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
       painter->fillRect(posterRect, opt.palette.mid());
     }
 
-    if (const auto& pixmap = imageProvider.loadPoster(item->id); !pixmap.isNull()) {
-      const auto scaled =
-          pixmap.size().scaled(posterRect.size(), Qt::AspectRatioMode::KeepAspectRatioByExpanding);
+    const auto pixmap =
+        index.data(static_cast<int>(AnimeListItemDataRole::Poster)).value<const QPixmap*>();
 
-      QRect sourceRect{pixmap.rect()};
+    if (!pixmap->isNull()) {
+      const auto scaled =
+          pixmap->size().scaled(posterRect.size(), Qt::AspectRatioMode::KeepAspectRatioByExpanding);
+
+      QRect sourceRect{pixmap->rect()};
       if (scaled.width() > posterRect.width()) {
         const auto half = (scaled.width() - posterRect.width()) / 2.0f;
-        const auto scale = static_cast<float>(pixmap.width()) / scaled.width();
+        const auto scale = static_cast<float>(pixmap->width()) / scaled.width();
         sourceRect.adjust(half * scale, 0, -half * scale, 0);
       } else {
         const auto half = (scaled.height() - posterRect.height()) / 2.0f;
-        const auto scale = static_cast<float>(pixmap.height()) / scaled.height();
+        const auto scale = static_cast<float>(pixmap->height()) / scaled.height();
         sourceRect.adjust(0, half * scale, 0, -half * scale);
       }
 
-      painter->drawPixmap(posterRect, pixmap, sourceRect);
+      painter->drawPixmap(posterRect, *pixmap, sourceRect);
     }
 
     rect.adjust(posterRect.width(), 0, 0, 0);

@@ -29,6 +29,7 @@ namespace gui {
 enum class AnimeListItemDataRole {
   Anime = Qt::UserRole,
   ListEntry,
+  Poster,
 };
 
 class AnimeListModel final : public QAbstractListModel {

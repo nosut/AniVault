@@ -26,6 +26,7 @@
 #include <QSize>
 
 #include "gui/utils/format.hpp"
+#include "gui/utils/image_provider.hpp"
 #include "media/anime_db.hpp"
 #include "media/anime_season.hpp"
 
@@ -35,6 +36,12 @@ AnimeListModel::AnimeListModel(QObject* parent) : QAbstractListModel(parent) {
   beginInsertRows({}, 0, anime::db.items().size());
   m_ids = anime::db.items().keys();
   endInsertRows();
+
+  connect(&imageProvider, &ImageProvider::posterChanged, this, [this](int id) {
+    if (const auto row = m_ids.indexOf(id); row > -1) {
+      emit dataChanged(index(row), index(row), {static_cast<int>(AnimeListItemDataRole::Poster)});
+    }
+  });
 }
 
 int AnimeListModel::rowCount(const QModelIndex&) const {
@@ -159,6 +166,9 @@ QVariant AnimeListModel::data(const QModelIndex& index, int role) const {
     }
     case static_cast<int>(AnimeListItemDataRole::ListEntry): {
       return QVariant::fromValue(entry);
+    }
+    case static_cast<int>(AnimeListItemDataRole::Poster): {
+      return QVariant::fromValue(imageProvider.loadPoster(anime->id));
     }
   }
 
