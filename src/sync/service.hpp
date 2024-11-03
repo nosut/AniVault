@@ -50,4 +50,6 @@ ServiceId serviceIdFromSlug(const QString& slug);
 QString serviceName(const ServiceId serviceId);
 QString serviceSlug(const ServiceId serviceId);
 
+QString animePageUrl(const int id);
+
 }  // namespace sync

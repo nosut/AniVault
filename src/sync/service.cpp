@@ -20,6 +20,9 @@
 
 #include <QMap>
 
+#include "sync/anilist_utils.hpp"
+#include "sync/kitsu_utils.hpp"
+#include "sync/myanimelist_utils.hpp"
 #include "taiga/network.hpp"
 #include "taiga/settings.hpp"
 
@@ -58,6 +61,19 @@ QString serviceSlug(const ServiceId serviceId) {
   }
   // clang-format on
   return "taiga";
+}
+
+QString animePageUrl(const int id) {
+  const auto slug = QString::fromStdString(taiga::settings.service());
+  switch (serviceIdFromSlug(slug)) {
+    case ServiceId::MyAnimeList:
+      return QString::fromStdString(myanimelist::animePageUrl(id));
+    case ServiceId::Kitsu:
+      return QString::fromStdString(kitsu::animePageUrl(id));
+    case ServiceId::AniList:
+      return QString::fromStdString(anilist::animePageUrl(id));
+  }
+  return {};
 }
 
 }  // namespace sync
