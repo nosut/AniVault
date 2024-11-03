@@ -21,7 +21,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QNetworkProxy>
 #include <QRestReply>
 
 #include "base/file.hpp"
@@ -38,29 +37,15 @@
 
 namespace sync::anilist {
 
-Service::Service() : QObject{}, manager_{new QNetworkAccessManager{}} {
-  manager_.networkAccessManager()->setAutoDeleteReplies(true);
-  manager_.networkAccessManager()->setTransferTimeout(std::chrono::seconds{10});
-
-  connect(manager_.networkAccessManager(), &QNetworkAccessManager::finished, this,
-          [](QNetworkReply* reply) {
-            //
-          });
-
+Service::Service() : sync::Service{} {
   api_.setBaseUrl(QUrl{"https://graphql.anilist.co"});
-
-  static const auto userAgentString = []() {
-    return u"%1/%2.%3"_s.arg(TAIGA_APP_NAME).arg(TAIGA_VERSION_MAJOR).arg(TAIGA_VERSION_MINOR);
-  };
-
-  QHttpHeaders headers;
-  headers.append(QHttpHeaders::WellKnownHeader::UserAgent, userAgentString());
-  api_.setCommonHeaders(headers);
 
   if (const auto token = taiga::accounts.anilistToken(); !token.empty()) {
     api_.setBearerToken(QByteArray::fromStdString(token));
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 void Service::fetchAnime(const int id) {
   const QJsonDocument data{{

@@ -20,7 +20,14 @@
 
 #include <QMap>
 
+#include "taiga/network.hpp"
+#include "taiga/settings.hpp"
+
 namespace sync {
+
+Service::Service() : QObject{qApp}, manager_{taiga::network()} {
+  api_.setCommonHeaders(taiga::NetworkAccessManager::commonHeaders());
+}
 
 ServiceId serviceIdFromSlug(const QString& slug) {
   static const QMap<QString, ServiceId> services{

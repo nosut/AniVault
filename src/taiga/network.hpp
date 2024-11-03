@@ -18,36 +18,26 @@
 
 #pragma once
 
-#include <QNetworkRequestFactory>
-#include <QRestAccessManager>
-#include <QString>
+#include <QCoreApplication>
+#include <QHttpHeaders>
+#include <QNetworkAccessManager>
 
-namespace sync {
+namespace taiga {
 
-enum class ServiceId {
-  Unknown,
-  MyAnimeList,
-  Kitsu,
-  AniList,
-};
+class NetworkAccessManager final : public QNetworkAccessManager {
+  Q_OBJECT
+  Q_DISABLE_COPY_MOVE(NetworkAccessManager)
 
-struct Rating {
-  int value = 0;
-  QString text;
-};
-
-class Service : public QObject {
 public:
-  Service();
-  ~Service() = default;
+  NetworkAccessManager(QObject* parent);
+  ~NetworkAccessManager() = default;
 
-protected:
-  QNetworkRequestFactory api_;
-  QRestAccessManager manager_;
+  static QHttpHeaders commonHeaders();
 };
 
-ServiceId serviceIdFromSlug(const QString& slug);
-QString serviceName(const ServiceId serviceId);
-QString serviceSlug(const ServiceId serviceId);
+inline NetworkAccessManager* network() {
+  static auto manager = new NetworkAccessManager{qApp};
+  return manager;
+}
 
-}  // namespace sync
+}  // namespace taiga

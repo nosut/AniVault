@@ -18,12 +18,11 @@
 
 #pragma once
 
-#include <QNetworkRequestFactory>
-#include <QRestAccessManager>
+#include "sync/service.hpp"
 
 namespace sync::anilist {
 
-class Service : public QObject {
+class Service final : public sync::Service {
 public:
   Service();
 
@@ -33,9 +32,6 @@ private:
   QString gql(const QString& name) const;
 
   void handleError(const QRestReply& reply) const;
-
-  QNetworkRequestFactory api_;
-  QRestAccessManager manager_;
 };
 
 inline Service service;

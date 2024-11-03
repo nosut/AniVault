@@ -63,6 +63,8 @@ target_sources(taiga PRIVATE
 	taiga/application.cpp
 	taiga/application.hpp
 	taiga/config.h
+	taiga/network.cpp
+	taiga/network.hpp
 	taiga/orange.cpp
 	taiga/orange.hpp
 	taiga/path.cpp
