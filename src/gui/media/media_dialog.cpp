@@ -26,6 +26,8 @@
 #include "gui/utils/widgets.hpp"
 #include "media/anime_db.hpp"
 #include "media/anime_season.hpp"
+#include "media/anime_utils.hpp"
+#include "sync/service.hpp"
 #include "taiga/session.hpp"
 #include "ui_media_dialog.h"
 
@@ -141,6 +143,10 @@ void MediaDialog::setAnime(const Anime& anime, const std::optional<ListEntry> en
   initTitles();
   initDetails();
   initList();
+
+  if (anime::isStale(anime)) {
+    sync::fetchAnime(anime.id);
+  }
 }
 
 void MediaDialog::initTitles() {

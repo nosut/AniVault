@@ -20,6 +20,7 @@
 
 #include <QMap>
 
+#include "sync/anilist.hpp"
 #include "sync/anilist_utils.hpp"
 #include "sync/kitsu_utils.hpp"
 #include "sync/myanimelist_utils.hpp"
@@ -30,6 +31,11 @@ namespace sync {
 
 Service::Service() : QObject{qApp}, manager_{taiga::network()} {
   api_.setCommonHeaders(taiga::NetworkAccessManager::commonHeaders());
+}
+
+ServiceId currentServiceId() {
+  const auto slug = QString::fromStdString(taiga::settings.service());
+  return serviceIdFromSlug(slug);
 }
 
 ServiceId serviceIdFromSlug(const QString& slug) {
@@ -63,9 +69,20 @@ QString serviceSlug(const ServiceId serviceId) {
   return "taiga";
 }
 
+void fetchAnime(const int id) {
+  switch (currentServiceId()) {
+    case ServiceId::MyAnimeList:
+      break;
+    case ServiceId::Kitsu:
+      break;
+    case ServiceId::AniList:
+      anilist::service.fetchAnime(id);
+      break;
+  }
+}
+
 QString animePageUrl(const int id) {
-  const auto slug = QString::fromStdString(taiga::settings.service());
-  switch (serviceIdFromSlug(slug)) {
+  switch (currentServiceId()) {
     case ServiceId::MyAnimeList:
       return QString::fromStdString(myanimelist::animePageUrl(id));
     case ServiceId::Kitsu:
