@@ -138,10 +138,12 @@ void MediaDialog::showEvent(QShowEvent* event) {
   resizePosterImage();
 }
 
-void MediaDialog::show(QWidget* parent, const Anime& anime, const std::optional<ListEntry> entry) {
+void MediaDialog::show(QWidget* parent, MediaDialogPage page, const Anime& anime,
+                       const std::optional<ListEntry> entry) {
   auto* dlg = new MediaDialog(parent);
   dlg->setAttribute(Qt::WA_DeleteOnClose);
   dlg->setAnime(anime, entry);
+  dlg->ui_->tabWidget->setCurrentIndex(static_cast<int>(page));
   dlg->QDialog::show();
 }
 

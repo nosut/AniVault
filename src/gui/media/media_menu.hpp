@@ -42,6 +42,7 @@ public:
 
 private slots:
   void addToList(const anime::list::Status status) const;
+  void edit() const;
   void editEpisode() const;
   void editNotes() const;
   void editStatus(const anime::list::Status status) const;

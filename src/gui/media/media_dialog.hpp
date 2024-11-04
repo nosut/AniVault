@@ -33,6 +33,12 @@ class MediaDialog;
 
 namespace gui {
 
+enum class MediaDialogPage {
+  Details,
+  List,
+  Settings,
+};
+
 class MediaDialog final : public QDialog {
   Q_OBJECT
   Q_DISABLE_COPY_MOVE(MediaDialog)
@@ -41,7 +47,8 @@ public:
   MediaDialog(QWidget* parent);
   ~MediaDialog() = default;
 
-  static void show(QWidget* parent, const Anime& anime, const std::optional<ListEntry> entry);
+  static void show(QWidget* parent, MediaDialogPage page, const Anime& anime,
+                   const std::optional<ListEntry> entry);
 
 public slots:
   void accept() override;

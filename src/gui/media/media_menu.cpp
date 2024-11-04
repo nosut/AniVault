@@ -230,7 +230,18 @@ void MediaMenu::viewDetails() const {
   const auto& anime = m_items.front();
   const auto entry = getEntry(anime.id);
 
-  MediaDialog::show(parentWidget(), anime, entry ? std::optional<ListEntry>{*entry} : std::nullopt);
+  MediaDialog::show(parentWidget(), MediaDialogPage::Details, anime,
+                    entry ? std::optional<ListEntry>{*entry} : std::nullopt);
+}
+
+void MediaMenu::edit() const {
+  if (m_items.empty()) return;
+
+  const auto& anime = m_items.front();
+  const auto entry = getEntry(anime.id);
+
+  MediaDialog::show(parentWidget(), MediaDialogPage::List, anime,
+                    entry ? std::optional<ListEntry>{*entry} : std::nullopt);
 }
 
 void MediaMenu::addMediaItems() {
@@ -282,7 +293,7 @@ void MediaMenu::addListItems() {
 
   // Edit
   if (!isBatch()) {
-    addAction(theme.getIcon("edit"), tr("Edit..."), this, &MediaMenu::viewDetails);
+    addAction(theme.getIcon("edit"), tr("Edit..."), this, &MediaMenu::edit);
 
   } else {
     addMenu([this]() {
