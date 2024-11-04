@@ -57,6 +57,8 @@ const QPixmap* ImageProvider::loadPoster(const int id) {
 
   m_pixmaps[id] = !image.isNull() ? QPixmap::fromImage(image) : QPixmap{};
 
+  if (image.isNull()) fetchPoster(id);
+
   return &m_pixmaps[id];
 }
 
