@@ -118,6 +118,16 @@ void MediaDialog::closeEvent(QCloseEvent* event) {
   event->accept();
 }
 
+void MediaDialog::keyPressEvent(QKeyEvent* event) {
+  if (event->key() == Qt::Key_F5) {
+    imageProvider.fetchPoster(m_anime.id);
+    sync::fetchAnime(m_anime.id);
+    return;
+  }
+
+  QDialog::keyPressEvent(event);
+}
+
 void MediaDialog::resizeEvent(QResizeEvent* event) {
   QDialog::resizeEvent(event);
   resizePosterImage();

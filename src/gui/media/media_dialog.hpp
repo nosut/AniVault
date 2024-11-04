@@ -48,7 +48,8 @@ public slots:
   void setAnime(const Anime& anime, const std::optional<ListEntry> entry);
 
 protected:
-  void closeEvent(QCloseEvent *event) override;
+  void closeEvent(QCloseEvent* event) override;
+  void keyPressEvent(QKeyEvent* event) override;
   void resizeEvent(QResizeEvent* event) override;
   void showEvent(QShowEvent* event) override;
 
