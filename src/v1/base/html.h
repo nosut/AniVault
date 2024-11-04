@@ -21,4 +21,3 @@
 #include <string>
 
 void DecodeHtmlEntities(std::wstring& str);
-void StripHtmlTags(std::wstring& str);

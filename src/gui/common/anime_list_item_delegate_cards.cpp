@@ -171,7 +171,10 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
 
   // Synopsis
   {
-    const QString synopsis = QString::fromStdString(item->synopsis);
+    QString synopsis = QString::fromStdString(item->synopsis);
+    synopsis.replace("<br>", "\n");
+    removeHtmlTags(synopsis);
+    synopsis = synopsis.simplified();
 
     painter->setPen(opt.palette.placeholderText().color());
 

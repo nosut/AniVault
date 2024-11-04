@@ -26,4 +26,5 @@
 using namespace Qt::Literals::StringLiterals;
 
 QString joinStrings(const std::vector<std::string>& list, QString placeholder = "?");
+void removeHtmlTags(QString& str);
 std::vector<std::string> toVector(const QStringList& list);

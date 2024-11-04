@@ -18,6 +18,7 @@
 
 #include "string.hpp"
 
+#include <QRegularExpression>
 #include <nstd/string.hpp>
 #include <ranges>
 
@@ -32,6 +33,11 @@ namespace {
 QString joinStrings(const std::vector<std::string>& list, QString placeholder) {
   if (list.empty()) return placeholder;
   return QString::fromStdString(nstd::join(list, ", "));
+}
+
+void removeHtmlTags(QString& str) {
+  static const QRegularExpression re{"<[a-z/]+>"};
+  str.remove(re);
 }
 
 std::vector<std::string> toVector(const QStringList& list) {
