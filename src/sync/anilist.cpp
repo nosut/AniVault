@@ -22,6 +22,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRestReply>
+#include <ranges>
 
 #include "base/file.hpp"
 #include "base/log.hpp"
@@ -30,7 +31,6 @@
 #include "sync/anilist_parsers.hpp"
 #include "sync/anilist_utils.hpp"
 #include "taiga/accounts.hpp"
-#include "taiga/config.h"
 
 // AniList API documentation:
 // https://docs.anilist.co/
@@ -47,6 +47,37 @@ Service::Service() : sync::Service{} {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+void Service::authenticateUser() {
+  const QJsonDocument data{QJsonObject{
+      {"query", gql("Viewer")},
+  }};
+
+  const auto callback = [this](QRestReply& reply) {
+    if (isError(reply)) {
+      handleError(reply);
+      // @TODO: Set authenticated state and emit signal
+      return;
+    }
+
+    const auto viewer = reply.readJson().and_then([](const QJsonDocument& json) {
+      return std::make_optional(json["data"]["Viewer"].toObject());
+    });
+
+    if (!viewer) {
+      handleError(reply, "Could not parse user object.");
+      // @TODO: Set authenticated state and emit signal
+      return;
+    }
+
+    taiga::accounts.setAnilistUsername((*viewer)["name"].toString().toStdString());
+    // @TODO: Set rating system setting using viewer["mediaListOptions"]["scoreFormat"]
+
+    // @TODO: Set authenticated state and emit signal
+  };
+
+  manager_.post(api_.createRequest(), data, this, callback);
+}
+
 void Service::fetchAnime(const int id) {
   const QJsonDocument data{{
       {"query", gql("Media")},
@@ -54,28 +85,107 @@ void Service::fetchAnime(const int id) {
   }};
 
   const auto callback = [this](QRestReply& reply) {
-    if (!reply.isSuccess()) {
+    if (isError(reply)) {
       handleError(reply);
       return;
     }
-    if (const auto json = reply.readJson()) {
-      if (auto item = parseMedia((*json)["data"]["Media"])) {
-        anime::db.updateItem(*item);
-      } else {
-        LOGE("Could not parse media object: {}", json->toJson().toStdString());
-      }
+
+    const auto item = reply.readJson().and_then(
+        [](const QJsonDocument& json) { return parseMedia(json["data"]["Media"]); });
+
+    if (!item) {
+      handleError(reply, "Could not parse media object.");
+      return;
+    }
+
+    anime::db.updateItem(*item);
+  };
+
+  manager_.post(api_.createRequest(), data, this, callback);
+}
+
+void Service::search(const QString& query) {
+  const QJsonDocument data{{
+      {"query", gql("MediaSearch")},
+      {"variables", QJsonObject{{"query", query}}},
+  }};
+
+  const auto callback = [this](QRestReply& reply) {
+    if (isError(reply)) {
+      handleError(reply);
+      return;
+    }
+
+    const auto items = reply.readJson().and_then([](const QJsonDocument& json) {
+      const auto value = json["data"]["Page"]["media"];
+      if (!value.isArray()) return std::optional<QList<std::optional<Anime>>>{};
+      return std::make_optional(value.toArray() | std::views::transform(parseMedia) |
+                                std::ranges::to<QList>());
+    });
+
+    if (!items) {
+      handleError(reply, "Could not parse search results.");
+      return;
+    }
+
+    for (const auto& item : *items) {
+      if (item) anime::db.updateItem(*item);
     }
   };
 
   manager_.post(api_.createRequest(), data, this, callback);
 }
 
+void Service::fetchListEntries() {
+  // @TODO
+}
+
+void Service::addListEntry() {
+  updateListEntry();
+}
+
+void Service::deleteListEntry(const int id) {
+  const auto listEntry = anime::db.entry(id);
+
+  if (!listEntry) return;
+
+  const QJsonDocument data{{
+      {"query", gql("DeleteMediaListEntry")},
+      {"variables", QJsonObject{{"id", listEntry->id}}},
+  }};
+
+  const auto callback = [this](QRestReply& reply) {
+    if (isError(reply) && reply.httpStatus() != 404) {
+      handleError(reply);
+      return;
+    }
+
+    // @TODO: anime::db.deleteEntry(id);
+  };
+
+  manager_.post(api_.createRequest(), data, this, callback);
+}
+
+void Service::updateListEntry() {
+  // @TODO
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 QString Service::gql(const QString& name) const {
   return base::readFile(u":/gql/anilist/%1.gql"_s.arg(name));
 }
 
-void Service::handleError(const QRestReply& reply) const {
-  // @TODO
+bool Service::isError(const QRestReply& reply) const {
+  return !reply.isHttpStatusSuccess() || reply.hasError();
+  // @TODO: Check DDoS protection
+}
+
+void Service::handleError(const QRestReply& reply, const QString& message) const {
+  if (reply.hasError()) LOGE("{}", reply.errorString().toStdString());
+  if (!message.isEmpty()) LOGE("{}", message.toStdString());
+  // @TODO: Parse body for "errors" array
+  // @TODO: Emit signal
 }
 
 }  // namespace sync::anilist

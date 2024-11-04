@@ -26,12 +26,19 @@ class Service final : public sync::Service {
 public:
   Service();
 
+  void authenticateUser();
   void fetchAnime(const int id);
+  void search(const QString& query);
+  void fetchListEntries();
+  void addListEntry();
+  void deleteListEntry(const int id);
+  void updateListEntry();
 
 private:
   QString gql(const QString& name) const;
 
-  void handleError(const QRestReply& reply) const;
+  bool isError(const QRestReply& reply) const;
+  void handleError(const QRestReply& reply, const QString& message = {}) const;
 };
 
 inline Service service;
