@@ -33,6 +33,7 @@
 #include "gui/utils/theme.hpp"
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
+#include "media/anime_utils.hpp"
 
 namespace gui {
 
@@ -149,7 +150,9 @@ void MediaMenu::searchAniDB() const {
 void MediaMenu::searchAniList() const {
   for (const auto& item : m_items) {
     QUrl url{"https://anilist.co/search/anime"};
-    url.setQuery({{"search", QString::fromStdString(item.titles.romaji)}});
+    QUrlQuery query{{"search", QString::fromStdString(item.titles.romaji)}};
+    if (anime::isNsfw(item)) query.addQueryItem("adult", "true");
+    url.setQuery(query);
     QDesktopServices::openUrl(url);
   }
 }
