@@ -34,6 +34,7 @@
 #include "gui/utils/theme.hpp"
 #include "gui/utils/tray_icon.hpp"
 #include "gui/utils/widgets.hpp"
+#include "sync/service.hpp"
 #include "taiga/application.hpp"
 #include "taiga/session.hpp"
 #include "taiga/version.hpp"
@@ -96,7 +97,8 @@ void MainWindow::init() {
 
 void MainWindow::initActions() {
   ui_->actionProfile->setToolTip(tr("Profile"));
-  ui_->actionSynchronize->setToolTip(tr("Synchronize with %1").arg("AniList"));
+  ui_->actionSynchronize->setToolTip(
+      tr("Synchronize with %1").arg(sync::serviceName(sync::currentServiceId())));
 
   connect(ui_->actionAddNewFolder, &QAction::triggered, this, &MainWindow::addNewFolder);
   connect(ui_->actionExit, &QAction::triggered, this, &QApplication::quit, Qt::QueuedConnection);
@@ -109,7 +111,8 @@ void MainWindow::initActions() {
 
   connect(ui_->actionSynchronize, &QAction::triggered, this, [this]() {
     setEnabled(false);
-    statusBar()->showMessage("Synchronizing with AniList...");
+    statusBar()->showMessage(
+        tr("Synchronizing with %1...").arg(sync::serviceName(sync::currentServiceId())));
     QEventLoop loop;
     QTimer::singleShot(3000, &loop, [this, &loop]() {
       setEnabled(true);
