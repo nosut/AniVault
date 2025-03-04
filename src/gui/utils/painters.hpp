@@ -20,9 +20,21 @@
 
 #include <QAbstractScrollArea>
 #include <QString>
+#include <QStyleOption>
+
+namespace anime {
+struct Details;
+}
+
+namespace anime::list {
+struct Entry;
+}
 
 namespace gui {
 
 void paintEmptyListText(QAbstractScrollArea* widget, const QString& text);
+
+void paintProgressBar(QPainter* painter, const QStyleOption& option, const anime::Details* anime,
+                      const anime::list::Entry* entry);
 
 }  // namespace gui

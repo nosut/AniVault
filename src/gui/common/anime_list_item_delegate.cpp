@@ -20,20 +20,18 @@
 
 #include <QComboBox>
 #include <QPainter>
-#include <QProxyStyle>
 #include <limits>
 
 #include "gui/models/anime_list_model.hpp"
-#include "gui/utils/format.hpp"
 #include "gui/utils/painter_state_saver.hpp"
+#include "gui/utils/painters.hpp"
 #include "gui/utils/theme.hpp"
+#include "media/anime.hpp"
+#include "media/anime_list.hpp"
 
 namespace gui {
 
-ListItemDelegate::ListItemDelegate(QObject* parent)
-    : QStyledItemDelegate(parent), m_proxyStyle(new QProxyStyle("fusion")) {
-  m_proxyStyle->setParent(parent);
-}
+ListItemDelegate::ListItemDelegate(QObject* parent) : QStyledItemDelegate(parent) {}
 
 void ListItemDelegate::setEditorData(QWidget* editor, const QModelIndex& index) const {
   const auto entry =
@@ -81,40 +79,14 @@ void ListItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
   switch (index.column()) {
     case AnimeListModel::COLUMN_PROGRESS: {
       const PainterStateSaver painterStateSaver(painter);
-
       QStyledItemDelegate::paint(painter, option, index);
-
       const auto anime =
           index.data(static_cast<int>(AnimeListItemDataRole::Anime)).value<const Anime*>();
       const auto entry =
           index.data(static_cast<int>(AnimeListItemDataRole::ListEntry)).value<const ListEntry*>();
-
-      if (!anime || !entry) return;
-
-      const int episodes = anime->episode_count;
-      const int progress = std::clamp(entry->watched_episodes, 0,
-                                      episodes > 0 ? episodes : std::numeric_limits<int>::max());
-      const int percent = episodes > 0 ? static_cast<float>(progress) / episodes * 100.0f : 50;
-      const auto text = tr("%1/%2").arg(progress).arg(formatNumber(episodes, "?"));
-
-      QStyleOptionProgressBar styleOption{};
-      styleOption.state = option.state | QStyle::State_Horizontal;
-      styleOption.direction = option.direction;
-      styleOption.rect = option.rect.adjusted(2, 2, -2, -2);
-      styleOption.palette = option.palette;
-      styleOption.palette.setCurrentColorGroup(QPalette::ColorGroup::Active);
-      styleOption.palette.setColor(QPalette::ColorRole::Highlight, theme.isDark()
-                                                                       ? QColor{12, 164, 12, 128}
-                                                                       : QColor{12, 164, 12, 255});
-      styleOption.fontMetrics = option.fontMetrics;
-      styleOption.maximum = 100;
-      styleOption.minimum = 0;
-      styleOption.progress = percent;
-      styleOption.text = text;
-      styleOption.textAlignment = Qt::AlignCenter;
-      styleOption.textVisible = true;
-
-      m_proxyStyle->drawControl(QStyle::CE_ProgressBar, &styleOption, painter);
+      QStyleOptionViewItem opt = option;
+      opt.rect.adjust(2, 2, -2, -2);
+      paintProgressBar(painter, opt, anime, entry);
       return;
     }
   }
