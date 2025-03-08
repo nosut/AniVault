@@ -46,7 +46,7 @@
         <enum>QLayout::SizeConstraint::SetMaximumSize</enum>
        </property>
        <item>
-        <widget class="QLabel" name="posterLabel">
+        <widget class="gui::ClickableLabel" name="posterLabel">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
            <horstretch>0</horstretch>
@@ -551,6 +551,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>gui::ClickableLabel</class>
+   <extends>QLabel</extends>
+   <header>gui/common/clickable_label.hpp</header>
+  </customwidget>
+ </customwidgets>
  <tabstops>
   <tabstop>tabWidget</tabstop>
   <tabstop>synopsis</tabstop>

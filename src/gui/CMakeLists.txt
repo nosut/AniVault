@@ -17,6 +17,8 @@ target_sources(taiga-gui PRIVATE
 	common/anime_list_view_base.hpp
 	common/anime_list_view_cards.cpp
 	common/anime_list_view_cards.hpp
+	common/clickable_label.cpp
+	common/clickable_label.hpp
 	common/combobox.cpp
 	common/combobox.hpp
 	common/page_widget.cpp

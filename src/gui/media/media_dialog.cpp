@@ -18,7 +18,9 @@
 
 #include "media_dialog.hpp"
 
+#include <QDesktopServices>
 #include <QResizeEvent>
+#include <QUrl>
 
 #include "base/string.hpp"
 #include "gui/utils/format.hpp"
@@ -67,6 +69,13 @@ MediaDialog::MediaDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::MediaDi
     m_anime = *anime::db.item(id);
     initTitles();
     initDetails();
+  });
+
+  connect(ui_->posterLabel, &ClickableLabel::clicked, this, [this](Qt::MouseButton button) {
+    if (button == Qt::MouseButton::LeftButton) {
+      QUrl url{sync::animePageUrl(m_anime.id)};
+      QDesktopServices::openUrl(url);
+    }
   });
 
   connect(ui_->splitter, &QSplitter::splitterMoved, this, [this]() { resizePosterImage(); });
