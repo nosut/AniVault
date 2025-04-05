@@ -29,6 +29,7 @@
 #include "gui/utils/painter_state_saver.hpp"
 #include "gui/utils/painters.hpp"
 #include "gui/utils/theme.hpp"
+#include "media/anime_season.hpp"
 
 namespace gui {
 
@@ -111,12 +112,13 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
   // Title
   {
     QRect titleRect = rect;
-    titleRect.setHeight(24);
+    titleRect.setHeight(32);
 
     painter->fillRect(titleRect, opt.palette.dark());
-    titleRect.adjust(8, 0, -8, 0);
+    titleRect.adjust(12, 0, -12, 0);
 
-    auto titleFont = painter->font();
+    auto titleFont = font;
+    titleFont.setPointSize(10);
     titleFont.setWeight(QFont::Weight::DemiBold);
     painter->setFont(titleFont);
 
@@ -126,59 +128,55 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
 
     painter->drawText(titleRect, Qt::AlignVCenter | Qt::TextSingleLine, elidedTitle);
 
-    rect.adjust(8, 24 + 8, -8, -8);
+    rect.adjust(12, 32 + 8, -12, -12);
   }
 
   // Summary
   {
-    QStringList parts{formatType(item->type), formatScore(item->score)};
+    QStringList parts{
+        formatType(item->type),
+        formatSeason(anime::Season{item->date_started}),
+        formatScore(item->score),
+    };
     if (item->episode_count != 1) {
       parts.insert(1, tr("%1 episodes").arg(formatNumber(item->episode_count, "?")));
     }
     const QString summary = parts.join(" · ");
+
+    auto summaryFont = font;
+    summaryFont.setWeight(QFont::Weight::DemiBold);
+    painter->setFont(summaryFont);
+
     const QFontMetrics metrics(painter->font());
     QRect summaryRect = rect;
     summaryRect.setHeight(metrics.height());
-    painter->setFont(font);
+
     painter->drawText(summaryRect, Qt::AlignVCenter | Qt::TextSingleLine, summary);
+
     rect.adjust(0, summaryRect.height() + 8, 0, 0);
   }
 
-  auto detailsFont = painter->font();
-
   // Details
   {
-    const QString titles =
-        "Aired:\n"
-        "Genres:\n"
-        "Studios:";
-    const QString values =
-        u"%1 (%2)\n%3\n%4"_s.arg(formatFuzzyDateRange(item->date_started, item->date_finished))
-            .arg(formatStatus(item->status))
-            .arg(joinStrings(item->genres))
-            .arg(joinStrings(item->studios));
+    const QStringList lines{
+        u"%1 (%2)"_s.arg(formatFuzzyDateRange(item->date_started, item->date_finished))
+            .arg(formatStatus(item->status)),
+        joinStrings(item->genres),
+        joinStrings(!item->studios.empty() ? item->studios : item->producers),
+    };
 
-    detailsFont.setWeight(QFont::Weight::DemiBold);
-    painter->setFont(detailsFont);
+    painter->setFont(font);
 
     const QFontMetrics metrics(painter->font());
+    QRect linesRect = rect;
 
-    QRect titlesRect = rect;
-    titlesRect.setHeight(metrics.height() * 3);
-    titlesRect.setWidth(metrics.boundingRect("Studios:").width());
+    for (const auto& line : lines) {
+      const QString elidedLine = metrics.elidedText(line, Qt::ElideRight, linesRect.width());
+      painter->drawText(linesRect, Qt::TextSingleLine, elidedLine);
+      linesRect.adjust(0, metrics.height(), 0, 0);
+    }
 
-    painter->drawText(titlesRect, 0, titles);
-
-    detailsFont.setWeight(QFont::Weight::Normal);
-    painter->setFont(detailsFont);
-
-    QRect valuesRect = rect;
-    valuesRect.setHeight(metrics.height() * 3);
-    valuesRect.adjust(titlesRect.width() + 8, 0, 0, 0);
-
-    painter->drawText(valuesRect, 0, values);
-
-    rect.adjust(0, titlesRect.height() + 8, 0, 0);
+    rect.adjust(0, (metrics.height() * lines.size()) + 8, 0, 0);
   }
 
   // Synopsis
@@ -190,8 +188,9 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
 
     painter->setPen(opt.palette.placeholderText().color());
 
-    detailsFont.setPointSize(8);
-    painter->setFont(detailsFont);
+    auto synopsisFont = painter->font();
+    synopsisFont.setPointSize(8);
+    painter->setFont(synopsisFont);
     const QFontMetrics metrics(painter->font());
 
     QRect synopsisRect = rect;
