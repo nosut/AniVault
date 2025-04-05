@@ -322,7 +322,7 @@ void MainWindow::about() {
       "SacredZenpie";
 
   const auto donators =
-      "Farfie, snickler, Nydaleclya, WizardTim, Kinzer, MeGaNeKo, WhatsCPS, Jerico64";
+      "Farfie, snickler, Nydaleclya, WizardTim, Kinzer, MeGaNeKo, WhatsCPS, Jerico64, Xen the Greedy";
 
   const auto components =
       u"Material Symbols, Qt %1, utf8proc %2"_s.arg(QT_VERSION_STR).arg(utf8proc_version());
