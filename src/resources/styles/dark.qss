@@ -38,13 +38,10 @@ QTreeView#animeList QHeaderView {
   border-bottom-color: rgba(255, 255, 255, 16%);
 }
 
-QTreeView#animeList::item,
-QTreeView#libraryView::item {
+QTreeView#animeList,
+QTreeView#libraryView {
   background-color: #1c1c1c;
-}
-QTreeView#animeList::item:alternate,
-QTreeView#libraryView::item:alternate {
-  background-color: rgba(255, 255, 255, 1%);
+  alternate-background-color: rgba(255, 255, 255, 3%);
 }
 QTreeView#animeList::item:hover,
 QTreeView#libraryView::item:hover {
