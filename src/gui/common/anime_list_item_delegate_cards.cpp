@@ -27,6 +27,7 @@
 #include "gui/models/anime_list_model.hpp"
 #include "gui/utils/format.hpp"
 #include "gui/utils/painter_state_saver.hpp"
+#include "gui/utils/painters.hpp"
 #include "gui/utils/theme.hpp"
 
 namespace gui {
@@ -40,8 +41,12 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
                                   const QModelIndex& index) const {
   const PainterStateSaver painterStateSaver(painter);
 
+  const auto font = painter->font();
+
   const auto item =
       index.data(static_cast<int>(AnimeListItemDataRole::Anime)).value<const Anime*>();
+  const auto entry =
+      index.data(static_cast<int>(AnimeListItemDataRole::ListEntry)).value<const ListEntry*>();
 
   QStyleOptionViewItem opt = option;
   QRect rect = opt.rect;
@@ -90,11 +95,18 @@ void ListItemDelegateCards::paint(QPainter* painter, const QStyleOptionViewItem&
 
       painter->drawPixmap(posterRect, *pixmap, sourceRect);
     }
-
-    rect.adjust(posterRect.width(), 0, 0, 0);
   }
 
-  auto font = painter->font();
+  if (entry) {
+    auto progressOptions = opt;
+    progressOptions.rect = rect;
+    progressOptions.rect.setWidth(posterWidth);
+    progressOptions.rect.setTop(progressOptions.rect.bottom() - 28);
+    progressOptions.rect.adjust(4, 4, -4, -4);
+    paintProgressBar(painter, progressOptions, item, entry);
+  }
+
+  rect.adjust(posterWidth, 0, 0, 0);
 
   // Title
   {
