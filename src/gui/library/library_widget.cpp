@@ -103,6 +103,7 @@ LibraryWidget::LibraryWidget(QWidget* parent)
     if (!(index.flags() & Qt::ItemIsEnabled)) return;
     const auto info = m_model->fileInfo(index);
     if (!info.isFile()) return;
+    if (info.isExecutable()) return;  // avoid running potentially dangerous files
     QDesktopServices::openUrl(QUrl::fromLocalFile(m_model->filePath(index)));
   });
 }

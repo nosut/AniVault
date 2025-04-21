@@ -60,6 +60,19 @@ QVariant LibraryModel::data(const QModelIndex& index, int role) const {
       break;
     }
 
+    case Qt::ForegroundRole: {
+      switch (index.column()) {
+        case COLUMN_NAME: {
+          const auto info = fileInfo(index);
+          if (info.isFile() && info.isExecutable()) {
+            return QColorConstants::Red;  // potentially dangerous file
+          }
+          break;
+        }
+      }
+      break;
+    }
+
     case Qt::TextAlignmentRole: {
       switch (index.column()) {
         case COLUMN_SIZE:
