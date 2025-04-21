@@ -26,6 +26,8 @@ class Service final : public sync::Service {
 public:
   Service();
 
+  static Service* instance();
+
   void authenticateUser();
   void fetchAnime(const int id);
   void search(const QString& query);
@@ -40,7 +42,5 @@ private:
   bool isError(const QRestReply& reply) const;
   void handleError(const QRestReply& reply, const QString& message = {}) const;
 };
-
-inline Service service;
 
 }  // namespace sync::anilist

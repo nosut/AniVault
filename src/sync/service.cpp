@@ -76,7 +76,7 @@ void fetchAnime(const int id) {
     case ServiceId::Kitsu:
       break;
     case ServiceId::AniList:
-      anilist::service.fetchAnime(id);
+      anilist::Service::instance()->fetchAnime(id);
       break;
   }
 }

@@ -45,6 +45,11 @@ Service::Service() : sync::Service{} {
   }
 }
 
+Service* Service::instance() {
+  static Service service;
+  return &service;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 void Service::authenticateUser() {
