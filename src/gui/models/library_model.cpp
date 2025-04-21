@@ -52,10 +52,10 @@ QVariant LibraryModel::data(const QModelIndex& index, int role) const {
       switch (index.column()) {
         case COLUMN_ANIME:
           if (isEnabled(index)) return getTitle(fileName(index));
-          break;
+          return {};
         case COLUMN_EPISODE:
           if (isEnabled(index)) return getEpisode(fileName(index));
-          break;
+          return {};
       }
       break;
     }
