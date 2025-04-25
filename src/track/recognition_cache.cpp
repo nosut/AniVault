@@ -49,7 +49,9 @@ void Cache::init() {
 
 void Cache::add(const anime::Details& item) {
   const auto add = [this, &item](const std::string& title, const float weight = 1.0f) {
-    titles_[normalize(title)].matches.emplace(item.id, Data::Match{item.id, weight});
+    const auto normalized = normalize(title);
+    if (normalized.empty()) return;
+    titles_[normalized].matches.emplace(item.id, Data::Match{item.id, weight});
   };
 
   // @TODO: Add user-defined titles with higher weight
