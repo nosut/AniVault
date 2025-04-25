@@ -18,11 +18,16 @@
 
 #include "library_model.hpp"
 
+#include <QApplication>
+#include <QPalette>
 #include <anitomy.hpp>
 #include <anitomy/detail/keyword.hpp>  // don't try this at home
 #include <ranges>
 
 #include "base/string.hpp"
+#include "media/anime_db.hpp"
+#include "track/episode.hpp"
+#include "track/recognition.hpp"
 
 namespace gui {
 
@@ -67,6 +72,12 @@ QVariant LibraryModel::data(const QModelIndex& index, int role) const {
           if (info.isFile() && info.isExecutable()) {
             return QColorConstants::Red;  // potentially dangerous file
           }
+          break;
+        }
+        case COLUMN_ANIME: {
+          const auto disabledTextColor =
+              qApp->palette().color(QPalette::ColorGroup::Disabled, QPalette::ColorRole::Text);
+          if (!getId(fileName(index))) return disabledTextColor;  // unidentified
           break;
         }
       }
@@ -137,11 +148,20 @@ bool LibraryModel::isEnabled(const QModelIndex& index) const {
 }
 
 QString LibraryModel::getTitle(const QString& path) const {
+  if (m_parsed[path].id) {
+    const auto item = anime::db.item(m_parsed[path].id);
+    if (item) return QString::fromStdString(item->titles.romaji);
+  }
+
   return m_parsed[path].title;
 }
 
 QString LibraryModel::getEpisode(const QString& path) const {
   return m_parsed[path].episode;
+}
+
+int LibraryModel::getId(const QString& path) const {
+  return m_parsed[path].id;
 }
 
 void LibraryModel::parseDirectory(const QString& path) {
@@ -162,19 +182,13 @@ void LibraryModel::parseDirectory(const QString& path) {
 void LibraryModel::parseFileName(const QString& name) {
   if (m_parsed.contains(name)) return;
 
-  const auto elements = anitomy::parse(name.toStdString());
-
-  const auto find_element = [&elements](anitomy::ElementKind kind) {
-    return std::ranges::find_if(
-        elements, [kind](const anitomy::Element& element) { return element.kind == kind; });
-  };
-
-  const auto title = find_element(anitomy::ElementKind::Title);
-  const auto episode = find_element(anitomy::ElementKind::Episode);
+  auto episode = track::recognition::parse(name.toStdString());
+  const auto anime_id = track::recognition::identify(episode);
 
   m_parsed[name] = ParsedData{
-      .title = title != elements.end() ? QString::fromStdString(title->value) : "",
-      .episode = episode != elements.end() ? QString::fromStdString(episode->value) : "",
+      .title = QString::fromStdString(episode.element(anitomy::ElementKind::Title)),
+      .episode = QString::fromStdString(episode.element(anitomy::ElementKind::Episode)),
+      .id = anime_id,
   };
 }
 

@@ -48,12 +48,14 @@ private:
   struct ParsedData {
     QString title;
     QString episode;
+    int id = 0;
   };
 
   bool isEnabled(const QModelIndex& index) const;
 
   QString getTitle(const QString& path) const;
   QString getEpisode(const QString& path) const;
+  int getId(const QString& path) const;
 
   void parseDirectory(const QString& path);
   void parseFileName(const QString& name);
