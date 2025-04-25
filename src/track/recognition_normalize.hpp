@@ -1,6 +1,6 @@
 /**
  * Taiga
- * Copyright (C) 2010-2024, Eren Okka
+ * Copyright (C) 2010-2025, Eren Okka
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,14 +18,18 @@
 
 #pragma once
 
-#include <QList>
 #include <QString>
 #include <string>
-#include <vector>
 
-using namespace Qt::Literals::StringLiterals;
+namespace track::recognition {
 
-QString joinStrings(const std::vector<std::string>& list, QString placeholder = "?");
-void removeHtmlTags(QString& str);
-QString& replaceWholeWord(QString& str, const QString& before, const QString& after);
-std::vector<std::string> toVector(const QStringList& list);
+std::string normalize(std::string title);
+
+void erasePunctuation(QString& str);
+void normalizeOrdinalNumbers(QString& str);
+void normalizeRomanNumbers(QString& str);
+void normalizeSeasonNumbers(QString& str);
+void normalizeUnicode(QString& str);
+void transliterate(QString& str);
+
+}  // namespace track::recognition

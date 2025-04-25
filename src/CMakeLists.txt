@@ -82,6 +82,8 @@ target_sources(taiga PRIVATE
 	track/recognition.hpp
 	track/recognition_cache.cpp
 	track/recognition_cache.hpp
+	track/recognition_normalize.cpp
+	track/recognition_normalize.hpp
 
 	main.cpp
 )

@@ -19,7 +19,6 @@
 #pragma once
 
 #include <anitomy.hpp>
-#include <string>
 #include <string_view>
 
 namespace track {
@@ -30,7 +29,5 @@ namespace track::recognition {
 
 Episode parse(std::string_view input, const anitomy::Options options = {});
 int identify(Episode& episode);
-
-std::string normalize(const std::string& title);
 
 }  // namespace track::recognition

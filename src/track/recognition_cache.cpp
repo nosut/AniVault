@@ -22,6 +22,7 @@
 
 #include "media/anime_db.hpp"
 #include "track/recognition.hpp"
+#include "track/recognition_normalize.hpp"
 
 namespace track::recognition {
 

@@ -40,6 +40,29 @@ void removeHtmlTags(QString& str) {
   str.remove(re);
 }
 
+QString& replaceWholeWord(QString& str, const QString& before, const QString& after) {
+  static constexpr auto is_boundary = [](const QChar& c) { return c.isSpace() || c.isPunct(); };
+
+  const auto is_whole_word = [&str, &before](qsizetype pos) {
+    if (pos == 0 || is_boundary(str.at(pos - 1))) {
+      const qsizetype pos_end = pos + before.size();
+      if (pos_end >= str.size() || is_boundary(str.at(pos_end))) return true;
+    }
+    return false;
+  };
+
+  for (auto pos = str.indexOf(before); pos != -1; pos = str.indexOf(before, pos)) {
+    if (!is_whole_word(pos)) {
+      pos += before.size();
+    } else {
+      str.replace(pos, before.size(), after);
+      pos += after.size();
+    }
+  }
+
+  return str;
+}
+
 std::vector<std::string> toVector(const QStringList& list) {
   return list | std::views::transform(toStdString) | std::ranges::to<std::vector>();
 }

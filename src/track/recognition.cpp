@@ -21,13 +21,12 @@
 #include <algorithm>
 #include <anitomy.hpp>
 #include <ranges>
-#include <set>
 #include <vector>
 
 #include "media/anime.hpp"
-#include "media/anime_db.hpp"
 #include "track/episode.hpp"
 #include "track/recognition_cache.hpp"
+#include "track/recognition_normalize.hpp"
 
 namespace track::recognition {
 
@@ -60,15 +59,6 @@ int identify(Episode& episode) {
   if (matches.empty()) return anime::kUnknownId;
 
   return matches.front().id;
-}
-
-std::string normalize(const std::string& title) {
-  // @TODO
-  return QString::fromStdString(title)
-      .normalized(QString::NormalizationForm_KC)
-      .toLower()
-      .remove(' ')
-      .toStdString();
 }
 
 }  // namespace track::recognition
