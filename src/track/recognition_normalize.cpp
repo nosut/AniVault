@@ -22,6 +22,7 @@
 
 #include <QList>
 #include <QString>
+#include <cstdlib>
 #include <ranges>
 
 #include "base/string.hpp"
@@ -155,7 +156,7 @@ void normalizeUnicode(QString& str) {
     str = QString::fromLatin1(buffer, length);
   }
 
-  if (buffer) free(buffer);
+  std::free(buffer);
 }
 
 void transliterate(QString& str) {
