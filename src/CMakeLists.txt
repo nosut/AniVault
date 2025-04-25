@@ -76,6 +76,13 @@ target_sources(taiga PRIVATE
 	taiga/version.cpp
 	taiga/version.hpp
 
+	track/episode.cpp
+	track/episode.hpp
+	track/recognition.cpp
+	track/recognition.hpp
+	track/recognition_cache.cpp
+	track/recognition_cache.hpp
+
 	main.cpp
 )
 
