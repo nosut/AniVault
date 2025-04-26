@@ -34,6 +34,8 @@
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
 #include "media/anime_utils.hpp"
+#include "taiga/settings.hpp"
+#include "track/scanner.hpp"
 
 namespace gui {
 
@@ -108,7 +110,20 @@ void MediaMenu::editStatus(const anime::list::Status status) const {
 }
 
 void MediaMenu::playEpisode(int number) const {
-  QMessageBox::information(nullptr, "TODO", u"Episode: %1"_s.arg(number));  // @TODO
+  const auto& item = m_items.front();
+  const auto libraryFolders = taiga::settings.libraryFolders();
+
+  for (const auto& folder : libraryFolders) {
+    const auto episodePath = track::findEpisode(QString::fromStdString(folder), item.id, number);
+    if (episodePath) {
+      qDebug() << "Found file:" << *episodePath;
+      QDesktopServices::openUrl(QUrl::fromLocalFile(*episodePath));
+      return;
+    }
+  }
+
+  QMessageBox::information(nullptr, tr("Play Episode"),
+                           tr("Could not find %1 #%2.").arg(item.titles.romaji).arg(number));
 }
 
 void MediaMenu::removeFromList() const {
