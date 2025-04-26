@@ -31,8 +31,7 @@ std::optional<QString> findEpisode(const QString& path, const int anime_id,
   QDirIterator it{path, QDir::Files, QDirIterator::Subdirectories};
 
   while (it.hasNext()) {
-    const QString filePath = it.next();
-    const auto info = it.fileInfo();
+    const auto info = it.nextFileInfo();
 
     if (!info.isFile()) continue;
 
@@ -45,7 +44,7 @@ std::optional<QString> findEpisode(const QString& path, const int anime_id,
 
     if (track::recognition::identify(episode) != anime_id) continue;
 
-    return filePath;
+    return info.filePath();
   }
 
   return std::nullopt;
