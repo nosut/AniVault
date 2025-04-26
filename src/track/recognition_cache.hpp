@@ -34,7 +34,7 @@ public:
   struct Data {
     struct Match {
       int id;
-      float score;
+      float weight;
     };
 
     std::unordered_map<int, Match> matches;
