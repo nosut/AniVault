@@ -67,7 +67,7 @@ int identify(Episode& episode) {
     matches.append_range(data->matches | std::views::values | std::ranges::to<std::vector>());
   }
 
-  std::ranges::sort(matches, {}, &Cache::Data::Match::score);
+  std::ranges::sort(matches, std::ranges::greater{}, &Cache::Data::Match::score);
 
   for (const auto& match : matches) {
     if (isValidMatch(match.id, episode)) return match.id;
