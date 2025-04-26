@@ -18,6 +18,8 @@
 
 #include "recognition.hpp"
 
+#include <QDir>
+#include <QFileInfo>
 #include <algorithm>
 #include <anitomy.hpp>
 #include <ranges>
@@ -33,10 +35,21 @@ namespace track::recognition {
 Episode parse(std::string_view input, const anitomy::Options options) {
   Episode episode;
 
-  // @TODO: Separate filename from path
-
   auto elements = anitomy::parse(input, options);
   episode.setElements(elements);
+
+  return episode;
+}
+
+Episode parseFileInfo(const QFileInfo& info, const anitomy::Options options) {
+  const auto fileName = info.fileName().toStdString();
+
+  Episode episode = track::recognition::parse(fileName, options);
+
+  if (!episode.contains(anitomy::ElementKind::Title)) {
+    const auto dirName = info.dir().dirName().toStdString();
+    episode.addElement(anitomy::ElementKind::Title, dirName);
+  }
 
   return episode;
 }

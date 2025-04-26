@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <QFileInfo>
 #include <anitomy.hpp>
 #include <string_view>
 
@@ -28,6 +29,8 @@ class Episode;
 namespace track::recognition {
 
 Episode parse(std::string_view input, const anitomy::Options options = {});
+Episode parseFileInfo(const QFileInfo& info, const anitomy::Options options = {});
+
 int identify(Episode& episode);
 
 }  // namespace track::recognition

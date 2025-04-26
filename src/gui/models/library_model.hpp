@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <QFileInfo>
 #include <QFileSystemModel>
 
 namespace gui {
@@ -58,7 +59,7 @@ private:
   int getId(const QString& path) const;
 
   void parseDirectory(const QString& path);
-  void parseFileName(const QString& name);
+  void parseFileInfo(const QFileInfo& info);
 
   QMap<QString, ParsedData> m_parsed;
 };

@@ -19,6 +19,7 @@
 #pragma once
 
 #include <anitomy.hpp>
+#include <string>
 #include <vector>
 
 namespace track {
@@ -29,10 +30,14 @@ public:
 
   const std::vector<anitomy::Element>& elements() const noexcept;
   void setElements(std::vector<anitomy::Element>& elements);
-
+  
+  bool contains(const anitomy::ElementKind kind) const;
   std::string element(const anitomy::ElementKind kind) const;
+  void addElement(const anitomy::ElementKind kind, const std::string& value);
 
 private:
+  auto find(const anitomy::ElementKind kind) const;
+
   int anime_id_;
   std::vector<anitomy::Element> elements_;
 };

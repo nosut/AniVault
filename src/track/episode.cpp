@@ -26,6 +26,11 @@ namespace track {
 
 Episode::Episode() : anime_id_{anime::kUnknownId} {}
 
+auto Episode::find(const anitomy::ElementKind kind) const {
+  const auto is_kind = [kind](const anitomy::Element& element) { return element.kind == kind; };
+  return std::ranges::find_if(elements_, is_kind);
+}
+
 const std::vector<anitomy::Element>& Episode::elements() const noexcept {
   return elements_;
 }
@@ -34,13 +39,18 @@ void Episode::setElements(std::vector<anitomy::Element>& elements) {
   elements_ = elements;
 }
 
+bool Episode::contains(const anitomy::ElementKind kind) const {
+  return find(kind) != elements_.end();
+}
+
 std::string Episode::element(const anitomy::ElementKind kind) const {
-  const auto it = std::ranges::find_if(
-      elements_, [kind](const anitomy::Element& element) { return element.kind == kind; });
-
+  const auto it = find(kind);
   if (it != elements_.end()) return it->value;
-
   return {};
 };
+
+void Episode::addElement(const anitomy::ElementKind kind, const std::string& value) {
+  elements_.emplace_back(anitomy::Element{.kind = kind, .value = value});
+}
 
 }  // namespace track

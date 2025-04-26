@@ -56,10 +56,10 @@ QVariant LibraryModel::data(const QModelIndex& index, int role) const {
     case Qt::DisplayRole: {
       switch (index.column()) {
         case COLUMN_ANIME:
-          if (isEnabled(index)) return getTitle(fileName(index));
+          if (isEnabled(index)) return getTitle(filePath(index));
           return {};
         case COLUMN_EPISODE:
-          if (isEnabled(index)) return getEpisode(fileName(index));
+          if (isEnabled(index)) return getEpisode(filePath(index));
           return {};
       }
       break;
@@ -77,7 +77,7 @@ QVariant LibraryModel::data(const QModelIndex& index, int role) const {
         case COLUMN_ANIME: {
           const auto disabledTextColor =
               qApp->palette().color(QPalette::ColorGroup::Disabled, QPalette::ColorRole::Text);
-          if (!getId(fileName(index))) return disabledTextColor;  // unidentified
+          if (!getId(filePath(index))) return disabledTextColor;  // unidentified
           break;
         }
       }
@@ -175,17 +175,19 @@ void LibraryModel::parseDirectory(const QString& path) {
     if (!isEnabled(child)) continue;
     const auto info = fileInfo(child);
     if (!info.isFile()) continue;
-    parseFileName(info.fileName());
+    parseFileInfo(info);
   }
 }
 
-void LibraryModel::parseFileName(const QString& name) {
-  if (m_parsed.contains(name)) return;
+void LibraryModel::parseFileInfo(const QFileInfo& info) {
+  const auto path = info.filePath();
 
-  auto episode = track::recognition::parse(name.toStdString());
+  if (m_parsed.contains(path)) return;
+
+  auto episode = track::recognition::parseFileInfo(info);
   const auto anime_id = track::recognition::identify(episode);
 
-  m_parsed[name] = ParsedData{
+  m_parsed[path] = ParsedData{
       .title = QString::fromStdString(episode.element(anitomy::ElementKind::Title)),
       .episode = QString::fromStdString(episode.element(anitomy::ElementKind::Episode)),
       .id = anime_id,
