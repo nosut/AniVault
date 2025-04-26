@@ -147,13 +147,14 @@ void normalizeUnicode(QString& str) {
       UTF8PROC_CASEFOLD;
 
   char* buffer = nullptr;
+  const auto utf8str = str.toUtf8();
 
-  const auto length = utf8proc_map(reinterpret_cast<const utf8proc_uint8_t*>(str.data()),
-                                   str.length(), reinterpret_cast<utf8proc_uint8_t**>(&buffer),
+  const auto length = utf8proc_map(reinterpret_cast<const utf8proc_uint8_t*>(utf8str.data()),
+                                   utf8str.length(), reinterpret_cast<utf8proc_uint8_t**>(&buffer),
                                    static_cast<utf8proc_option_t>(options));
 
   if (length >= 0) {
-    str = QString::fromLatin1(buffer, length);
+    str = QString::fromUtf8(buffer, length);
   }
 
   std::free(buffer);
