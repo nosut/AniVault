@@ -24,6 +24,8 @@ target_sources(taiga-gui PRIVATE
 	common/page_widget.cpp
 	common/page_widget.hpp
 
+	library/library_menu.cpp
+	library/library_menu.hpp
 	library/library_widget.cpp
 	library/library_widget.hpp
 

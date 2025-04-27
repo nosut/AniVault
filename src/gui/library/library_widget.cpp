@@ -23,6 +23,7 @@
 #include <QLayout>
 #include <QUrl>
 
+#include "gui/library/library_menu.hpp"
 #include "gui/main/main_window.hpp"
 #include "gui/models/library_model.hpp"
 #include "gui/utils/theme.hpp"
@@ -78,6 +79,7 @@ LibraryWidget::LibraryWidget(QWidget* parent)
   m_view->setRootIndex(m_model->index(rootPath));
   m_view->setAlternatingRowColors(true);
   m_view->setAllColumnsShowFocus(true);
+  m_view->setContextMenuPolicy(Qt::CustomContextMenu);
   m_view->setUniformRowHeights(true);
 
   m_view->header()->setSectionsMovable(false);
@@ -98,6 +100,8 @@ LibraryWidget::LibraryWidget(QWidget* parent)
   connect(m_model, &QFileSystemModel::rootPathChanged, this,
           [this](const QString& newPath) { m_view->setRootIndex(m_model->index(newPath)); });
 
+  connect(m_view, &QWidget::customContextMenuRequested, this, &LibraryWidget::showContextMenu);
+
   connect(m_view, &QTreeView::doubleClicked, this, [this](const QModelIndex& index) {
     if (!index.isValid()) return;
     if (!(index.flags() & Qt::ItemIsEnabled)) return;
@@ -106,6 +110,17 @@ LibraryWidget::LibraryWidget(QWidget* parent)
     if (info.isExecutable()) return;  // avoid running potentially dangerous files
     QDesktopServices::openUrl(QUrl::fromLocalFile(m_model->filePath(index)));
   });
+}
+
+void LibraryWidget::showContextMenu() const {
+  const auto index = m_view->currentIndex();
+
+  if (!index.isValid()) return;
+
+  const QString path = m_model->fileInfo(index).filePath();
+
+  auto* menu = new LibraryMenu(m_view, path, m_model->getId(path));
+  menu->popup();
 }
 
 }  // namespace gui

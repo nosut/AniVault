@@ -1,6 +1,6 @@
 /**
  * Taiga
- * Copyright (C) 2010-2024, Eren Okka
+ * Copyright (C) 2010-2025, Eren Okka
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,29 +18,30 @@
 
 #pragma once
 
-#include <QTreeView>
-
-#include "gui/common/combobox.hpp"
-#include "gui/common/page_widget.hpp"
+#include <QMenu>
+#include <QString>
 
 namespace gui {
 
-class LibraryModel;
-
-class LibraryWidget final : public PageWidget {
+class LibraryMenu final : public QMenu {
   Q_OBJECT
-  Q_DISABLE_COPY_MOVE(LibraryWidget)
+  Q_DISABLE_COPY_MOVE(LibraryMenu)
 
 public:
-  LibraryWidget(QWidget* parent);
-  ~LibraryWidget() = default;
+  LibraryMenu(QWidget* parent, const QString& path, int anime_id);
+  ~LibraryMenu() = default;
+
+  void popup();
+
+private slots:
+  void open() const;
+  void remove() const;
+  void rename() const;
+  void viewDetails() const;
 
 private:
-  void showContextMenu() const;
-
-  LibraryModel* m_model = nullptr;
-  ComboBox* m_comboRoot = nullptr;
-  QTreeView* m_view = nullptr;
+  int m_anime_id = 0;
+  QString m_path;
 };
 
 }  // namespace gui

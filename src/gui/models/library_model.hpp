@@ -45,6 +45,10 @@ public:
   QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
   QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 
+  QString getTitle(const QString& path) const;
+  QString getEpisode(const QString& path) const;
+  int getId(const QString& path) const;
+
 private:
   struct ParsedData {
     QString title;
@@ -53,10 +57,6 @@ private:
   };
 
   bool isEnabled(const QModelIndex& index) const;
-
-  QString getTitle(const QString& path) const;
-  QString getEpisode(const QString& path) const;
-  int getId(const QString& path) const;
 
   void parseDirectory(const QString& path);
   void parseFileInfo(const QFileInfo& info);
