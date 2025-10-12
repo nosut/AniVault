@@ -19,11 +19,15 @@
 #include "list_widget.hpp"
 
 #include <QActionGroup>
+#include <QDateTime>
+#include <QFileDialog>
 #include <QListView>
 #include <QMenu>
 #include <QToolBar>
 #include <QToolButton>
+#include <format>
 
+#include "base/string.hpp"
 #include "gui/common/anime_list_view.hpp"
 #include "gui/common/anime_list_view_cards.hpp"
 #include "gui/main/main_window.hpp"
@@ -31,6 +35,7 @@
 #include "gui/models/anime_list_model.hpp"
 #include "gui/models/anime_list_proxy_model.hpp"
 #include "gui/utils/theme.hpp"
+#include "media/anime_list_export.hpp"
 #include "taiga/session.hpp"
 
 namespace gui {
@@ -40,7 +45,8 @@ ListWidget::ListWidget(QWidget* parent)
       m_model(new AnimeListModel(this)),
       m_proxyModel(new AnimeListProxyModel(this)),
       m_sortMenu(new QMenu(this)),
-      m_viewMenu(new QMenu(this)) {
+      m_viewMenu(new QMenu(this)),
+      m_moreMenu(new QMenu(this)) {
   m_proxyModel->sort(taiga::session.animeListSortColumn(), taiga::session.animeListSortOrder());
 
   initToolbar();
@@ -48,6 +54,7 @@ ListWidget::ListWidget(QWidget* parent)
 
   connect(m_sortMenu, &QMenu::aboutToShow, this, &ListWidget::initSortMenu);
   connect(m_viewMenu, &QMenu::aboutToShow, this, &ListWidget::initViewMenu);
+  connect(m_moreMenu, &QMenu::aboutToShow, this, &ListWidget::initMoreMenu);
 
   connect(mainWindow()->navigation(), &NavigationWidget::currentListStatusChanged, this,
           [this](anime::list::Status status) {
@@ -113,6 +120,10 @@ void ListWidget::initToolbar() {
   const auto viewButton = static_cast<QToolButton*>(m_toolbar->widgetForAction(actionView));
   viewButton->setPopupMode(QToolButton::InstantPopup);
   viewButton->setMenu(m_viewMenu);
+
+  const auto moreButton = static_cast<QToolButton*>(m_toolbar->widgetForAction(actionMore));
+  moreButton->setPopupMode(QToolButton::InstantPopup);
+  moreButton->setMenu(m_moreMenu);
 }
 
 void ListWidget::initSortMenu() {
@@ -173,6 +184,28 @@ void ListWidget::initViewMenu() {
     action->setChecked(mode == m_viewMode);
     actionGroup->addAction(action);
   }
+}
+
+void ListWidget::initMoreMenu() {
+  m_moreMenu->clear();
+
+  constexpr auto export_as = [](QWidget* parent, const QString& extension, auto export_function) {
+    const auto directory = QFileDialog::getExistingDirectory(
+        parent, tr("Select Export Location"), {},
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks | QFileDialog::ReadOnly);
+
+    if (directory.isEmpty()) return;
+
+    const auto timestamp = QDateTime::currentDateTime().toSecsSinceEpoch();
+    const auto path = u"{}/animelist_{}.{}"_s.arg(directory).arg(timestamp).arg(extension);
+    export_function(path.toStdString());
+  };
+
+  m_moreMenu->addAction(tr("Export as Markdown..."), this,
+                        [this]() { export_as(this, "md", &anime::list::exportAsMarkdown); });
+
+  m_moreMenu->addAction(tr("Export as XML..."), this,
+                        [this]() { export_as(this, "xml", &anime::list::exportAsXml); });
 }
 
 }  // namespace gui

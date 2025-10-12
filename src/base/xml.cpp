@@ -1,6 +1,6 @@
 /**
  * Taiga
- * Copyright (C) 2010-2024, Eren Okka
+ * Copyright (C) 2010-2025, Eren Okka
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,6 +39,26 @@ bool XmlFileReader::open(const QString& name, std::function<void(QString&)> prep
 
 bool XmlFileReader::readElement(QAnyStringView name) {
   return QXmlStreamReader::readNextStartElement() && QXmlStreamReader::name() == name;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+const QFile& XmlFileWriter::file() const {
+  return file_;
+}
+
+bool XmlFileWriter::open(const QString& name) {
+  file_.setFileName(name);
+
+  if (!file_.open(QIODevice::WriteOnly)) return false;
+
+  QXmlStreamWriter::setDevice(&file_);
+
+  return true;
+}
+
+void XmlFileWriter::writeNumberElement(QAnyStringView name, int number) {
+  writeTextElement(name, QString::number(number));
 }
 
 }  // namespace base

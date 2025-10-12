@@ -47,6 +47,7 @@ private:
   void initToolbar();
   void initSortMenu();
   void initViewMenu();
+  void initMoreMenu();
 
   AnimeListModel* m_model = nullptr;
   AnimeListProxyModel* m_proxyModel = nullptr;
@@ -55,6 +56,7 @@ private:
   ListViewMode m_viewMode = ListViewMode::List;
   QMenu* m_sortMenu = nullptr;
   QMenu* m_viewMenu = nullptr;
+  QMenu* m_moreMenu = nullptr;
 };
 
 }  // namespace gui

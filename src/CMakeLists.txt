@@ -29,6 +29,8 @@ target_sources(taiga PRIVATE
 
 	media/anime_db.cpp
 	media/anime_db.hpp
+	media/anime_list_export.cpp
+	media/anime_list_export.hpp
 	media/anime_list.hpp
 	media/anime_season.cpp
 	media/anime_season.hpp
