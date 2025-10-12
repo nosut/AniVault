@@ -23,6 +23,7 @@
 #include <optional>
 
 #include "media/anime.hpp"
+#include "track/episode.hpp"
 
 namespace gui {
 
@@ -35,7 +36,7 @@ public:
   ~NowPlayingWidget() = default;
 
   void reset();
-  void setPlaying(Anime anime);
+  void setPlaying(track::Episode episode);
 
 private:
   void refresh();
@@ -45,6 +46,7 @@ private:
   QLabel* m_timerLabel = nullptr;
 
   std::optional<Anime> m_anime;
+  std::optional<track::Episode> m_episode;
 };
 
 }  // namespace gui

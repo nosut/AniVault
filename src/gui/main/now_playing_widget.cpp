@@ -20,11 +20,15 @@
 
 #include <QBoxLayout>
 #include <QLabel>
+#include <optional>
 
 #include "base/string.hpp"
 #include "gui/media/media_dialog.hpp"
 #include "gui/utils/format.hpp"
 #include "gui/utils/theme.hpp"
+#include "media/anime_db.hpp"
+#include "track/episode.hpp"
+#include "track/media.hpp"
 
 namespace gui {
 
@@ -57,35 +61,67 @@ NowPlayingWidget::NowPlayingWidget(QWidget* parent) : QFrame(parent) {
   layout->addWidget(m_timerLabel);
 
   refresh();
+
+  connect(track::media::detection(), &track::media::Detection::currentEpisodeChanged, this,
+          [this](std::optional<track::Episode> episode) {
+            if (episode) {
+              setPlaying(*episode);
+            } else {
+              reset();
+            }
+          });
 }
 
 void NowPlayingWidget::reset() {
+  hide();
   m_anime.reset();
+  m_episode.reset();
   refresh();
 }
 
-void NowPlayingWidget::setPlaying(Anime anime) {
-  m_anime = anime;
+void NowPlayingWidget::setPlaying(track::Episode episode) {
+  m_episode = episode;
+
+  if (const auto item = anime::db.item(episode.animeId())) {
+    m_anime = *item;
+  } else {
+    m_anime.reset();
+  }
+
   refresh();
+  show();
 }
 
 void NowPlayingWidget::refresh() {
-  if (!m_anime.has_value()) {
+  if (!m_episode.has_value()) {
     m_iconLabel->setToolTip({});
     m_mainLabel->setText({});
     m_timerLabel->setText({});
     return;
   }
 
-  m_iconLabel->setToolTip(
-      "<b>Media player:</b> mpv<br>"
-      "<b>Episode title:</b> Tiger and Dragon<br>"
-      "<b>Group:</b> TaigaSubs<br>"
-      "<b>Video:</b> 1080p");
+  QStringList lines;
+  if (const auto player = track::media::detection()->getCurrentPlayer()) {
+    lines += u"<b>Media player:</b> %1"_s.arg(QString::fromStdString(player->name));
+  }
+  if (m_episode->contains(anitomy::ElementKind::EpisodeTitle)) {
+    const auto episodeTitle = m_episode->element(anitomy::ElementKind::EpisodeTitle);
+    lines += u"<b>Episode title:</b> %1"_s.arg(episodeTitle);
+  }
+  if (m_episode->contains(anitomy::ElementKind::ReleaseGroup)) {
+    const auto releaseGroup = m_episode->element(anitomy::ElementKind::ReleaseGroup);
+    lines += u"<b>Group:</b> %1"_s.arg(releaseGroup);
+  }
+  m_iconLabel->setToolTip(lines.join("<br>"));
+
+  const auto title =
+      m_anime ? m_anime->titles.romaji : m_episode->element(anitomy::ElementKind::Title);
+  const auto episodeNumber = m_episode->element(anitomy::ElementKind::Episode, "1");
+  const auto episodeCount = formatNumber(m_anime ? m_anime->episode_count : 0, "?");
 
   m_mainLabel->setText(u"Watching <a href=\"#\" style=\"%3\">%1</a> – Episode %2"_s
-                           .arg(QString::fromStdString(m_anime->titles.romaji))
-                           .arg(u"%1/%2"_s.arg(1).arg(formatNumber(m_anime->episode_count, "?")))
+                           .arg(QString::fromStdString(title))
+                           .arg(u"%1/%2"_s.arg(episodeNumber).arg(episodeCount))
                            .arg("font-weight: 600; text-decoration: none;"));
 
   m_timerLabel->setText("List update in <b style=\"font-weight: 600;\">00:00</b>");
