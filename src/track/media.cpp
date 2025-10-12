@@ -20,6 +20,7 @@
 
 #include "base/file.hpp"
 #include "media/anime_db.hpp"
+#include "taiga/settings.hpp"
 #include "track/episode.hpp"
 #include "track/recognition.hpp"
 
@@ -53,7 +54,10 @@ bool Detection::init() {
     return false;
   }
 
-  pollTimer_->start(1000);
+#ifdef Q_OS_WINDOWS
+  const auto interval = taiga::settings.mediaDetectionInterval();
+  pollTimer_->start(interval);
+#endif
 
   return true;
 }

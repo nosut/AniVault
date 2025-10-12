@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -32,10 +33,12 @@ public:
   Qt::ColorScheme appColorScheme() const;
   std::string service() const;
   std::vector<std::string> libraryFolders() const;
+  std::chrono::milliseconds mediaDetectionInterval() const;
 
   void setAppColorScheme(const Qt::ColorScheme scheme) const;
   void setService(const std::string& service) const;
   void setLibraryFolders(std::vector<std::string> folders) const;
+  void setMediaDetectionInterval(const std::chrono::milliseconds interval) const;
 
 private:
   QString fileName() const override;

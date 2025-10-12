@@ -19,6 +19,7 @@
 #include "settings.hpp"
 
 #include <QXmlStreamReader>
+#include <chrono>
 
 #include "base/log.hpp"
 #include "base/xml.hpp"
@@ -26,13 +27,14 @@
 #include "taiga/settings.hpp"
 
 #define XML_ATTR(name) xml.attributes().value(name)
+#define XML_ATTR_INT(name) XML_ATTR(name).toInt()
 #define XML_ATTR_STR(name) XML_ATTR(name).toString().toStdString()
 
 namespace compat::v1 {
 
-void parseAccountElement(QXmlStreamReader& xml, const taiga::Settings& settings,
-                         const taiga::Accounts& accounts);
-void parseAnimeElement(QXmlStreamReader& xml, const taiga::Settings& settings);
+void parseAccountElement(QXmlStreamReader&, const taiga::Settings&, const taiga::Accounts&);
+void parseAnimeElement(QXmlStreamReader&, const taiga::Settings&);
+void parseRecognitionElement(QXmlStreamReader&, const taiga::Settings&);
 
 void readSettings(const std::string& path, const taiga::Settings& settings,
                   const taiga::Accounts& accounts) {
@@ -52,8 +54,10 @@ void readSettings(const std::string& path, const taiga::Settings& settings,
       parseAccountElement(xml, settings, accounts);
     } else if (xml.name() == u"anime") {
       parseAnimeElement(xml, settings);
+    } else if (xml.name() == u"recognition") {
+      parseRecognitionElement(xml, settings);
     } else {
-      // @TODO: recognition, program, announce, rss
+      // @TODO: program, announce, rss
       xml.skipCurrentElement();
     }
   }
@@ -113,6 +117,19 @@ void parseAnimeElement(QXmlStreamReader& xml, const taiga::Settings& settings) {
   }
 
   settings.setLibraryFolders(libraryFolders);
+}
+
+void parseRecognitionElement(QXmlStreamReader& xml, const taiga::Settings& settings) {
+  while (xml.readNextStartElement()) {
+    if (xml.name() == u"general") {
+      const auto seconds = std::chrono::seconds{XML_ATTR_INT(u"detectioninterval")};
+      settings.setMediaDetectionInterval(seconds);
+      xml.skipCurrentElement();
+
+    } else {
+      xml.skipCurrentElement();
+    }
+  }
 }
 
 }  // namespace compat::v1

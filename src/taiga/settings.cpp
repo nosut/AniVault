@@ -24,6 +24,7 @@
 
 #include "base/string.hpp"
 #include "compat/settings.hpp"
+#include "sync/service.hpp"
 #include "taiga/accounts.hpp"
 #include "taiga/path.hpp"
 #include "taiga/version.hpp"
@@ -59,13 +60,18 @@ Qt::ColorScheme Settings::appColorScheme() const {
 }
 
 std::string Settings::service() const {
-  return value("v1.service").toString().toStdString();
+  return value("v1.service", sync::serviceSlug(sync::ServiceId::AniList)).toString().toStdString();
 }
 
 std::vector<std::string> Settings::libraryFolders() const {
   return value("library.folders").toJsonArray().toVariantList() |
          std::views::transform([](const QVariant& v) { return v.toString().toStdString(); }) |
          std::ranges::to<std::vector>();
+}
+
+std::chrono::milliseconds Settings::mediaDetectionInterval() const {
+  const auto interval = value("track.detection.interval", 3000).toInt();
+  return std::chrono::milliseconds{interval};
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,6 +90,10 @@ void Settings::setLibraryFolders(std::vector<std::string> folders) const {
       std::views::transform([](const std::string& s) { return QString::fromStdString(s); }) |
       std::ranges::to<QList>();
   setValue("library.folders", QJsonArray::fromStringList(list));
+}
+
+void Settings::setMediaDetectionInterval(const std::chrono::milliseconds interval) const {
+  setValue("track.detection.interval", interval.count());
 }
 
 }  // namespace taiga
