@@ -1,6 +1,7 @@
 add_library(taiga-deps STATIC)
 
 target_link_libraries(taiga-deps
+	anisthesia
 	anitomy
 	monolog
 	nstd
@@ -9,6 +10,7 @@ target_link_libraries(taiga-deps
 	utf8proc
 )
 
+add_subdirectory(anisthesia)
 add_subdirectory(anitomy)
 add_subdirectory(monolog)
 add_subdirectory(nstd)

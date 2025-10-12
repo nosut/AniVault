@@ -1,0 +1,5 @@
+<RCC>
+  <qresource>
+    <file alias="players.anisthesia">../../deps/anisthesia/data/players.anisthesia</file>
+  </qresource>
+</RCC>

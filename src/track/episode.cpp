@@ -31,6 +31,14 @@ auto Episode::find(const anitomy::ElementKind kind) const {
   return std::ranges::find_if(elements_, is_kind);
 }
 
+int Episode::animeId() const {
+  return anime_id_;
+}
+
+void Episode::setAnimeId(int id) {
+  anime_id_ = id;
+}
+
 const std::vector<anitomy::Element>& Episode::elements() const noexcept {
   return elements_;
 }

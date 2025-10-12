@@ -80,6 +80,8 @@ target_sources(taiga PRIVATE
 
 	track/episode.cpp
 	track/episode.hpp
+	track/media.cpp
+	track/media.hpp
 	track/recognition.cpp
 	track/recognition.hpp
 	track/recognition_cache.cpp

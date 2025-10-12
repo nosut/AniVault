@@ -28,6 +28,9 @@ class Episode final {
 public:
   Episode();
 
+  int animeId() const;
+  void setAnimeId(int id);
+
   const std::vector<anitomy::Element>& elements() const noexcept;
   void setElements(std::vector<anitomy::Element>& elements);
   
