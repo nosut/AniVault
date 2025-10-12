@@ -115,15 +115,15 @@ void Session::setAnimeListViewMode(const gui::ListViewMode mode) const {
 }
 
 void Session::setMainWindowGeometry(const QByteArray& geometry) const {
-  setValue("mainWindow.geometry", geometry.toBase64());
+  setValue("mainWindow.geometry", geometry.toBase64().toStdString());
 }
 
 void Session::setMediaDialogGeometry(const QByteArray& geometry) const {
-  setValue("mediaDialog.geometry", geometry.toBase64());
+  setValue("mediaDialog.geometry", geometry.toBase64().toStdString());
 }
 
 void Session::setMediaDialogSplitterState(const QByteArray& state) const {
-  setValue("mediaDialog.splitterState", state.toBase64());
+  setValue("mediaDialog.splitterState", state.toBase64().toStdString());
 }
 
 void Session::setSearchListFilters(const gui::AnimeListProxyModelFilter& filters) const {
@@ -135,7 +135,8 @@ void Session::setSearchListFilters(const gui::AnimeListProxyModelFilter& filters
       {"status", filters.status ? *filters.status : QJsonValue{}},
   };
   // clang-format on
-  setValue("searchList.filters", QJsonDocument{object}.toJson(QJsonDocument::Compact).toBase64());
+  setValue("searchList.filters",
+           QJsonDocument{object}.toJson(QJsonDocument::Compact).toBase64().toStdString());
 }
 
 void Session::setSearchListSortColumn(const int column) const {

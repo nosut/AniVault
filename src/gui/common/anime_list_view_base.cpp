@@ -90,7 +90,7 @@ void ListViewBase::showMediaMenu() {
   menu->popup();
 }
 
-void ListViewBase::updateSelectionStatus(const QItemSelection& selected, const QItemSelection&) {
+void ListViewBase::updateSelectionStatus(const QItemSelection&, const QItemSelection&) {
   const auto n_selected = selectedIndexes().size();
 
   if (!n_selected) {

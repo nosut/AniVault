@@ -127,15 +127,15 @@ std::string FuzzyDate::to_string() const {
 }
 
 FuzzyDate::unsigned_t FuzzyDate::year() const {
-  return static_cast<int>(year_);
+  return static_cast<unsigned_t>(static_cast<int>(year_));
 }
 
 FuzzyDate::unsigned_t FuzzyDate::month() const {
-  return static_cast<unsigned>(month_);
+  return static_cast<unsigned_t>(static_cast<unsigned int>(month_));
 }
 
 FuzzyDate::unsigned_t FuzzyDate::day() const {
-  return static_cast<unsigned>(day_);
+  return static_cast<unsigned_t>(static_cast<unsigned int>(day_));
 }
 
 void FuzzyDate::set_year(unsigned_t year) {

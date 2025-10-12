@@ -24,7 +24,7 @@
 
 namespace rss {
 
-// Reference: http://www.rssboard.org/rss-specification
+// Reference: https://www.rssboard.org/rss-specification
 
 struct Channel {
   std::string title;

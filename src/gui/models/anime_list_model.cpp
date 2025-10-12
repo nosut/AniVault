@@ -175,10 +175,10 @@ QVariant AnimeListModel::data(const QModelIndex& index, int role) const {
   return {};
 }
 
-bool AnimeListModel::setData(const QModelIndex& index, const QVariant& value, int role) {
+bool AnimeListModel::setData(const QModelIndex& index, const QVariant&, int role) {
   if (index.isValid() && role == Qt::EditRole) {
     if (index.column() == COLUMN_SCORE) {
-      const int id = m_ids.at(index.row());
+      // const int id = m_ids.at(index.row());
       // @TODO: Add to queue
       return true;
     }

@@ -45,7 +45,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::S
   };
 
   const auto add_child = [this](QTreeWidgetItem* parent, QString text) {
-    auto item = new QTreeWidgetItem(parent, QStringList(text));
+    new QTreeWidgetItem(parent, QStringList(text));
   };
 
   add_item("account_circle", "Accounts");
@@ -76,7 +76,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent), ui_(new Ui::S
   ui_->treeWidget->expandAll();
 
   connect(ui_->treeWidget, &QTreeWidget::currentItemChanged, this,
-          [this](QTreeWidgetItem* current, QTreeWidgetItem* previous) {
+          [this](QTreeWidgetItem* current, QTreeWidgetItem*) {
             if (current) {
               auto text = current->text(0);
               if (current->parent()) {
