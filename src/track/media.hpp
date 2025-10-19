@@ -60,8 +60,8 @@ private:
 };
 
 inline Detection* detection() {
-  static Detection detection(qApp);
-  return &detection;
+  static auto detection = new Detection(qApp);
+  return detection;
 }
 
 }  // namespace track::media
