@@ -34,6 +34,7 @@
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
 #include "media/anime_utils.hpp"
+#include "sync/service.hpp"
 #include "taiga/settings.hpp"
 #include "track/play.hpp"
 #include "track/scanner.hpp"
@@ -177,11 +178,16 @@ void MediaMenu::searchAniDB() const {
 
 void MediaMenu::searchAniList() const {
   for (const auto& item : m_items) {
-    QUrl url{"https://anilist.co/search/anime"};
-    QUrlQuery query{{"search", QString::fromStdString(item.titles.romaji)}};
-    if (anime::isNsfw(item)) query.addQueryItem("adult", "true");
-    url.setQuery(query);
-    QDesktopServices::openUrl(url);
+    if (sync::currentServiceId() == sync::ServiceId::AniList) {
+      QUrl url{sync::animePageUrl(item.id)};
+      QDesktopServices::openUrl(url);
+    } else {
+      QUrl url{"https://anilist.co/search/anime"};
+      QUrlQuery query{{"search", QString::fromStdString(item.titles.romaji)}};
+      if (anime::isNsfw(item)) query.addQueryItem("adult", "true");
+      url.setQuery(query);
+      QDesktopServices::openUrl(url);
+    }
   }
 }
 
@@ -195,17 +201,27 @@ void MediaMenu::searchANN() const {
 
 void MediaMenu::searchKitsu() const {
   for (const auto& item : m_items) {
-    QUrl url{"https://kitsu.app/anime"};
-    url.setQuery({{"text", QString::fromStdString(item.titles.romaji)}});
-    QDesktopServices::openUrl(url);
+    if (sync::currentServiceId() == sync::ServiceId::Kitsu) {
+      QUrl url{sync::animePageUrl(item.id)};
+      QDesktopServices::openUrl(url);
+    } else {
+      QUrl url{"https://kitsu.app/anime"};
+      url.setQuery({{"text", QString::fromStdString(item.titles.romaji)}});
+      QDesktopServices::openUrl(url);
+    }
   }
 }
 
 void MediaMenu::searchMyAnimeList() const {
   for (const auto& item : m_items) {
-    QUrl url{"https://myanimelist.net/anime.php"};
-    url.setQuery({{"q", QString::fromStdString(item.titles.romaji)}});
-    QDesktopServices::openUrl(url);
+    if (sync::currentServiceId() == sync::ServiceId::MyAnimeList) {
+      QUrl url{sync::animePageUrl(item.id)};
+      QDesktopServices::openUrl(url);
+    } else {
+      QUrl url{"https://myanimelist.net/anime.php"};
+      url.setQuery({{"q", QString::fromStdString(item.titles.romaji)}});
+      QDesktopServices::openUrl(url);
+    }
   }
 }
 
