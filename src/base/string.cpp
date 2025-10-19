@@ -30,6 +30,11 @@ namespace {
 
 }  // namespace
 
+int compareStrings(const std::string_view a, const std::string_view b,
+                   Qt::CaseSensitivity caseSensitivity) {
+  return QString::fromUtf8(a).compare(QString::fromUtf8(b), caseSensitivity);
+}
+
 QString joinStrings(const std::vector<std::string>& list, QString placeholder) {
   if (list.empty()) return placeholder;
   return QString::fromStdString(nstd::join(list, ", "));

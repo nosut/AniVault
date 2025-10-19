@@ -21,10 +21,13 @@
 #include <QList>
 #include <QString>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace Qt::Literals::StringLiterals;
 
+int compareStrings(const std::string_view a, const std::string_view b,
+                   Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive);
 QString joinStrings(const std::vector<std::string>& list, QString placeholder = "?");
 void removeHtmlTags(QString& str);
 QString& replaceWholeWord(QString& str, const QString& before, const QString& after);
