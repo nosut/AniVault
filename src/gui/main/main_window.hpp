@@ -63,12 +63,13 @@ public:
 public slots:
   void addNewFolder();
   void displayWindow();
-  void setPage(MainWindowPage page);
+  void navigateTo(MainWindowPage page);
   void updateTitle();
 
 private slots:
   void about();
   void donate() const;
+  void setPage(MainWindowPage page);
   void support() const;
   void profile();
 

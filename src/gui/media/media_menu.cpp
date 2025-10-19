@@ -164,7 +164,7 @@ void MediaMenu::removeFromList() const {
 
 void MediaMenu::search() const {
   const auto& item = m_items.front();
-  mainWindow()->setPage(MainWindowPage::Search);
+  mainWindow()->navigateTo(MainWindowPage::Search);
   mainWindow()->searchBox()->setText(QString::fromStdString(item.titles.romaji));
 }
 
@@ -256,6 +256,12 @@ void MediaMenu::searchYouTube() const {
       QDesktopServices::openUrl(url);
     }
   }
+}
+
+void MediaMenu::torrents() const {
+  const auto& item = m_items.front();
+  mainWindow()->navigateTo(MainWindowPage::Torrents);
+  mainWindow()->searchBox()->setText(QString::fromStdString(item.titles.romaji));
 }
 
 void MediaMenu::test() const {
@@ -454,7 +460,7 @@ void MediaMenu::addTorrentsItems() {
   if (isBatch()) return;
 
   // Torrents
-  addAction(theme.getIcon("rss_feed"), tr("Torrents"), this, &MediaMenu::test);
+  addAction(theme.getIcon("rss_feed"), tr("Torrents"), this, &MediaMenu::torrents);
 }
 
 void MediaMenu::addMetaItems() {

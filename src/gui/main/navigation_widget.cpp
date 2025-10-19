@@ -155,8 +155,7 @@ void NavigationWidget::setItemData(QTreeWidgetItem* item, NavigationItemDataRole
 }
 
 QTreeWidgetItem* NavigationWidget::findItemByPage(MainWindowPage page) const {
-  static const auto find = [page](this auto const& find,
-                                  QTreeWidgetItem* item) -> QTreeWidgetItem* {
+  const auto find = [page](this auto const& find, QTreeWidgetItem* item) -> QTreeWidgetItem* {
     const auto role = static_cast<int>(NavigationItemDataRole::PageIndex);
     const int data = item->data(0, role).toInt();
     if (data == static_cast<int>(page)) return item;

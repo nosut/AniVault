@@ -150,9 +150,7 @@ void MainWindow::initNavigation() {
 
   connect(m_navigationWidget, &NavigationWidget::currentPageChanged, this, &MainWindow::setPage);
 
-  if (const auto item = m_navigationWidget->findItemByPage(MainWindowPage::List)) {
-    m_navigationWidget->setCurrentItem(item);
-  }
+  navigateTo(MainWindowPage::List);
 
   ui_->splitter->insertWidget(0, m_navigationWidget);
 }
@@ -287,6 +285,12 @@ void MainWindow::addNewFolder() {
 
   if (!directory.isEmpty()) {
     QMessageBox::information(this, "New Folder", directory);
+  }
+}
+
+void MainWindow::navigateTo(MainWindowPage page) {
+  if (const auto item = m_navigationWidget->findItemByPage(page)) {
+    m_navigationWidget->setCurrentItem(item);
   }
 }
 
