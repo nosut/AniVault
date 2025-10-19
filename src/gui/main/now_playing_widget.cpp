@@ -114,6 +114,9 @@ void NowPlayingWidget::refresh() {
   }
   m_iconLabel->setToolTip(lines.join("<br>"));
 
+  const QString iconName = m_anime ? "check_circle" : "info";
+  m_iconLabel->setPixmap(theme.getIcon(iconName).pixmap(QSize(16, 16)));
+
   const auto title =
       m_anime ? m_anime->titles.romaji : m_episode->element(anitomy::ElementKind::Title);
   const auto episodeNumber = m_episode->element(anitomy::ElementKind::Episode, "1");
