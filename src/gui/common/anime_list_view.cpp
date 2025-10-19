@@ -26,6 +26,7 @@
 #include "gui/models/anime_list_model.hpp"
 #include "gui/models/anime_list_proxy_model.hpp"
 #include "gui/utils/painters.hpp"
+#include "track/play.hpp"
 
 namespace gui {
 
@@ -80,6 +81,19 @@ void ListView::keyPressEvent(QKeyEvent* event) {
   }
 
   QTreeView::keyPressEvent(event);
+}
+
+void ListView::mousePressEvent(QMouseEvent* event) {
+  if (event->button() == Qt::MouseButton::MiddleButton) {
+    const QModelIndex index = indexAt(event->pos());
+    if (index.isValid()) {
+      setCurrentIndex(index);
+      m_base->playNextEpisode(index);
+      return;
+    }
+  }
+
+  QTreeView::mousePressEvent(event);
 }
 
 void ListView::paintEvent(QPaintEvent* event) {

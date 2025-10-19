@@ -1,6 +1,6 @@
 /**
  * Taiga
- * Copyright (C) 2010-2024, Eren Okka
+ * Copyright (C) 2010-2025, Eren Okka
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,33 +18,9 @@
 
 #pragma once
 
-#include <QTreeView>
+namespace track {
 
-namespace gui {
+bool playEpisode(int animeId, int number);
+bool playNextEpisode(int animeId);
 
-class AnimeListModel;
-class AnimeListProxyModel;
-class ListViewBase;
-
-class ListView final : public QTreeView {
-  Q_OBJECT
-  Q_DISABLE_COPY_MOVE(ListView)
-
-public:
-  ListView(QWidget* parent, AnimeListModel* model, AnimeListProxyModel* proxyModel);
-  ~ListView() = default;
-
-  ListViewBase* baseView() {
-    return m_base;
-  }
-
-protected:
-  void keyPressEvent(QKeyEvent* event) override;
-  void mousePressEvent(QMouseEvent* event) override;
-  void paintEvent(QPaintEvent* event) override;
-
-private:
-  ListViewBase* m_base = nullptr;
-};
-
-}  // namespace gui
+}  // namespace track

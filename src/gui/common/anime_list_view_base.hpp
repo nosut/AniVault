@@ -43,6 +43,7 @@ public:
 
 public slots:
   void filterByText(const QString& text);
+  void playNextEpisode(const QModelIndex& index);
   void showMediaDialog(const QModelIndex& index);
   void showMediaMenu();
   void updateSelectionStatus(const QItemSelection& selected, const QItemSelection& deselected);

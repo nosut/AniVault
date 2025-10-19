@@ -34,6 +34,7 @@
 #include "gui/utils/format.hpp"
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
+#include "track/play.hpp"
 
 namespace gui {
 
@@ -58,6 +59,13 @@ ListViewBase::ListViewBase(QWidget* parent, QAbstractItemView* view, AnimeListMo
 
 void ListViewBase::filterByText(const QString& text) {
   m_proxyModel->setTextFilter(text);
+}
+
+void ListViewBase::playNextEpisode(const QModelIndex& index) {
+  const auto mappedIndex = m_proxyModel->mapToSource(index);
+  const auto anime = m_model->getAnime(mappedIndex);
+  if (!anime) return;
+  track::playNextEpisode(anime->id);
 }
 
 void ListViewBase::showMediaDialog(const QModelIndex& index) {
