@@ -50,4 +50,22 @@ std::optional<QString> findEpisode(const QString& path, const int anime_id,
   return std::nullopt;
 }
 
+std::optional<QString> findFolder(const QString& path, const int anime_id) {
+  QDirIterator it{path, QDir::Dirs, QDirIterator::Subdirectories};
+
+  while (it.hasNext()) {
+    const auto info = it.nextFileInfo();
+
+    if (!info.isDir()) continue;
+
+    auto episode = recognition::parseFileInfo(info);
+
+    if (track::recognition::identify(episode) != anime_id) continue;
+
+    return info.filePath();
+  }
+
+  return std::nullopt;
+}
+
 }  // namespace track

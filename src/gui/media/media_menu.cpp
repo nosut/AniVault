@@ -110,6 +110,24 @@ void MediaMenu::editStatus(const anime::list::Status status) const {
                            u"Status: %1"_s.arg(formatListStatus(status)));  // @TODO
 }
 
+void MediaMenu::openFolder() const {
+  const auto& item = m_items.front();
+
+  const auto libraryFolders = taiga::settings.libraryFolders();
+
+  for (const auto& path : libraryFolders) {
+    const auto folder = track::findFolder(QString::fromStdString(path), item.id);
+    if (folder) {
+      qDebug() << "Found folder:" << *folder;
+      QDesktopServices::openUrl(QUrl::fromLocalFile(*folder));
+      return;
+    }
+  }
+
+  QMessageBox::information(nullptr, tr("Open Folder"),
+                           tr("Could not find folder for %1.").arg(item.titles.romaji));
+}
+
 void MediaMenu::playEpisode(int number) const {
   const auto& item = m_items.front();
 
@@ -360,7 +378,7 @@ void MediaMenu::addListItems() {
 
 void MediaMenu::addLibraryItems() {
   // Open folder
-  addAction(theme.getIcon("folder"), tr("Open folder"), this, &MediaMenu::test);
+  addAction(theme.getIcon("folder"), tr("Open folder"), this, &MediaMenu::openFolder);
 
   if (isBatch()) return;
 
