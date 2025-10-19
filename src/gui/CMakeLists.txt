@@ -35,6 +35,8 @@ target_sources(taiga-gui PRIVATE
 	list/list_widget.cpp
 	list/list_widget.hpp
 
+	main/about_dialog.cpp
+	main/about_dialog.hpp
 	main/main_window.cpp
 	main/main_window.hpp
 	main/navigation_item_delegate.cpp

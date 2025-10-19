@@ -18,8 +18,6 @@
 
 #include "main_window.hpp"
 
-#include <utf8proc.h>
-
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QtWidgets>
@@ -28,6 +26,7 @@
 #include "gui/history/history_widget.hpp"
 #include "gui/library/library_widget.hpp"
 #include "gui/list/list_widget.hpp"
+#include "gui/main/about_dialog.hpp"
 #include "gui/main/navigation_widget.hpp"
 #include "gui/main/now_playing_widget.hpp"
 #include "gui/search/search_widget.hpp"
@@ -38,7 +37,6 @@
 #include "sync/service.hpp"
 #include "taiga/application.hpp"
 #include "taiga/session.hpp"
-#include "taiga/version.hpp"
 #include "ui_main_window.h"
 
 #ifdef Q_OS_WINDOWS
@@ -317,36 +315,7 @@ void MainWindow::displayWindow() {
 }
 
 void MainWindow::about() {
-  const auto version = QString::fromStdString(taiga::version().to_string());
-
-  const auto contributors =
-      "saka, Diablofan, slevir, LordGravewish, rr-, sunjayc, ConnorKrammer, Soinou, Jiyuu, ryban, "
-      "tollyx, pavelxdd, gunt3001, synthtech, cnguy, CeruleanSky, Xabis, rzumer, Juplay, "
-      "SacredZenpie";
-
-  const auto donators =
-      "Farfie, snickler, Nydaleclya, WizardTim, Kinzer, MeGaNeKo, WhatsCPS, Jerico64, Xen the Greedy";
-
-  const auto components =
-      u"Material Symbols, Qt %1, utf8proc %2"_s.arg(QT_VERSION_STR).arg(utf8proc_version());
-
-  const QStringList lines{
-      u"<big><b>Taiga</b> %1</big>"_s.arg(version),
-      tr("<a href='%1'>Website</a> · "
-         "<a href='%2'>GitHub</a> · "
-         "<a href='%3'>Discord</a>")
-          .arg("https:/taiga.moe/")
-          .arg("https://github.com/erengy/taiga")
-          .arg("https://discord.gg/yeGNktZ"),
-      u"<b>%1:</b><br>erengy (Eren Okka)"_s.arg(tr("Author")),
-      u"<b>%1:</b><br>%2"_s.arg(tr("Contributors")).arg(contributors),
-      u"<b>%1:</b><br>%2 %3"_s.arg(tr("Donators"))
-          .arg(donators)
-          .arg(tr("and other anonymous supporters")),
-      u"<b>%1:</b><br>%2"_s.arg(tr("Third-party components")).arg(components),
-  };
-
-  QMessageBox::about(this, tr("About Taiga"), lines.join("<br><br>"));
+  displayAboutDialog(this);
 }
 
 void MainWindow::donate() const {

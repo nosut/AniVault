@@ -60,12 +60,6 @@ Orange::~Orange() {
   wait();
 }
 
-Orange* Orange::create(QObject* parent) {
-  auto thread = new Orange(parent);
-  connect(thread, &Orange::finished, thread, &QObject::deleteLater);
-  return thread;
-}
-
 void Orange::run() {
   for (const auto& [note, duration] : notes) {
     if (isInterruptionRequested()) break;

@@ -1,6 +1,6 @@
 /**
  * Taiga
- * Copyright (C) 2010-2024, Eren Okka
+ * Copyright (C) 2010-2025, Eren Okka
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,20 +18,35 @@
 
 #pragma once
 
-#include <QThread>
+#include <QMessageBox>
+#include <QString>
+#include <QWidget>
 
 namespace taiga {
+class Orange;
+}
 
-class Orange final : public QThread {
+namespace gui {
+
+class AboutDialogHandler : public QObject {
   Q_OBJECT
-  Q_DISABLE_COPY_MOVE(Orange)
 
 public:
-  Orange(QObject* parent);
-  ~Orange();
+  AboutDialogHandler(QObject* parent);
 
 protected:
-  void run() override;
+  bool eventFilter(QObject* watched, QEvent* event) override;
+
+private slots:
+  void resetWindowTitle();
+
+private:
+  QMessageBox* messageBox() const;
+
+  taiga::Orange* orange_;
+  QString previousWindowTitle_;
 };
 
-}  // namespace taiga
+void displayAboutDialog(QWidget* parent);
+
+}  // namespace gui
