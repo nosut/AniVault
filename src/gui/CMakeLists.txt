@@ -24,6 +24,9 @@ target_sources(taiga-gui PRIVATE
 	common/page_widget.cpp
 	common/page_widget.hpp
 
+	history/history_widget.cpp
+	history/history_widget.hpp
+
 	library/library_menu.cpp
 	library/library_menu.hpp
 	library/library_widget.cpp
@@ -50,6 +53,8 @@ target_sources(taiga-gui PRIVATE
 	models/anime_list_model.hpp
 	models/anime_list_proxy_model.cpp
 	models/anime_list_proxy_model.hpp
+	models/history_model.cpp
+	models/history_model.hpp
 	models/library_model.cpp
 	models/library_model.hpp
 

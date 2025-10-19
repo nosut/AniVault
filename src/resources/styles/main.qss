@@ -56,6 +56,7 @@ QTreeView#animeList QHeaderView {
 }
 
 QTreeView#animeList QHeaderView::section,
+QTreeView#historyView QHeaderView::section,
 QTreeView#libraryView QHeaderView::section {
   font-weight: 600;
   height: 32px;
@@ -64,18 +65,19 @@ QTreeView#libraryView QHeaderView::section {
 }
 
 QTreeView#animeList,
+QTreeView#historyView,
 QTreeView#libraryView {
   selection-background-color: transparent;
 }
 
 QTreeView#animeList::item,
+QTreeView#historyView::item,
 QTreeView#libraryView::item {
   padding-left: 8px;
   padding-right: 8px;
 }
 
-/* Library */
-
+QTreeView#historyView::item,
 QTreeView#libraryView::item {
   height: 24px;
 }

@@ -25,6 +25,7 @@
 #include <QtWidgets>
 
 #include "base/string.hpp"
+#include "gui/history/history_widget.hpp"
 #include "gui/library/library_widget.hpp"
 #include "gui/list/list_widget.hpp"
 #include "gui/main/navigation_widget.hpp"
@@ -189,6 +190,8 @@ void MainWindow::initPage(MainWindowPage page) {
       break;
 
     case MainWindowPage::History:
+      m_historyWidget = new HistoryWidget(ui_->historyPage);
+      init_page(ui_->historyPage, m_historyWidget);
       break;
 
     case MainWindowPage::Library:

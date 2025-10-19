@@ -67,20 +67,7 @@
        </widget>
        <widget class="QWidget" name="searchPage"/>
        <widget class="QWidget" name="listPage"/>
-       <widget class="QWidget" name="historyPage">
-        <layout class="QVBoxLayout" name="verticalLayout_3">
-         <item>
-          <widget class="QLabel" name="label_6">
-           <property name="text">
-            <string>TODO: History</string>
-           </property>
-           <property name="alignment">
-            <set>Qt::AlignmentFlag::AlignCenter</set>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
+       <widget class="QWidget" name="historyPage"/>
        <widget class="QWidget" name="libraryPage"/>
        <widget class="QWidget" name="torrentsPage">
         <layout class="QVBoxLayout" name="verticalLayout_7">

@@ -39,19 +39,23 @@ QTreeView#animeList QHeaderView {
 }
 
 QTreeView#animeList,
+QTreeView#historyView,
 QTreeView#libraryView {
   background-color: #1c1c1c;
   alternate-background-color: rgba(255, 255, 255, 3%);
 }
 QTreeView#animeList::item:hover,
+QTreeView#historyView::item:hover,
 QTreeView#libraryView::item:hover {
   background-color: rgba(255, 255, 255, 5%);
 }
 QTreeView#animeList::item:selected:active,
+QTreeView#historyView::item:selected:active,
 QTreeView#libraryView::item:selected:active {
   background-color: rgba(255, 255, 255, 20%);
 }
 QTreeView#animeList::item:selected:!active,
+QTreeView#historyView::item:selected:!active,
 QTreeView#libraryView::item:selected:!active {
   background-color: rgba(255, 255, 255, 10%);
 }

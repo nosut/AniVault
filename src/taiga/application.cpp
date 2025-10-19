@@ -27,6 +27,7 @@
 #include "gui/main/main_window.hpp"
 #include "gui/utils/theme.hpp"
 #include "media/anime_db.hpp"
+#include "media/anime_history.hpp"
 #include "taiga/config.h"
 #include "taiga/path.hpp"
 #include "taiga/settings.hpp"
@@ -72,6 +73,7 @@ int Application::run() {
 
   taiga::settings.init();
   anime::db.init();
+  anime::history.init();
   track::media::detection()->init();
 
   gui::theme.initStyle();

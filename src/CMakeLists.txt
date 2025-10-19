@@ -22,6 +22,8 @@ target_sources(taiga PRIVATE
 	compat/anime.cpp
 	compat/anime.hpp
 	compat/common.hpp
+	compat/history.cpp
+	compat/history.hpp
 	compat/list.cpp
 	compat/list.hpp
 	compat/settings.cpp
@@ -29,6 +31,8 @@ target_sources(taiga PRIVATE
 
 	media/anime_db.cpp
 	media/anime_db.hpp
+	media/anime_history.cpp
+	media/anime_history.hpp
 	media/anime_list_export.cpp
 	media/anime_list_export.hpp
 	media/anime_list.hpp
