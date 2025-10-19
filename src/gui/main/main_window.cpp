@@ -304,9 +304,7 @@ void MainWindow::setPage(MainWindowPage page) {
 void MainWindow::updateTitle() {
   auto title = u"Taiga"_s;
 
-  const auto app = static_cast<taiga::Application*>(qApp);
-
-  if (app->isDebug()) {
+  if (taiga::app()->isDebug()) {
     title += u" [debug]"_s;
   }
 
