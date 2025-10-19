@@ -28,6 +28,7 @@
 #include "gui/utils/theme.hpp"
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
+#include "media/anime_list_utils.hpp"
 
 namespace gui {
 
@@ -48,10 +49,9 @@ void paintProgressBar(QPainter* painter, const QStyleOption& option, const Anime
   if (!anime || !entry) return;
 
   const int episodes = anime->episode_count;
-  const int progress = std::clamp(entry->watched_episodes, 0,
-                                  episodes > 0 ? episodes : std::numeric_limits<int>::max());
-  const int percent = episodes > 0 ? static_cast<float>(progress) / episodes * 100.0f : 50;
-  const auto text = u"%1/%2"_s.arg(progress).arg(formatNumber(episodes, "?"));
+  const int watched = std::clamp(entry->watched_episodes, 0,
+                                 episodes > 0 ? episodes : std::numeric_limits<int>::max());
+  const auto text = u"%1/%2"_s.arg(watched).arg(formatNumber(episodes, "?"));
 
   QStyleOptionProgressBar styleOption{};
   styleOption.state = option.state | QStyle::State_Horizontal;
@@ -65,7 +65,7 @@ void paintProgressBar(QPainter* painter, const QStyleOption& option, const Anime
   styleOption.fontMetrics = option.fontMetrics;
   styleOption.maximum = 100;
   styleOption.minimum = 0;
-  styleOption.progress = percent;
+  styleOption.progress = static_cast<int>(anime::list::getProgressRatio(anime, entry) * 100);
   styleOption.text = text;
   styleOption.textAlignment = Qt::AlignCenter;
   styleOption.textVisible = true;

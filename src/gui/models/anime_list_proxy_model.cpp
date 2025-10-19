@@ -23,7 +23,9 @@
 #include "gui/models/anime_list_model.hpp"
 #include "media/anime.hpp"
 #include "media/anime_list.hpp"
+#include "media/anime_list_utils.hpp"
 #include "media/anime_season.hpp"
+#include "media/anime_utils.hpp"
 
 namespace {
 
@@ -183,9 +185,13 @@ bool AnimeListProxyModel::lessThan(const QModelIndex& lhs, const QModelIndex& rh
     case AnimeListModel::COLUMN_TYPE:
       return lhs_anime->type < rhs_anime->type;
 
-    case AnimeListModel::COLUMN_PROGRESS:
-      return (lhs_entry ? lhs_entry->watched_episodes : 0) <
-             (rhs_entry ? rhs_entry->watched_episodes : 0);
+    case AnimeListModel::COLUMN_PROGRESS: {
+      const auto lhs_ratio = anime::list::getProgressRatio(lhs_anime, lhs_entry);
+      const auto rhs_ratio = anime::list::getProgressRatio(rhs_anime, rhs_entry);
+      if (lhs_ratio != rhs_ratio) return lhs_ratio < rhs_ratio;
+      return anime::estimateEpisodeCount(*lhs_anime, 0) <
+             anime::estimateEpisodeCount(*rhs_anime, 0);
+    }
 
     case AnimeListModel::COLUMN_REWATCHES:
       return (lhs_entry ? lhs_entry->rewatched_times : 0) <
