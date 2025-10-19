@@ -25,6 +25,7 @@
 namespace base {
 
 using Date = std::chrono::year_month_day;
+class Duration;
 class FuzzyDate;
 
 }  // namespace base
@@ -60,6 +61,7 @@ QString formatFuzzyDate(const base::FuzzyDate& date, QString placeholder = "?");
 QString formatFuzzyDateRange(const base::FuzzyDate& from, const base::FuzzyDate& to,
                              QString placeholder = "?");
 QString formatAsRelativeTime(const qint64 time, QString placeholder = "Unknown");
+QString formatDuration(base::Duration duration);
 QString formatTimestamp(const qint64 time);
 
 QString formatSeason(const anime::Season season);

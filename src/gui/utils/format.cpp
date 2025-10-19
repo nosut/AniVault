@@ -22,6 +22,7 @@
 #include <QDate>
 #include <QDateTime>
 #include <cmath>
+#include <format>
 
 #include "base/chrono.hpp"
 #include "base/string.hpp"
@@ -104,6 +105,22 @@ QString formatAsRelativeTime(const qint64 time, QString placeholder) {
   }();
 
   return timeDiff < 0 ? u"in %1"_s.arg(str) : u"%1 ago"_s.arg(str);
+}
+
+QString formatDuration(Duration duration) {
+  const auto hours = static_cast<int>(duration.hours());
+  duration = Duration(std::chrono::seconds{duration.seconds() % Duration::hours_t::period::num});
+
+  const auto minutes = static_cast<int>(duration.minutes());
+  duration = Duration(std::chrono::seconds{duration.seconds() % Duration::minutes_t::period::num});
+
+  const auto seconds = duration.seconds();
+
+  if (hours > 0) {
+    return QString::fromStdString(std::format("{:0>2}:{:0>2}:{:0>2}", hours, minutes, seconds));
+  } else {
+    return QString::fromStdString(std::format("{:0>2}:{:0>2}", minutes, seconds));
+  }
 }
 
 QString formatTimestamp(const qint64 time) {
