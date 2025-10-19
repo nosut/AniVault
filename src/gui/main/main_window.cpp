@@ -211,8 +211,6 @@ void MainWindow::initPage(MainWindowPage page) {
 
 void MainWindow::initStatusbar() {
   ui_->statusbar->setContentsMargins(0, 8, 0, 0);
-
-  ui_->statusbar->showMessage(tr("How are you today?"), 5000);
 }
 
 void MainWindow::initToolbar() {
