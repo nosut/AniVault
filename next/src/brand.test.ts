@@ -7,6 +7,6 @@ describe('AniVault branding metadata', () => {
     expect(packageJson.name).toBe('anivault');
     expect(tauriConfig.productName).toBe('AniVault');
     expect(tauriConfig.identifier).toBe('app.anivault.desktop');
-    expect(tauriConfig.app.windows?.[0]?.title).toBe('AniVault');
+    expect(tauriConfig.app.windows[0]!.title).toBe('AniVault');
   });
 });

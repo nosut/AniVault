@@ -8,5 +8,5 @@ pub fn run() {
             commands::preview_migration_report,
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Taiga Next");
+        .expect("failed to run AniVault");
 }
