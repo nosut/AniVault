@@ -1,6 +1,6 @@
-# Taiga Next
+# AniVault
 
-Clean-room Windows-only successor to Taiga.
+Clean-room Windows-only anime library and tracker.
 
 ## Phase 0 scope
 

@@ -48,6 +48,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "anivault"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tauri",
+ "tauri-build",
+ "tokio",
+ "windows",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3506,21 +3521,6 @@ dependencies = [
  "pkg-config",
  "toml 0.8.2",
  "version-compare",
-]
-
-[[package]]
-name = "taiga-next"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "serde",
- "serde_json",
- "sqlx",
- "tauri",
- "tauri-build",
- "tokio",
- "windows",
 ]
 
 [[package]]

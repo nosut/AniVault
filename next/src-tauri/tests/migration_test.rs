@@ -1,5 +1,5 @@
-use taiga_next::engine::migration::{import_taiga_snapshot, TaigaAnime, TaigaSnapshot};
-use taiga_next::engine::storage::Storage;
+use anivault_core::engine::migration::{import_taiga_snapshot, TaigaAnime, TaigaSnapshot};
+use anivault_core::engine::storage::Storage;
 
 #[tokio::test]
 async fn import_snapshot_reports_imported_and_skipped_records() {

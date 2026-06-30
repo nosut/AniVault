@@ -1,4 +1,4 @@
-use taiga_next::engine::secrets::{protect_secret, unprotect_secret};
+use anivault_core::engine::secrets::{protect_secret, unprotect_secret};
 
 #[test]
 fn dpapi_round_trips_secret() {

@@ -1,5 +1,5 @@
-use taiga_next::engine::event_bus::EventBus;
-use taiga_next::engine::events::{EngineEvent, MediaDetected};
+use anivault_core::engine::event_bus::EventBus;
+use anivault_core::engine::events::{EngineEvent, MediaDetected};
 
 #[test]
 fn event_bus_records_published_events_in_order() {
