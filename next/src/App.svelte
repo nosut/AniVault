@@ -2,16 +2,18 @@
   import bannerUrl from './assets/banner.png';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
+  let activeTab = $state('Home');
 </script>
 
 <main class="shell">
   <aside class="rail" aria-label="Main navigation">
     <div class="brand">AniVault</div>
     {#each navItems as item}
-      <button class:active={item === 'Home'}>{item}</button>
+      <button class:active={item === activeTab} onclick={() => activeTab = item}>{item}</button>
     {/each}
   </aside>
 
+  {#if activeTab === 'Home'}
   <section class="home">
     <img class="banner" src={bannerUrl} alt="AniVault" />
     <p class="eyebrow">Foundation build</p>
@@ -21,6 +23,12 @@
       <strong>Engine scaffold ready for storage, migration, sync, Sonarr integration, and future tracking workflows.</strong>
     </div>
   </section>
+  {:else}
+  <section class="home">
+    <p class="eyebrow">{activeTab}</p>
+    <h1>Coming soon.</h1>
+  </section>
+  {/if}
 </main>
 
 <style>
