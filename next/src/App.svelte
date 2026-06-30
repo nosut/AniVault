@@ -1,21 +1,24 @@
 <script lang="ts">
+  import bannerUrl from './assets/banner.png';
+
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
 </script>
 
 <main class="shell">
   <aside class="rail" aria-label="Main navigation">
-    <div class="brand">Taiga Next</div>
+    <div class="brand">AniVault</div>
     {#each navItems as item}
       <button class:active={item === 'Home'}>{item}</button>
     {/each}
   </aside>
 
   <section class="home">
+    <img class="banner" src={bannerUrl} alt="AniVault" />
     <p class="eyebrow">Foundation build</p>
-    <h1>Premium dark anime library, local-first engine.</h1>
+    <h1>Your premium dark anime vault.</h1>
     <div class="card">
-      <span>Phase 0</span>
-      <strong>Engine scaffold ready for storage, migration, sync, and Sonarr integration.</strong>
+      <span>AniVault Preview</span>
+      <strong>Engine scaffold ready for storage, migration, sync, Sonarr integration, and future tracking workflows.</strong>
     </div>
   </section>
 </main>
@@ -90,5 +93,14 @@
 
   .card span {
     color: var(--color-muted);
+  }
+
+  .banner {
+    display: block;
+    width: min(34rem, 100%);
+    height: auto;
+    margin-bottom: 2rem;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
   }
 </style>
