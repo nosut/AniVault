@@ -1,0 +1,28 @@
+import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+
+export type InvokeFn = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+
+export interface EngineStatus {
+  ok: boolean;
+  database: 'ready' | 'uninitialized';
+}
+
+export interface MigrationWarning {
+  source: string;
+  source_id: string;
+  message: string;
+}
+
+export interface MigrationReport {
+  imported_anime: number;
+  skipped_records: number;
+  warnings: MigrationWarning[];
+}
+
+export function getEngineStatus(invokeFn: InvokeFn = tauriInvoke): Promise<EngineStatus> {
+  return invokeFn<EngineStatus>('get_engine_status');
+}
+
+export function previewMigrationReport(invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport> {
+  return invokeFn<MigrationReport>('preview_migration_report');
+}
