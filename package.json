@@ -1,0 +1,26 @@
+{
+  "name": "anivault",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1",
+    "bundle": "npm run build && pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/bundle.ps1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.5.0",
+    "svelte": "^5.25.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "@types/node": "^22.13.14",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.3",
+    "vitest": "^3.0.9"
+  }
+}
