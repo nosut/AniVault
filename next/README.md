@@ -31,3 +31,15 @@ In another terminal:
 Set-Location -LiteralPath src-tauri
 cargo run
 ```
+
+Build a local unsigned Windows installer:
+
+```powershell
+npm run bundle
+```
+
+Installer output is written under:
+
+```text
+next/src-tauri/target/release/bundle/
+```
