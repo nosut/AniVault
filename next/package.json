@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
