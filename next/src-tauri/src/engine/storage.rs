@@ -25,6 +25,10 @@ impl Storage {
         Ok(row.get::<String, _>(0))
     }
 
+    pub(crate) fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
     pub async fn insert_minimal_anime(&self, id: i64, title: &str) -> anyhow::Result<()> {
         let titles_json = serde_json::json!({ "romaji": title, "english": null, "japanese": null, "synonyms": [] }).to_string();
         sqlx::query(
@@ -82,6 +86,15 @@ impl Storage {
     pub async fn pending_sync_count(&self, service: &str) -> anyhow::Result<i64> {
         let row = sqlx::query("SELECT COUNT(*) FROM sync_queue WHERE service = ?1")
             .bind(service)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.get::<i64, _>(0))
+    }
+
+    pub async fn watch_history_count(&self, anime_id: i64, episode: i32) -> anyhow::Result<i64> {
+        let row = sqlx::query("SELECT COUNT(*) FROM watch_history WHERE anime_id = ?1 AND episode = ?2")
+            .bind(anime_id)
+            .bind(episode)
             .fetch_one(&self.pool)
             .await?;
         Ok(row.get::<i64, _>(0))

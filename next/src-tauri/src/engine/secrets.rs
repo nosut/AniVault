@@ -6,10 +6,10 @@ use windows::Win32::Security::Cryptography::{
 };
 
 pub fn protect_secret(plaintext: &str) -> anyhow::Result<String> {
-    let input_bytes = plaintext.as_bytes();
+    let mut input_bytes = plaintext.as_bytes().to_vec();
     let input = CRYPT_INTEGER_BLOB {
         cbData: input_bytes.len() as u32,
-        pbData: input_bytes.as_ptr() as *mut u8,
+        pbData: input_bytes.as_mut_ptr(),
     };
     let mut output = CRYPT_INTEGER_BLOB::default();
 
