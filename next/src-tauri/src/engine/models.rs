@@ -18,3 +18,18 @@ pub struct ParseResult {
     pub episode: Option<i32>,
     pub confidence: f32,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DetectionConfig {
+    pub folders: Vec<String>,
+    pub poll_interval_ms: u64,
+}
+
+impl Default for DetectionConfig {
+    fn default() -> Self {
+        Self {
+            folders: vec!["D:\\Anime".to_string()],
+            poll_interval_ms: 2_000,
+        }
+    }
+}
