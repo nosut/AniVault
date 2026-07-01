@@ -1,5 +1,7 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+const CURRENT_ANIME_TIMEOUT: Duration = Duration::from_secs(5);
 
 use crate::engine::event_bus::EventBus;
 use crate::engine::events::{AnimeIdentified, EngineEvent, MediaDetected};
@@ -27,11 +29,13 @@ pub fn start_tracking_loop_with_status(
     on_current_anime: Arc<dyn Fn(Option<String>) + Send + Sync>,
 ) {
     tokio::spawn(async move {
+        let mut current_anime_timeout = CurrentAnimeTimeout::new(CURRENT_ANIME_TIMEOUT);
         loop {
             for event in bus.drain() {
                 if let EngineEvent::MediaDetected(detected) = event {
                     if let Ok(Some(outcome)) = handle_media_detected_event(&storage, detected).await {
                         on_current_anime(Some(outcome.matched.title.clone()));
+                        current_anime_timeout.record_match(Instant::now());
                         bus.publish(EngineEvent::AnimeIdentified(AnimeIdentified {
                             anime_id: outcome.matched.anime_id,
                             episode: outcome.episode,
@@ -47,9 +51,52 @@ pub fn start_tracking_loop_with_status(
                     }
                 }
             }
+            if current_anime_timeout.should_clear(Instant::now()) {
+                on_current_anime(None);
+            }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
     });
+}
+
+#[derive(Debug, Clone)]
+struct CurrentAnimeTimeout {
+    timeout: Duration,
+    last_match_at: Option<Instant>,
+    is_current_set: bool,
+}
+
+impl CurrentAnimeTimeout {
+    fn new(timeout: Duration) -> Self {
+        Self {
+            timeout,
+            last_match_at: None,
+            is_current_set: false,
+        }
+    }
+
+    fn record_match(&mut self, now: Instant) {
+        self.last_match_at = Some(now);
+        self.is_current_set = true;
+    }
+
+    fn should_clear(&mut self, now: Instant) -> bool {
+        if !self.is_current_set {
+            return false;
+        }
+
+        let Some(last_match_at) = self.last_match_at else {
+            return false;
+        };
+
+        if now.duration_since(last_match_at) >= self.timeout {
+            self.is_current_set = false;
+            self.last_match_at = None;
+            return true;
+        }
+
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -111,4 +158,21 @@ fn detection_evidence(detected: &MediaDetected) -> Option<String> {
         .or_else(|| detected.window_title.clone())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn current_anime_timeout_clears_once_after_inactivity() {
+        let mut timeout = CurrentAnimeTimeout::new(Duration::from_secs(5));
+        let now = std::time::Instant::now();
+
+        timeout.record_match(now);
+
+        assert!(!timeout.should_clear(now + Duration::from_secs(4)));
+        assert!(timeout.should_clear(now + Duration::from_secs(6)));
+        assert!(!timeout.should_clear(now + Duration::from_secs(7)));
+    }
 }
