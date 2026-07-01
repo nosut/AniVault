@@ -335,6 +335,18 @@ pub async fn map_sonarr_series(anime_id: i64, sonarr_series_id: i64, sonarr_titl
         .map_err(|e| format!("map: {e}"))
 }
 
+#[tauri::command]
+pub async fn set_sonarr_monitored(anime_id: i64, monitored: bool) -> Result<(), String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+    crate::engine::sonarr::set_sonarr_monitored(&storage, anime_id, monitored)
+        .await
+        .map_err(|e| format!("set monitored: {e}"))
+}
+
 fn local_db_url() -> String {
     let app_data = std::env::var_os("APPDATA")
         .map(std::path::PathBuf::from)

@@ -111,3 +111,7 @@ export function getSonarrMappings(invokeFn: InvokeFn = tauriInvoke): Promise<Son
 export function mapSonarrSeries(animeId: number, sonarrSeriesId: number, sonarrTitle: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('map_sonarr_series', { animeId, sonarrSeriesId, sonarrTitle });
 }
+
+export function setSonarrMonitored(animeId: number, monitored: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_sonarr_monitored', { animeId, monitored });
+}

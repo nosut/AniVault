@@ -153,6 +153,19 @@ pub async fn unmap_sonarr_series(
     Ok(())
 }
 
+pub async fn set_sonarr_monitored(
+    storage: &crate::engine::storage::Storage,
+    anime_id: i64,
+    monitored: bool,
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE sonarr_mapping SET monitored = ?1, updated_at = unixepoch() WHERE anime_id = ?2")
+        .bind(monitored as i64)
+        .bind(anime_id)
+        .execute(storage.pool())
+        .await?;
+    Ok(())
+}
+
 // ── Helpers ──
 
 async fn get_setting(storage: &crate::engine::storage::Storage, key: &str) -> Option<String> {

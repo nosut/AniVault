@@ -10,6 +10,7 @@
   import { getSonarrConfig, setSonarrConfig, testSonarrConnection } from './lib/api';
   import { getSonarrMappings } from './lib/api';
   import type { SonarrMapping } from './lib/api';
+  import { setSonarrMonitored } from './lib/api';
   import Library from './lib/Library.svelte';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
@@ -45,6 +46,13 @@
     try {
       sonarrMsg = await testSonarrConnection(sonarrUrl, sonarrKey);
     } catch (e) { sonarrMsg = `Error: ${e}`; }
+  }
+
+  async function toggleMonitored(m: SonarrMapping) {
+    try {
+      await setSonarrMonitored(m.anime_id, !m.monitored);
+      sonarrMappings = await getSonarrMappings();
+    } catch { /* empty */ }
   }
 
   loadSonarrConfig();
@@ -178,6 +186,10 @@
         <div class="lib-row">
           <span class="lib-title">#{m.anime_id} → Sonarr #{m.sonarr_series_id}</span>
           <span class="lib-ep">{m.sonarr_title}</span>
+          <label style="font-size:0.72rem;color:var(--color-muted);display:flex;align-items:center;gap:0.25rem;">
+            <input type="checkbox" checked={m.monitored} onchange={() => toggleMonitored(m)} />
+            Monitor
+          </label>
         </div>
       {/each}
     </div>

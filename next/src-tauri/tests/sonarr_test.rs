@@ -86,3 +86,21 @@ async fn unmap_removes_sonarr_link() {
     let mappings = anivault_core::engine::sonarr::get_sonarr_mappings(&storage).await.unwrap();
     assert!(mappings.is_empty());
 }
+
+#[tokio::test]
+async fn set_monitored_toggles_flag() {
+    let storage = Storage::connect("sqlite::memory:").await.unwrap();
+    storage.migrate().await.unwrap();
+    storage.insert_minimal_anime(1, "Frieren").await.unwrap();
+
+    anivault_core::engine::sonarr::map_sonarr_series(&storage, 1, 55, "Frieren").await.unwrap();
+    anivault_core::engine::sonarr::set_sonarr_monitored(&storage, 1, true).await.unwrap();
+
+    let mappings = anivault_core::engine::sonarr::get_sonarr_mappings(&storage).await.unwrap();
+    assert!(mappings[0].monitored);
+
+    anivault_core::engine::sonarr::set_sonarr_monitored(&storage, 1, false).await.unwrap();
+
+    let mappings = anivault_core::engine::sonarr::get_sonarr_mappings(&storage).await.unwrap();
+    assert!(!mappings[0].monitored);
+}
