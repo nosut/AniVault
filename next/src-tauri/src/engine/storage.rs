@@ -154,14 +154,18 @@ impl Storage {
         player: Option<&str>,
         watched_at: i64,
     ) -> anyhow::Result<bool> {
-        let exists = self.watch_history_count(anime_id, episode).await? > 0;
-        if exists {
-            return Ok(false);
-        }
-
-        self.append_watch_history(anime_id, episode, file_path, player, watched_at)
-            .await?;
-        Ok(true)
+        let result = sqlx::query(
+            "INSERT OR IGNORE INTO watch_history (anime_id, episode, file_path, player, watched_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .bind(anime_id)
+        .bind(episode)
+        .bind(file_path)
+        .bind(player)
+        .bind(watched_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
     }
 
     pub async fn queue_sync(
