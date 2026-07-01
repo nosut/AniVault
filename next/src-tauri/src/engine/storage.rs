@@ -41,6 +41,90 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn ensure_fts_index(&self) -> anyhow::Result<()> {
+        sqlx::query(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS anime_fts USING fts5(anime_id UNINDEXED, title, synonyms)",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn insert_minimal_anime_with_synonyms(
+        &self,
+        id: i64,
+        title: &str,
+        synonyms: &[&str],
+    ) -> anyhow::Result<()> {
+        let titles_json = serde_json::json!({
+            "romaji": title,
+            "english": null,
+            "japanese": null,
+            "synonyms": synonyms,
+        })
+        .to_string();
+        sqlx::query(
+            "INSERT OR REPLACE INTO anime (id, titles_json, last_modified) VALUES (?1, ?2, 0)",
+        )
+        .bind(id)
+        .bind(titles_json)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn anime_by_id(&self, id: i64) -> anyhow::Result<Option<(i64, String, i32)>> {
+        let row = sqlx::query(
+            "SELECT anime.id, json_extract(anime.titles_json, '$.romaji'), COALESCE(list_entry.watched_episodes, 0)
+             FROM anime
+             LEFT JOIN list_entry ON list_entry.anime_id = anime.id
+             WHERE anime.id = ?1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| (r.get(0), r.get(1), r.get(2))))
+    }
+
+    pub async fn update_watched_episodes(&self, anime_id: i64, episode: i32) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO list_entry (anime_id, status, watched_episodes, local_updated)
+             VALUES (?1, 'watching', ?2, unixepoch())
+             ON CONFLICT(anime_id) DO UPDATE SET watched_episodes = ?2, local_updated = unixepoch()",
+        )
+        .bind(anime_id)
+        .bind(episode)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn insert_or_ignore_anime_local(
+        &self,
+        id: i64,
+        title_romaji: &str,
+        title_english: Option<&str>,
+        episode_count: Option<i32>,
+    ) -> anyhow::Result<()> {
+        let titles_json = serde_json::json!({
+            "romaji": title_romaji,
+            "english": title_english,
+            "japanese": null,
+            "synonyms": [],
+        })
+        .to_string();
+        sqlx::query(
+            "INSERT OR IGNORE INTO anime (id, titles_json, episode_count, last_modified) VALUES (?1, ?2, ?3, unixepoch())",
+        )
+        .bind(id)
+        .bind(titles_json)
+        .bind(episode_count)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn append_watch_history(
         &self,
         anime_id: i64,
