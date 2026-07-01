@@ -244,6 +244,10 @@
   }
 
   .rail {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
     border-right: 1px solid rgb(255 255 255 / 8%);
     background: rgb(10 13 20 / 72%);
     padding: 1.5rem;

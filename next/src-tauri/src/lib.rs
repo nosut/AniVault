@@ -85,8 +85,15 @@ async fn try_import_from_taiga(storage: &engine::storage::Storage) {
         return;
     }
 
-    let taiga_url = format!("sqlite:///{}", taiga_db.to_string_lossy().replace('\\', "/"));
-    let Ok(taiga_pool) = sqlx::SqlitePool::connect(&taiga_url).await else {
+    let taiga_path = taiga_db.to_string_lossy().to_string();
+    let Ok(taiga_pool) = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(
+            sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(&taiga_path)
+                .read_only(true),
+        )
+        .await else {
         return;
     };
 
@@ -109,6 +116,7 @@ async fn try_import_from_taiga(storage: &engine::storage::Storage) {
     };
 
     use sqlx::Row;
+    use sqlx::sqlite::SqlitePoolOptions;
     let snapshot = engine::migration::TaigaSnapshot {
         anime: rows
             .iter()

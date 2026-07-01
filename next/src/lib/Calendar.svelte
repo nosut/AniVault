@@ -88,7 +88,10 @@
   {:else}
     <div class="grid">
       {#each anime as entry (entry.anilist_id)}
-        <button class="card" onclick={() => window.open(`https://anilist.co/anime/${entry.anilist_id}`, '_blank')} style="border:none;cursor:pointer;text-align:left;font:inherit;padding:0;background:none;width:100%;">
+        <button
+          class="card"
+          onclick={() => window.open(`https://anilist.co/anime/${entry.anilist_id}`, '_blank')}
+        >
           <div class="poster-wrap">
             {#if entry.image_url}
               <img class="poster" src={entry.image_url} alt={entry.english_title ?? entry.title} loading="lazy" />
@@ -181,6 +184,13 @@
     gap: 0.6rem;
     cursor: pointer;
     outline: none;
+    border: none;
+    background: none;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    width: 100%;
+    min-width: 0;
     border-radius: var(--radius-card);
     padding: 0.4rem;
     transition: transform 0.2s ease;
@@ -202,6 +212,7 @@
   .poster {
     width: 100%;
     height: 100%;
+    max-width: 100%;
     object-fit: cover;
     display: block;
   }

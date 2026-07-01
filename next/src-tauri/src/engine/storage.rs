@@ -1,4 +1,5 @@
-use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{Row, SqlitePool};
 
 #[derive(Clone)]
 pub struct Storage {
@@ -7,10 +8,21 @@ pub struct Storage {
 
 impl Storage {
     pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect(database_url)
-            .await?;
+        let pool = if database_url == "sqlite::memory:" {
+            SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect("sqlite::memory:")
+                .await?
+        } else {
+            SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect_with(
+                    SqliteConnectOptions::new()
+                        .filename(database_url)
+                        .create_if_missing(true),
+                )
+                .await?
+        };
         Ok(Self { pool })
     }
 
