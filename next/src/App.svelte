@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { drainEngineEvents, getEngineStatus, getSetting, setSetting, type EngineStatus } from './lib/api';
+  import NowPlaying from './lib/NowPlaying.svelte';
+  import MarkWatched from './lib/MarkWatched.svelte';
 
   const navItems = ['Home', 'Library', 'Tracking', 'Sync', 'Settings'];
 
@@ -83,6 +85,9 @@
         Tracking setting: {trackingEnabled ? 'enabled' : 'disabled'}
       </button>
     </section>
+
+    <NowPlaying />
+    <MarkWatched />
   </section>
 </main>
 

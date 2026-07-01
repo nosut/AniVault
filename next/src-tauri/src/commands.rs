@@ -1,8 +1,12 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use tokio::sync::watch;
+
 use crate::engine::events::EngineEvent;
 use crate::engine::migration::MigrationReport;
 use crate::engine::runtime::EngineState;
+use crate::engine::storage::WatchHistoryRow;
+use crate::engine::tracker::run_tracking_loop;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct EngineStatus {
@@ -70,6 +74,98 @@ pub async fn drain_engine_events_inner(state: &EngineState) -> Result<Vec<Engine
     Ok(state.events.drain())
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TrackingStatus {
+    pub active: bool,
+    pub watching: Option<crate::engine::runtime::ActivePlaybackPub>,
+}
+
+pub async fn start_tracking_inner(state: &EngineState) -> Result<TrackingStatus, String> {
+    let mut ctrl = state.tracking.lock().map_err(|e| e.to_string())?;
+    if ctrl.active {
+        return Ok(TrackingStatus {
+            active: true,
+            watching: ctrl.watching.clone(),
+        });
+    }
+
+    let (tx, rx) = watch::channel(false);
+    ctrl.cancel_tx = Some(tx);
+    ctrl.active = true;
+
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        run_tracking_loop(state_clone, 2000, rx).await;
+    });
+
+    Ok(TrackingStatus {
+        active: true,
+        watching: ctrl.watching.clone(),
+    })
+}
+
+pub async fn stop_tracking_inner(state: &EngineState) -> Result<TrackingStatus, String> {
+    let mut ctrl = state.tracking.lock().map_err(|e| e.to_string())?;
+    if let Some(tx) = ctrl.cancel_tx.take() {
+        let _ = tx.send(true);
+    }
+    ctrl.active = false;
+    ctrl.watching = None;
+
+    Ok(TrackingStatus {
+        active: false,
+        watching: None,
+    })
+}
+
+pub async fn get_tracking_status_inner(state: &EngineState) -> Result<TrackingStatus, String> {
+    let ctrl = state.tracking.lock().map_err(|e| e.to_string())?;
+    Ok(TrackingStatus {
+        active: ctrl.active,
+        watching: ctrl.watching.clone(),
+    })
+}
+
+pub async fn mark_episode_watched_inner(
+    anime_id: i64,
+    episode: i32,
+    state: &EngineState,
+) -> Result<(), String> {
+    state
+        .storage
+        .append_watch_history(anime_id, episode, None, Some("manual"), unix_now()?)
+        .await
+        .map_err(command_error)?;
+
+    state
+        .storage
+        .upsert_list_entry_progress(anime_id, "Watching", episode, unix_now()?)
+        .await
+        .map_err(command_error)?;
+
+    state.events.publish(EngineEvent::ProgressAdvanced {
+        anime_id,
+        old_episode: episode.saturating_sub(1),
+        new_episode: episode,
+        source: "manual".to_string(),
+    });
+
+    Ok(())
+}
+
+pub async fn list_recent_history_inner(
+    limit: i64,
+    state: &EngineState,
+) -> Result<Vec<WatchHistoryRow>, String> {
+    state
+        .storage
+        .list_recent_watch_history(limit)
+        .await
+        .map_err(command_error)
+}
+
+// Tauri command wrappers
+
 #[tauri::command]
 pub async fn get_engine_status(
     state: tauri::State<'_, EngineState>,
@@ -112,4 +208,42 @@ pub async fn drain_engine_events(
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<EngineEvent>, String> {
     drain_engine_events_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn start_tracking(
+    state: tauri::State<'_, EngineState>,
+) -> Result<TrackingStatus, String> {
+    start_tracking_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn stop_tracking(
+    state: tauri::State<'_, EngineState>,
+) -> Result<TrackingStatus, String> {
+    stop_tracking_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn get_tracking_status(
+    state: tauri::State<'_, EngineState>,
+) -> Result<TrackingStatus, String> {
+    get_tracking_status_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn mark_episode_watched(
+    anime_id: i64,
+    episode: i32,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    mark_episode_watched_inner(anime_id, episode, &state).await
+}
+
+#[tauri::command]
+pub async fn list_recent_history(
+    limit: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<WatchHistoryRow>, String> {
+    list_recent_history_inner(limit, &state).await
 }

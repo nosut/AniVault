@@ -1,13 +1,52 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use tokio::sync::watch;
 
 use crate::engine::event_bus::EventBus;
 use crate::engine::storage::Storage;
+
+pub async fn fresh_test_state() -> EngineState {
+    let storage = crate::engine::storage::Tests::new_in_memory().await;
+    EngineState {
+        storage,
+        events: EventBus::default(),
+        database_path: PathBuf::from(":memory:"),
+        tracking: Arc::new(std::sync::Mutex::new(TrackingControl::default())),
+    }
+}
 
 #[derive(Clone)]
 pub struct EngineState {
     pub storage: Storage,
     pub events: EventBus,
     pub database_path: PathBuf,
+    pub tracking: Arc<std::sync::Mutex<TrackingControl>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TrackingControl {
+    pub active: bool,
+    pub watching: Option<ActivePlaybackPub>,
+    pub cancel_tx: Option<watch::Sender<bool>>,
+}
+
+impl Default for TrackingControl {
+    fn default() -> Self {
+        Self {
+            active: false,
+            watching: None,
+            cancel_tx: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ActivePlaybackPub {
+    pub player_name: String,
+    pub file_path: Option<String>,
+    pub window_title: Option<String>,
+    pub episode_guess: Option<i32>,
 }
 
 pub fn sqlite_url_for_path(path: &Path) -> String {
@@ -27,5 +66,6 @@ pub async fn initialize_engine_at(database_path: PathBuf) -> anyhow::Result<Engi
         storage,
         events: EventBus::default(),
         database_path,
+        tracking: Arc::new(std::sync::Mutex::new(TrackingControl::default())),
     })
 }

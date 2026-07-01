@@ -2,6 +2,28 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
 
+pub struct AnimeRow {
+    pub id: i64,
+    pub titles_json: String,
+    pub episode_count: Option<i32>,
+}
+
+pub struct ListEntryRow {
+    pub anime_id: i64,
+    pub status: String,
+    pub watched_episodes: i32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WatchHistoryRow {
+    pub id: i64,
+    pub anime_id: i64,
+    pub episode: i32,
+    pub file_path: Option<String>,
+    pub player: Option<String>,
+    pub watched_at: i64,
+}
+
 #[derive(Clone)]
 pub struct Storage {
     pool: SqlitePool,
@@ -147,5 +169,86 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn fetch_anime(&self, id: i64) -> anyhow::Result<Option<AnimeRow>> {
+        let row = sqlx::query("SELECT id, titles_json, episode_count FROM anime WHERE id = ?1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|row| AnimeRow {
+            id: row.get("id"),
+            titles_json: row.get("titles_json"),
+            episode_count: row.get("episode_count"),
+        }))
+    }
+
+    pub async fn upsert_list_entry_progress(
+        &self,
+        anime_id: i64,
+        status: &str,
+        watched_episodes: i32,
+        updated: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO list_entry (anime_id, status, watched_episodes, local_updated)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(anime_id) DO UPDATE SET
+               status = excluded.status,
+               watched_episodes = MAX(excluded.watched_episodes, list_entry.watched_episodes),
+               local_updated = excluded.local_updated",
+        )
+        .bind(anime_id)
+        .bind(status)
+        .bind(watched_episodes)
+        .bind(updated)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_list_entry(&self, anime_id: i64) -> anyhow::Result<Option<ListEntryRow>> {
+        let row = sqlx::query(
+            "SELECT anime_id, status, watched_episodes FROM list_entry WHERE anime_id = ?1",
+        )
+        .bind(anime_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|row| ListEntryRow {
+            anime_id: row.get("anime_id"),
+            status: row.get("status"),
+            watched_episodes: row.get("watched_episodes"),
+        }))
+    }
+
+    pub async fn list_recent_watch_history(&self, limit: i64) -> anyhow::Result<Vec<WatchHistoryRow>> {
+        let rows = sqlx::query(
+            "SELECT id, anime_id, episode, file_path, player, watched_at
+             FROM watch_history ORDER BY watched_at DESC LIMIT ?1",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|row| WatchHistoryRow {
+                id: row.get("id"),
+                anime_id: row.get("anime_id"),
+                episode: row.get("episode"),
+                file_path: row.get("file_path"),
+                player: row.get("player"),
+                watched_at: row.get("watched_at"),
+            })
+            .collect())
+    }
+}
+
+pub struct Tests;
+
+impl Tests {
+    pub async fn new_in_memory() -> Storage {
+        let storage = Storage::connect("sqlite::memory:").await.unwrap();
+        storage.migrate().await.unwrap();
+        storage
     }
 }

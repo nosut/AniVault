@@ -20,6 +20,13 @@ pub struct AnimeIdentified {
 pub enum EngineEvent {
     MediaDetected(MediaDetected),
     AnimeIdentified(AnimeIdentified),
+    PlaybackDetected {
+        player_name: String,
+        file_path: Option<String>,
+        window_title: Option<String>,
+        episode_guess: Option<EpisodeNumber>,
+        detected_at_unix: i64,
+    },
     ProgressAdvanced {
         anime_id: AnimeId,
         old_episode: EpisodeNumber,
