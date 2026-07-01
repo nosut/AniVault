@@ -35,6 +35,7 @@ pub fn run() {
             commands::set_sonarr_monitored,
             commands::get_seasonal_anime,
             commands::get_watching_anime,
+            commands::open_url,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AniVault");
@@ -76,13 +77,32 @@ fn start_local_tracking(runtime: commands::TrackingRuntime) {
 }
 
 async fn try_import_from_taiga(storage: &engine::storage::Storage) {
+    use sqlx::sqlite::SqlitePoolOptions;
+
     let app_data = match std::env::var_os("APPDATA") {
         Some(p) => std::path::PathBuf::from(p),
         None => return,
     };
-    let taiga_db = app_data.join("Taiga").join("data").join("Taiga.db");
-    if !taiga_db.exists() {
-        return;
+
+    // Try multiple possible Taiga DB paths
+    let candidates = [
+        app_data.join("Taiga").join("data").join("Taiga.db"),
+        app_data.join("Taiga").join("data").join("taiga.db"),
+    ];
+
+    let taiga_db = match candidates.iter().find(|p| p.exists()) {
+        Some(p) => p.clone(),
+        None => return,
+    };
+
+    // Count existing anime to avoid re-import
+    let existing: i64 = sqlx::query("SELECT COUNT(*) FROM anime")
+        .fetch_one(storage.pool())
+        .await
+        .map(|r| r.get(0))
+        .unwrap_or(0);
+    if existing > 0 {
+        return; // already populated
     }
 
     let taiga_path = taiga_db.to_string_lossy().to_string();
@@ -97,26 +117,26 @@ async fn try_import_from_taiga(storage: &engine::storage::Storage) {
         return;
     };
 
-    // Count existing anime to avoid re-import
-    let existing: i64 = sqlx::query("SELECT COUNT(*) FROM anime")
-        .fetch_one(storage.pool())
-        .await
-        .map(|r| r.get(0))
-        .unwrap_or(0);
-    if existing > 0 {
-        return; // already populated
-    }
+    use sqlx::Row;
 
-    let rows = match sqlx::query("SELECT id, title, watched_episodes FROM anime")
+    // Try primary schema, fall back to alternate column names
+    let primary = sqlx::query("SELECT id, title, watched_episodes FROM anime")
         .fetch_all(&taiga_pool)
-        .await
-    {
-        Ok(r) => r,
-        Err(_) => return,
+        .await;
+
+    let rows = match primary {
+        Ok(r) if !r.is_empty() => r,
+        _ => {
+            match sqlx::query("SELECT id, title, COALESCE(progress, 0) as watched_episodes FROM anime")
+                .fetch_all(&taiga_pool)
+                .await
+            {
+                Ok(r) => r,
+                Err(_) => return,
+            }
+        }
     };
 
-    use sqlx::Row;
-    use sqlx::sqlite::SqlitePoolOptions;
     let snapshot = engine::migration::TaigaSnapshot {
         anime: rows
             .iter()

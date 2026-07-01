@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getSeasonalAnime } from './api';
   import type { SeasonalAnime } from './api';
+  import { invoke } from '@tauri-apps/api/core';
 
   const seasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'] as const;
   type Season = (typeof seasons)[number];
@@ -90,7 +91,7 @@
       {#each anime as entry (entry.anilist_id)}
         <button
           class="card"
-          onclick={() => window.open(`https://anilist.co/anime/${entry.anilist_id}`, '_blank')}
+          onclick={() => invoke('open_url', { url: `https://anilist.co/anime/${entry.anilist_id}` })}
         >
           <div class="poster-wrap">
             {#if entry.image_url}

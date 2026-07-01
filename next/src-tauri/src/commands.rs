@@ -119,8 +119,9 @@ pub async fn start_oauth(
     });
 
     let auth_url = format!(
-        "https://anilist.co/api/v2/oauth/authorize?client_id=18872&redirect_uri={}&response_type=code",
-        urlencoding(&redirect_uri)
+        "https://anilist.co/api/v2/oauth/authorize?client_id=18872&redirect_uri={}&response_type=code&code_challenge={}&code_challenge_method=S256",
+        urlencoding(&redirect_uri),
+        urlencoding(&state.code_challenge)
     );
     open_browser(&auth_url)?;
 
@@ -352,6 +353,11 @@ pub async fn get_seasonal_anime(season: String, year: i32) -> Result<Vec<crate::
     crate::engine::anilist::search_seasonal_anime(&season, year)
         .await
         .map_err(|e| format!("seasonal: {e}"))
+}
+
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    open_browser(&url)
 }
 
 #[tauri::command]
