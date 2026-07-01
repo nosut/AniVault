@@ -12,6 +12,7 @@ pub struct PendingMatch {
     pub title_english: Option<String>,
     pub synonyms: Vec<String>,
     pub episode_count: Option<i32>,
+    pub image_url: Option<String>,
     pub parsed_title: String,
     pub confidence: u8,
 }
@@ -54,6 +55,7 @@ pub async fn store_pending_match(
         title_english: result.title_english.clone(),
         synonyms: result.synonyms.clone(),
         episode_count: result.episode_count,
+        image_url: result.image_url.clone(),
         parsed_title: parsed_title.to_string(),
         confidence,
     });
@@ -78,6 +80,14 @@ pub async fn confirm_pending_match(
     if let Some(ep_count) = found.episode_count {
         sqlx::query("UPDATE anime SET episode_count = ?1 WHERE id = ?2")
             .bind(ep_count)
+            .bind(found.anilist_id)
+            .execute(storage.pool())
+            .await?;
+    }
+
+    if let Some(ref image_url) = found.image_url {
+        sqlx::query("UPDATE anime SET image_url = ?1 WHERE id = ?2")
+            .bind(image_url)
             .bind(found.anilist_id)
             .execute(storage.pool())
             .await?;

@@ -12,8 +12,11 @@ const MOCK_ANILIST_RESPONSE: &str = r#"{
                         "romaji": "Dandadan",
                         "english": null
                     },
-                    "synonyms": [],
-                    "episodes": 12
+                "synonyms": [],
+                "episodes": 12,
+                "coverImage": {
+                    "large": "https://example.com/dandadan.jpg"
+                }
                 }
             ]
         }
@@ -27,6 +30,7 @@ fn parses_anilist_search_response() {
     assert_eq!(results[0].anilist_id, 140960);
     assert_eq!(results[0].title_romaji, "Dandadan");
     assert_eq!(results[0].episode_count, Some(12));
+    assert_eq!(results[0].image_url.as_deref(), Some("https://example.com/dandadan.jpg"));
 }
 
 #[test]
@@ -44,6 +48,7 @@ fn exact_romaji_match_scores_high() {
         title_english: None,
         synonyms: vec![],
         episode_count: None,
+        image_url: None,
     };
 
     let score = score_anilist_match("Spy x Family", &result);
@@ -58,6 +63,7 @@ fn english_title_match_scores_medium() {
         title_english: Some("The Apothecary Diaries".into()),
         synonyms: vec![],
         episode_count: None,
+        image_url: None,
     };
 
     let score = score_anilist_match("The Apothecary Diaries", &result);
@@ -73,6 +79,7 @@ fn synonym_match_scores_low() {
         title_english: None,
         synonyms: vec!["My Star".into()],
         episode_count: None,
+        image_url: None,
     };
 
     let score = score_anilist_match("My Star", &result);
@@ -88,6 +95,7 @@ fn unrelated_match_scores_under_50() {
         title_english: None,
         synonyms: vec![],
         episode_count: None,
+        image_url: None,
     };
 
     let score = score_anilist_match("Spy x Family", &result);
@@ -106,6 +114,7 @@ async fn auto_add_inserts_anime_and_rebuilds_fts() {
         title_english: None,
         synonyms: vec![],
         episode_count: Some(26),
+        image_url: None,
     };
 
     let anime_id = anivault_core::engine::anilist::auto_add_anime(&storage, &result)

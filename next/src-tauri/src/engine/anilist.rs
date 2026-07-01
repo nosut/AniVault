@@ -9,6 +9,7 @@ pub struct AniListSearchResult {
     pub title_english: Option<String>,
     pub synonyms: Vec<String>,
     pub episode_count: Option<i32>,
+    pub image_url: Option<String>,
 }
 
 pub fn parse_anilist_search_response(json: &str) -> anyhow::Result<Vec<AniListSearchResult>> {
@@ -36,6 +37,7 @@ pub fn parse_anilist_search_response(json: &str) -> anyhow::Result<Vec<AniListSe
                     .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
                     .unwrap_or_default(),
                 episode_count: m["episodes"].as_i64().map(|e| e as i32),
+                image_url: m["coverImage"]["large"].as_str().map(String::from),
             })
         })
         .collect()
@@ -77,7 +79,7 @@ pub async fn search_anilist_graphql(title: &str) -> anyhow::Result<Vec<AniListSe
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
         .json(&serde_json::json!({
-            "query": "query ($search: String) { Page(perPage: 3) { media(search: $search, type: ANIME) { id title { romaji english } synonyms episodes } } }",
+            "query": "query ($search: String) { Page(perPage: 3) { media(search: $search, type: ANIME) { id title { romaji english } synonyms episodes coverImage { large } } } }",
             "variables": { "search": title }
         }))
         .send()
@@ -100,6 +102,14 @@ pub async fn auto_add_anime(
     if let Some(ep_count) = result.episode_count {
         sqlx::query("UPDATE anime SET episode_count = ?1 WHERE id = ?2")
             .bind(ep_count)
+            .bind(result.anilist_id)
+            .execute(storage.pool())
+            .await?;
+    }
+
+    if let Some(ref image_url) = result.image_url {
+        sqlx::query("UPDATE anime SET image_url = ?1 WHERE id = ?2")
+            .bind(image_url)
             .bind(result.anilist_id)
             .execute(storage.pool())
             .await?;

@@ -238,7 +238,7 @@ impl Storage {
             "SELECT anime.id, json_extract(anime.titles_json, '$.romaji'),
                     COALESCE(list_entry.status, 'plan_to_watch'),
                     COALESCE(list_entry.watched_episodes, 0),
-                    anime.episode_count
+                    anime.episode_count, anime.image_url
              FROM anime
              LEFT JOIN list_entry ON list_entry.anime_id = anime.id
              ORDER BY lower(json_extract(anime.titles_json, '$.romaji'))",
@@ -254,6 +254,7 @@ impl Storage {
                 status: r.get(2),
                 watched_episodes: r.get(3),
                 episode_count: r.get(4),
+                image_url: r.get(5),
             })
             .collect())
     }
@@ -266,6 +267,7 @@ pub struct LibraryEntry {
     pub status: String,
     pub watched_episodes: i32,
     pub episode_count: Option<i32>,
+    pub image_url: Option<String>,
 }
 
 fn unixepoch_inner() -> i64 {

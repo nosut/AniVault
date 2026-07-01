@@ -12,6 +12,7 @@ async fn pending_match_stored_and_listed() {
         title_english: None,
         synonyms: vec![],
         episode_count: Some(12),
+        image_url: None,
     };
 
     anivault_core::engine::pending::store_pending_match(&storage, &result, "Dandadan", 75)
@@ -36,6 +37,7 @@ async fn confirm_match_adds_to_db_and_clears_pending() {
         title_english: None,
         synonyms: vec![],
         episode_count: Some(26),
+        image_url: None,
     };
 
     anivault_core::engine::pending::store_pending_match(&storage, &result, "Mushishi", 70)
@@ -62,6 +64,7 @@ async fn reject_match_removes_from_pending() {
         title_english: None,
         synonyms: vec![],
         episode_count: None,
+        image_url: None,
     };
 
     anivault_core::engine::pending::store_pending_match(&storage, &result, "Query Title", 55)
