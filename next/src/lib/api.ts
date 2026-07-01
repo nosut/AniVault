@@ -96,3 +96,18 @@ export function setSonarrConfig(url: string, apiKey: string, invokeFn: InvokeFn 
 export function testSonarrConnection(url: string, apiKey: string, invokeFn: InvokeFn = tauriInvoke): Promise<string> {
   return invokeFn<string>('test_sonarr_connection', { url, apiKey });
 }
+
+export interface SonarrMapping {
+  anime_id: number;
+  sonarr_series_id: number;
+  sonarr_title: string;
+  monitored: boolean;
+}
+
+export function getSonarrMappings(invokeFn: InvokeFn = tauriInvoke): Promise<SonarrMapping[]> {
+  return invokeFn<SonarrMapping[]>('get_sonarr_mappings');
+}
+
+export function mapSonarrSeries(animeId: number, sonarrSeriesId: number, sonarrTitle: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('map_sonarr_series', { animeId, sonarrSeriesId, sonarrTitle });
+}

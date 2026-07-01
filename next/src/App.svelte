@@ -8,6 +8,8 @@
   import { getLibraryAnime } from './lib/api';
   import type { LibraryEntry } from './lib/api';
   import { getSonarrConfig, setSonarrConfig, testSonarrConnection } from './lib/api';
+  import { getSonarrMappings } from './lib/api';
+  import type { SonarrMapping } from './lib/api';
   import Library from './lib/Library.svelte';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
@@ -21,6 +23,7 @@
   let sonarrUrl: string = $state('');
   let sonarrKey: string = $state('');
   let sonarrMsg: string | null = $state(null);
+  let sonarrMappings: SonarrMapping[] = $state([]);
 
   async function loadSonarrConfig() {
     try {
@@ -28,6 +31,7 @@
       sonarrUrl = c.url;
       sonarrKey = c.api_key;
     } catch { /* empty */ }
+    try { sonarrMappings = await getSonarrMappings(); } catch { /* empty */ }
   }
 
   async function saveSonarrConfig() {
@@ -166,6 +170,18 @@
         <p class="oauth-msg">{sonarrMsg}</p>
       {/if}
     </div>
+
+    {#if sonarrMappings.length > 0}
+    <div class="card" style="margin-top:1.5rem;">
+      <span>Series Mappings</span>
+      {#each sonarrMappings as m}
+        <div class="lib-row">
+          <span class="lib-title">#{m.anime_id} → Sonarr #{m.sonarr_series_id}</span>
+          <span class="lib-ep">{m.sonarr_title}</span>
+        </div>
+      {/each}
+    </div>
+    {/if}
   </section>
   {:else if activeTab === 'Library'}
   <section class="home library-section">

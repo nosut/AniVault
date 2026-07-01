@@ -30,6 +30,8 @@ pub fn run() {
             commands::get_sonarr_config,
             commands::set_sonarr_config,
             commands::test_sonarr_connection,
+            commands::get_sonarr_mappings,
+            commands::map_sonarr_series,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AniVault");
