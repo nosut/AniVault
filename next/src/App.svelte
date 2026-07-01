@@ -12,6 +12,7 @@
   import type { SonarrMapping } from './lib/api';
   import { setSonarrMonitored } from './lib/api';
   import Library from './lib/Library.svelte';
+  import Calendar from './lib/Calendar.svelte';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
   let activeTab = $state('Home');
@@ -203,6 +204,11 @@
     {:else}
       <Library {library} />
     {/if}
+  </section>
+  {:else if activeTab === 'Calendar'}
+  <section class="home library-section">
+    <p class="eyebrow">Calendar</p>
+    <Calendar />
   </section>
   {:else}
   <section class="home">

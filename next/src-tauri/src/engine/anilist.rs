@@ -2,6 +2,23 @@
 /// Uses the public AniList API (no auth required for search).
 /// Token from OAuth used only for rate-limit advantages.
 
+// ── Models ──
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SeasonalAnime {
+    pub anilist_id: i64,
+    pub title: String,
+    pub english_title: Option<String>,
+    pub image_url: Option<String>,
+    pub episodes: Option<i32>,
+    pub status: String,
+    pub season: String,
+    pub season_year: i32,
+    pub format: String,
+}
+
+// ── Search result ──
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AniListSearchResult {
     pub anilist_id: i64,
@@ -151,4 +168,49 @@ pub async fn search_anilist_fallback(
         confidence,
         source: "anilist_search".to_string(),
     }))
+}
+
+// ── Seasonal browsing ──
+
+pub fn parse_seasonal_response(json: &str) -> anyhow::Result<Vec<SeasonalAnime>> {
+    let parsed: serde_json::Value = serde_json::from_str(json)?;
+    let empty = vec![];
+    let media = parsed["data"]["Page"]["media"]
+        .as_array()
+        .unwrap_or(&empty);
+
+    Ok(media
+        .iter()
+        .filter_map(|m| {
+            Some(SeasonalAnime {
+                anilist_id: m["id"].as_i64()?,
+                title: m["title"]["romaji"].as_str()?.to_string(),
+                english_title: m["title"]["english"].as_str().map(String::from),
+                image_url: m["coverImage"]["large"].as_str().map(String::from),
+                episodes: m["episodes"].as_i64().map(|e| e as i32),
+                status: m["status"].as_str().unwrap_or("").to_string(),
+                season: m["season"].as_str().unwrap_or("").to_string(),
+                season_year: m["seasonYear"].as_i64().unwrap_or(0) as i32,
+                format: m["format"].as_str().unwrap_or("").to_string(),
+            })
+        })
+        .collect())
+}
+
+pub async fn search_seasonal_anime(season: &str, year: i32) -> anyhow::Result<Vec<SeasonalAnime>> {
+    crate::engine::rate_limit::anilist_limiter().acquire().await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://graphql.anilist.co")
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "query": "query ($season: MediaSeason, $year: Int) { Page(perPage: 50) { media(season: $season, seasonYear: $year, type: ANIME, sort: POPULARITY_DESC) { id title { romaji english } coverImage { large } episodes status season seasonYear format } } }",
+            "variables": { "season": season, "year": year }
+        }))
+        .send()
+        .await?;
+
+    let body = resp.text().await?;
+    parse_seasonal_response(&body)
 }

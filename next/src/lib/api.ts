@@ -115,3 +115,19 @@ export function mapSonarrSeries(animeId: number, sonarrSeriesId: number, sonarrT
 export function setSonarrMonitored(animeId: number, monitored: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('set_sonarr_monitored', { animeId, monitored });
 }
+
+export interface SeasonalAnime {
+  anilist_id: number;
+  title: string;
+  english_title: string | null;
+  image_url: string | null;
+  episodes: number | null;
+  status: string;
+  season: string;
+  season_year: number;
+  format: string;
+}
+
+export function getSeasonalAnime(season: string, year: number, invokeFn: InvokeFn = tauriInvoke): Promise<SeasonalAnime[]> {
+  return invokeFn<SeasonalAnime[]>('get_seasonal_anime', { season, year });
+}

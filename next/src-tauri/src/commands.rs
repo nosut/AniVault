@@ -347,6 +347,13 @@ pub async fn set_sonarr_monitored(anime_id: i64, monitored: bool) -> Result<(), 
         .map_err(|e| format!("set monitored: {e}"))
 }
 
+#[tauri::command]
+pub async fn get_seasonal_anime(season: String, year: i32) -> Result<Vec<crate::engine::anilist::SeasonalAnime>, String> {
+    crate::engine::anilist::search_seasonal_anime(&season, year)
+        .await
+        .map_err(|e| format!("seasonal: {e}"))
+}
+
 fn local_db_url() -> String {
     let app_data = std::env::var_os("APPDATA")
         .map(std::path::PathBuf::from)
