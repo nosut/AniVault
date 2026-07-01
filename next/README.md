@@ -2,6 +2,13 @@
 
 Clean-room Windows-only anime library and tracker.
 
+## Phase A2 scope (AniList integration)
+
+- AniList OAuth PKCE flow (token stored via DPAPI)
+- AniList GraphQL search + auto-add (confidence ≥85)
+- Sync queue worker with exponential backoff (30s → 6hr max)
+- Sync status indicator in sidebar (green/amber dot)
+
 ## Phase A1 scope (local tracking)
 
 - Filename parser (15 anime release patterns)
