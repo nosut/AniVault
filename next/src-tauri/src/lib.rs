@@ -5,8 +5,10 @@ use std::sync::Arc;
 
 pub fn run() {
     let tracking_runtime = commands::TrackingRuntime::default();
+    let oauth_runtime = commands::OAuthRuntime::default();
     tauri::Builder::default()
         .manage(tracking_runtime.clone())
+        .manage(oauth_runtime)
         .setup(move |_app| {
             start_local_tracking(tracking_runtime.clone());
             Ok(())
@@ -16,6 +18,9 @@ pub fn run() {
             commands::preview_migration_report,
             commands::get_tracking_status,
             commands::app_exit,
+            commands::start_oauth,
+            commands::complete_oauth,
+            commands::get_oauth_status,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AniVault");

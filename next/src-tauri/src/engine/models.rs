@@ -39,3 +39,9 @@ pub struct TrackingStatus {
     pub is_running: bool,
     pub current_anime: Option<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OAuthStatus {
+    pub authenticated: bool,
+    pub username: Option<String>,
+}

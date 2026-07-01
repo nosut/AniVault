@@ -1,9 +1,52 @@
 <script lang="ts">
   import bannerUrl from './assets/banner.png';
   import NowPlaying from './lib/now-playing.svelte';
+  import { startOAuth, completeOAuth, getOAuthStatus } from './lib/api';
+  import type { OAuthStatus } from './lib/api';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
   let activeTab = $state('Home');
+
+  let oauthStatus: OAuthStatus = $state({ authenticated: false, username: null });
+  let oauthLoading: boolean = $state(false);
+  let oauthMessage: string | null = $state(null);
+
+  async function refreshOAuthStatus() {
+    try {
+      oauthStatus = await getOAuthStatus();
+      oauthMessage = null;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleStartOAuth() {
+    oauthLoading = true;
+    oauthMessage = null;
+    try {
+      await startOAuth();
+      oauthMessage = 'Browser opened. Authorize AniList, then click Complete below.';
+    } catch (e) {
+      oauthMessage = `Error: ${e}`;
+    }
+    oauthLoading = false;
+  }
+
+  async function handleCompleteOAuth() {
+    oauthLoading = true;
+    oauthMessage = null;
+    try {
+      oauthStatus = await completeOAuth();
+      oauthMessage = oauthStatus.authenticated
+        ? `Connected as ${oauthStatus.username ?? 'unknown'}.`
+        : 'Authentication failed.';
+    } catch (e) {
+      oauthMessage = `Error: ${e}`;
+    }
+    oauthLoading = false;
+  }
+
+  refreshOAuthStatus();
 </script>
 
 <main class="shell">
@@ -23,6 +66,35 @@
     <div class="card">
       <span>AniVault Preview</span>
       <strong>Engine scaffold ready for storage, migration, sync, Sonarr integration, and future tracking workflows.</strong>
+    </div>
+  </section>
+  {:else if activeTab === 'Settings'}
+  <section class="home">
+    <p class="eyebrow">Settings</p>
+    <div class="card">
+      <span>AniList OAuth</span>
+      <p class="oauth-status">
+        {#if oauthStatus.authenticated}
+          Connected as <strong>{oauthStatus.username ?? 'unknown'}</strong>.
+        {:else}
+          Not connected.
+        {/if}
+      </p>
+      <div class="oauth-actions">
+        {#if !oauthStatus.authenticated}
+          <button class="oauth-btn" onclick={handleStartOAuth} disabled={oauthLoading}>
+            {oauthLoading ? 'Opening browser...' : 'Connect AniList'}
+          </button>
+          <button class="oauth-btn" onclick={handleCompleteOAuth} disabled={oauthLoading}>
+            Complete Authorization
+          </button>
+        {:else}
+          <button class="oauth-btn" onclick={refreshOAuthStatus}>Refresh</button>
+        {/if}
+      </div>
+      {#if oauthMessage}
+        <p class="oauth-msg">{oauthMessage}</p>
+      {/if}
     </div>
   </section>
   {:else}
@@ -112,5 +184,47 @@
     margin-bottom: 2rem;
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
+  }
+
+  .oauth-status {
+    color: var(--color-muted);
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+  }
+
+  .oauth-status strong {
+    color: var(--color-text);
+  }
+
+  .oauth-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+
+  .oauth-btn {
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: 999px;
+    padding: 0.5rem 1.2rem;
+    color: var(--color-text);
+    background: rgb(255 255 255 / 6%);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: background 0.15s;
+  }
+
+  .oauth-btn:hover:not(:disabled) {
+    background: rgb(255 255 255 / 12%);
+  }
+
+  .oauth-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .oauth-msg {
+    color: var(--color-accent);
+    font-size: 0.82rem;
+    margin-top: 0.5rem;
   }
 </style>

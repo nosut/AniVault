@@ -24,6 +24,11 @@ export interface TrackingStatus {
   current_anime: string | null;
 }
 
+export interface OAuthStatus {
+  authenticated: boolean;
+  username: string | null;
+}
+
 export function getEngineStatus(invokeFn: InvokeFn = tauriInvoke): Promise<EngineStatus> {
   return invokeFn<EngineStatus>('get_engine_status');
 }
@@ -34,4 +39,16 @@ export function previewMigrationReport(invokeFn: InvokeFn = tauriInvoke): Promis
 
 export function getTrackingStatus(invokeFn: InvokeFn = tauriInvoke): Promise<TrackingStatus> {
   return invokeFn<TrackingStatus>('get_tracking_status');
+}
+
+export function startOAuth(invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('start_oauth');
+}
+
+export function completeOAuth(invokeFn: InvokeFn = tauriInvoke): Promise<OAuthStatus> {
+  return invokeFn<OAuthStatus>('complete_oauth');
+}
+
+export function getOAuthStatus(invokeFn: InvokeFn = tauriInvoke): Promise<OAuthStatus> {
+  return invokeFn<OAuthStatus>('get_oauth_status');
 }
