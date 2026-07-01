@@ -7,12 +7,15 @@
   import type { SyncStatus } from './lib/api';
   import { getLibraryAnime } from './lib/api';
   import type { LibraryEntry } from './lib/api';
+  import { getWatchingAnime } from './lib/api';
   import { getSonarrConfig, setSonarrConfig, testSonarrConnection } from './lib/api';
   import { getSonarrMappings } from './lib/api';
   import type { SonarrMapping } from './lib/api';
   import { setSonarrMonitored } from './lib/api';
   import Library from './lib/Library.svelte';
   import Calendar from './lib/Calendar.svelte';
+  import Watching from './lib/Watching.svelte';
+  import SyncTab from './lib/Sync.svelte';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
   let activeTab = $state('Home');
@@ -209,6 +212,16 @@
   <section class="home library-section">
     <p class="eyebrow">Calendar</p>
     <Calendar />
+  </section>
+  {:else if activeTab === 'Watching'}
+  <section class="home library-section">
+    <p class="eyebrow">Watching</p>
+    <Watching />
+  </section>
+  {:else if activeTab === 'Sync'}
+  <section class="home">
+    <p class="eyebrow">Sync</p>
+    <SyncTab />
   </section>
   {:else}
   <section class="home">

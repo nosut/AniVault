@@ -34,6 +34,7 @@ pub fn run() {
             commands::map_sonarr_series,
             commands::set_sonarr_monitored,
             commands::get_seasonal_anime,
+            commands::get_watching_anime,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AniVault");

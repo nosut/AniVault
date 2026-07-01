@@ -233,6 +233,33 @@ impl Storage {
         Ok(row.get::<i64, _>(0))
     }
 
+    pub async fn get_watching_anime(&self) -> anyhow::Result<Vec<LibraryEntry>> {
+        let rows = sqlx::query(
+            "SELECT anime.id, json_extract(anime.titles_json, '$.romaji'),
+                    list_entry.status,
+                    COALESCE(list_entry.watched_episodes, 0),
+                    anime.episode_count, anime.image_url
+             FROM anime
+             JOIN list_entry ON list_entry.anime_id = anime.id
+             WHERE list_entry.status = 'watching'
+             ORDER BY list_entry.local_updated DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| LibraryEntry {
+                id: r.get(0),
+                title: r.get(1),
+                status: r.get(2),
+                watched_episodes: r.get(3),
+                episode_count: r.get(4),
+                image_url: r.get(5),
+            })
+            .collect())
+    }
+
     pub async fn get_library_anime(&self) -> anyhow::Result<Vec<LibraryEntry>> {
         let rows = sqlx::query(
             "SELECT anime.id, json_extract(anime.titles_json, '$.romaji'),

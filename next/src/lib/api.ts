@@ -131,3 +131,7 @@ export interface SeasonalAnime {
 export function getSeasonalAnime(season: string, year: number, invokeFn: InvokeFn = tauriInvoke): Promise<SeasonalAnime[]> {
   return invokeFn<SeasonalAnime[]>('get_seasonal_anime', { season, year });
 }
+
+export function getWatchingAnime(invokeFn: InvokeFn = tauriInvoke): Promise<LibraryEntry[]> {
+  return invokeFn<LibraryEntry[]>('get_watching_anime');
+}

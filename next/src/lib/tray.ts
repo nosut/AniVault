@@ -1,6 +1,7 @@
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { Menu } from '@tauri-apps/api/menu';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export async function setupTray(): Promise<void> {
   const menu = await Menu.new({
@@ -8,8 +9,10 @@ export async function setupTray(): Promise<void> {
       {
         id: 'show-anivault',
         text: 'Show AniVault',
-        action: () => {
-          /* window is already shown; tray menu closes automatically */
+        action: async () => {
+          const win = getCurrentWindow();
+          await win.show();
+          await win.setFocus();
         },
       },
       {

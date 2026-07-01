@@ -354,6 +354,18 @@ pub async fn get_seasonal_anime(season: String, year: i32) -> Result<Vec<crate::
         .map_err(|e| format!("seasonal: {e}"))
 }
 
+#[tauri::command]
+pub async fn get_watching_anime() -> Result<Vec<crate::engine::storage::LibraryEntry>, String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+    storage.get_watching_anime()
+        .await
+        .map_err(|e| format!("get watching: {e}"))
+}
+
 fn local_db_url() -> String {
     let app_data = std::env::var_os("APPDATA")
         .map(std::path::PathBuf::from)
