@@ -5,6 +5,8 @@
   import type { OAuthStatus } from './lib/api';
   import { getSyncStatus } from './lib/api';
   import type { SyncStatus } from './lib/api';
+  import { getLibraryAnime } from './lib/api';
+  import type { LibraryEntry } from './lib/api';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
   let activeTab = $state('Home');
@@ -13,6 +15,12 @@
   let oauthLoading: boolean = $state(false);
   let oauthMessage: string | null = $state(null);
   let syncPending: number = $state(0);
+  let library: LibraryEntry[] = $state([]);
+
+  async function loadLibrary() {
+    try { library = await getLibraryAnime(); } catch { /* empty */ }
+  }
+  $effect(() => { if (activeTab === 'Library') loadLibrary(); });
 
   async function refreshSyncStatus() {
     try {
@@ -115,6 +123,23 @@
         <p class="oauth-msg">{oauthMessage}</p>
       {/if}
     </div>
+  </section>
+  {:else if activeTab === 'Library'}
+  <section class="home">
+    <p class="eyebrow">Library</p>
+    {#if library.length === 0}
+      <div class="card"><span>No anime in library yet. Play a file to auto-add.</span></div>
+    {:else}
+      <div class="library-list">
+        {#each library as entry}
+          <div class="lib-row">
+            <span class="lib-title">{entry.title}</span>
+            <span class="lib-status status-{entry.status}">{entry.status.replace('_', ' ')}</span>
+            <span class="lib-ep">Ep {entry.watched_episodes}{#if entry.episode_count} / {entry.episode_count}{/if}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </section>
   {:else}
   <section class="home">
@@ -270,5 +295,44 @@
     color: var(--color-accent);
     font-size: 0.82rem;
     margin-top: 0.5rem;
+  }
+
+  .library-list {
+    max-width: 42rem;
+  }
+
+  .lib-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid rgb(255 255 255 / 6%);
+    font-size: 0.9rem;
+  }
+
+  .lib-title {
+    flex: 1;
+    color: var(--color-text);
+  }
+
+  .lib-status {
+    text-transform: capitalize;
+    font-size: 0.72rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 6%);
+    color: var(--color-muted);
+  }
+
+  .status-watching { color: #22c55e; }
+  .status-completed { color: #60a5fa; }
+  .status-on_hold, .status-onhold { color: #f59e0b; }
+  .status-dropped { color: #ef4444; }
+
+  .lib-ep {
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    min-width: 5rem;
+    text-align: right;
   }
 </style>

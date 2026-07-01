@@ -26,6 +26,7 @@ pub fn run() {
             commands::get_pending_matches,
             commands::confirm_match,
             commands::reject_match,
+            commands::get_library_anime,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AniVault");

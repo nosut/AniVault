@@ -264,6 +264,18 @@ pub async fn reject_match(anilist_id: i64) -> Result<(), String> {
         .map_err(|e| format!("reject: {e}"))
 }
 
+#[tauri::command]
+pub async fn get_library_anime() -> Result<Vec<crate::engine::storage::LibraryEntry>, String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+    storage.get_library_anime()
+        .await
+        .map_err(|e| format!("get library: {e}"))
+}
+
 fn local_db_url() -> String {
     let app_data = std::env::var_os("APPDATA")
         .map(std::path::PathBuf::from)

@@ -232,6 +232,40 @@ impl Storage {
             .await?;
         Ok(row.get::<i64, _>(0))
     }
+
+    pub async fn get_library_anime(&self) -> anyhow::Result<Vec<LibraryEntry>> {
+        let rows = sqlx::query(
+            "SELECT anime.id, json_extract(anime.titles_json, '$.romaji'),
+                    COALESCE(list_entry.status, 'plan_to_watch'),
+                    COALESCE(list_entry.watched_episodes, 0),
+                    anime.episode_count
+             FROM anime
+             LEFT JOIN list_entry ON list_entry.anime_id = anime.id
+             ORDER BY lower(json_extract(anime.titles_json, '$.romaji'))",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| LibraryEntry {
+                id: r.get(0),
+                title: r.get(1),
+                status: r.get(2),
+                watched_episodes: r.get(3),
+                episode_count: r.get(4),
+            })
+            .collect())
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LibraryEntry {
+    pub id: i64,
+    pub title: String,
+    pub status: String,
+    pub watched_episodes: i32,
+    pub episode_count: Option<i32>,
 }
 
 fn unixepoch_inner() -> i64 {

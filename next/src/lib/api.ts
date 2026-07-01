@@ -67,3 +67,15 @@ export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<SyncSta
 export function setWatchedEpisodes(animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('set_watched_episodes', { animeId, episode });
 }
+
+export interface LibraryEntry {
+  id: number;
+  title: string;
+  status: string;
+  watched_episodes: number;
+  episode_count: number | null;
+}
+
+export function getLibraryAnime(invokeFn: InvokeFn = tauriInvoke): Promise<LibraryEntry[]> {
+  return invokeFn<LibraryEntry[]>('get_library_anime');
+}
