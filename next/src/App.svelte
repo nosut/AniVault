@@ -7,6 +7,7 @@
   import type { SyncStatus } from './lib/api';
   import { getLibraryAnime } from './lib/api';
   import type { LibraryEntry } from './lib/api';
+  import { getSonarrConfig, setSonarrConfig, testSonarrConnection } from './lib/api';
   import Library from './lib/Library.svelte';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
@@ -17,6 +18,32 @@
   let oauthMessage: string | null = $state(null);
   let syncPending: number = $state(0);
   let library: LibraryEntry[] = $state([]);
+  let sonarrUrl: string = $state('');
+  let sonarrKey: string = $state('');
+  let sonarrMsg: string | null = $state(null);
+
+  async function loadSonarrConfig() {
+    try {
+      const c = await getSonarrConfig();
+      sonarrUrl = c.url;
+      sonarrKey = c.api_key;
+    } catch { /* empty */ }
+  }
+
+  async function saveSonarrConfig() {
+    try {
+      await setSonarrConfig(sonarrUrl, sonarrKey);
+      sonarrMsg = 'Saved.';
+    } catch (e) { sonarrMsg = `Error: ${e}`; }
+  }
+
+  async function testSonarr() {
+    try {
+      sonarrMsg = await testSonarrConnection(sonarrUrl, sonarrKey);
+    } catch (e) { sonarrMsg = `Error: ${e}`; }
+  }
+
+  loadSonarrConfig();
 
   async function loadLibrary() {
     try { library = await getLibraryAnime(); } catch { /* empty */ }
@@ -122,6 +149,21 @@
       </div>
       {#if oauthMessage}
         <p class="oauth-msg">{oauthMessage}</p>
+      {/if}
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <span>Sonarr Integration</span>
+      <div class="oauth-actions" style="flex-direction:column;align-items:stretch;">
+        <input class="oauth-btn" style="text-align:left;border-color:rgb(255 255 255 / 10%);" placeholder="Sonarr URL (e.g. http://localhost:8989)" bind:value={sonarrUrl} />
+        <input class="oauth-btn" style="text-align:left;border-color:rgb(255 255 255 / 10%);" type="password" placeholder="API Key" bind:value={sonarrKey} />
+        <div style="display:flex;gap:0.75rem;">
+          <button class="oauth-btn" onclick={testSonarr}>Test Connection</button>
+          <button class="oauth-btn" onclick={saveSonarrConfig}>Save</button>
+        </div>
+      </div>
+      {#if sonarrMsg}
+        <p class="oauth-msg">{sonarrMsg}</p>
       {/if}
     </div>
   </section>

@@ -11,5 +11,6 @@ pub mod rate_limit;
 pub mod recognition;
 pub mod secrets;
 pub mod settings;
+pub mod sonarr;
 pub mod storage;
 pub mod sync;

@@ -27,6 +27,9 @@ pub fn run() {
             commands::confirm_match,
             commands::reject_match,
             commands::get_library_anime,
+            commands::get_sonarr_config,
+            commands::set_sonarr_config,
+            commands::test_sonarr_connection,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AniVault");

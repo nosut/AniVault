@@ -276,6 +276,41 @@ pub async fn get_library_anime() -> Result<Vec<crate::engine::storage::LibraryEn
         .map_err(|e| format!("get library: {e}"))
 }
 
+#[tauri::command]
+pub async fn get_sonarr_config() -> Result<crate::engine::sonarr::SonarrConfig, String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+    crate::engine::sonarr::get_sonarr_config(&storage)
+        .await
+        .map_err(|e| format!("get config: {e}"))
+}
+
+#[tauri::command]
+pub async fn set_sonarr_config(url: String, api_key: String) -> Result<(), String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+    crate::engine::sonarr::set_sonarr_config(
+        &storage,
+        &crate::engine::sonarr::SonarrConfig { url, api_key },
+    )
+    .await
+    .map_err(|e| format!("set config: {e}"))
+}
+
+#[tauri::command]
+pub async fn test_sonarr_connection(url: String, api_key: String) -> Result<String, String> {
+    crate::engine::sonarr::test_sonarr_connection(&url, &api_key)
+        .await
+        .map(|_| "Connected to Sonarr".to_string())
+        .map_err(|e| format!("connection failed: {e}"))
+}
+
 fn local_db_url() -> String {
     let app_data = std::env::var_os("APPDATA")
         .map(std::path::PathBuf::from)

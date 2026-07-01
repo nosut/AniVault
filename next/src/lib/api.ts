@@ -79,3 +79,20 @@ export interface LibraryEntry {
 export function getLibraryAnime(invokeFn: InvokeFn = tauriInvoke): Promise<LibraryEntry[]> {
   return invokeFn<LibraryEntry[]>('get_library_anime');
 }
+
+export interface SonarrConfig {
+  url: string;
+  api_key: string;
+}
+
+export function getSonarrConfig(invokeFn: InvokeFn = tauriInvoke): Promise<SonarrConfig> {
+  return invokeFn<SonarrConfig>('get_sonarr_config');
+}
+
+export function setSonarrConfig(url: string, apiKey: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_sonarr_config', { url, apiKey });
+}
+
+export function testSonarrConnection(url: string, apiKey: string, invokeFn: InvokeFn = tauriInvoke): Promise<string> {
+  return invokeFn<string>('test_sonarr_connection', { url, apiKey });
+}
