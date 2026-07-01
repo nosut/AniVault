@@ -30,12 +30,42 @@ export interface MediaDetectedEvent {
   };
 }
 
+export interface MatchCandidate {
+  anime_id: number;
+  title: string;
+  confidence: number;
+  match_source: string;
+}
+
+export interface ParsedFilename {
+  cleaned_title: string;
+  episode_number: number;
+  release_group: string | null;
+  quality: string | null;
+  raw: string;
+}
+
+export interface RecognitionResult {
+  known_file: boolean;
+  parsed: ParsedFilename | null;
+  candidates: MatchCandidate[];
+}
+
+export interface FileIndexEntry {
+  file_path: string;
+  anime_id: number | null;
+  episode: number | null;
+  confidence: number;
+  indexed_at: number;
+}
+
 export interface PlaybackDetectedEvent {
   PlaybackDetected: {
     player_name: string;
     file_path: string | null;
     window_title: string | null;
     episode_guess: number | null;
+    candidates: MatchCandidate[];
     detected_at_unix: number;
   };
 }
@@ -144,4 +174,16 @@ export function markEpisodeWatched(anime_id: number, episode: number, invokeFn: 
 
 export function listRecentHistory(limit: number, invokeFn: InvokeFn = tauriInvoke): Promise<RecentHistoryEntry[]> {
   return invokeFn<RecentHistoryEntry[]>('list_recent_history', { limit });
+}
+
+export function identifyFile(filePath: string, windowTitle: string | null, invokeFn: InvokeFn = tauriInvoke): Promise<RecognitionResult> {
+  return invokeFn<RecognitionResult>('identify_file', { file_path: filePath, window_title: windowTitle });
+}
+
+export function confirmIdentification(filePath: string, animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('confirm_identification', { file_path: filePath, anime_id: animeId, episode });
+}
+
+export function listKnownFiles(limit: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileIndexEntry[]> {
+  return invokeFn<FileIndexEntry[]>('list_known_files', { limit });
 }

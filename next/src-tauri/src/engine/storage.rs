@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
@@ -22,6 +23,15 @@ pub struct WatchHistoryRow {
     pub file_path: Option<String>,
     pub player: Option<String>,
     pub watched_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+pub struct FileIndexRow {
+    pub file_path: String,
+    pub anime_id: Option<i64>,
+    pub episode: Option<i32>,
+    pub confidence: i32,
+    pub indexed_at: i64,
 }
 
 #[derive(Clone)]
@@ -238,6 +248,92 @@ impl Storage {
                 file_path: row.get("file_path"),
                 player: row.get("player"),
                 watched_at: row.get("watched_at"),
+            })
+            .collect())
+    }
+
+    pub async fn search_anime_by_title(&self, query: &str, limit: i64) -> anyhow::Result<Vec<AnimeRow>> {
+        let pattern = format!("%{}%", query);
+        let rows = sqlx::query(
+            "SELECT id, titles_json, episode_count FROM anime
+             WHERE titles_json LIKE ?1
+             ORDER BY id LIMIT ?2",
+        )
+        .bind(&pattern)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|row| AnimeRow {
+                id: row.get("id"),
+                titles_json: row.get("titles_json"),
+                episode_count: row.get("episode_count"),
+            })
+            .collect())
+    }
+
+    pub async fn upsert_file_index(
+        &self,
+        file_path: &str,
+        anime_id: i64,
+        episode: i32,
+        confidence: i32,
+        indexed_at: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO file_index (file_path, anime_id, episode, confidence, indexed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(file_path) DO UPDATE SET
+               anime_id = excluded.anime_id,
+               episode = excluded.episode,
+               confidence = excluded.confidence,
+               indexed_at = excluded.indexed_at",
+        )
+        .bind(file_path)
+        .bind(anime_id)
+        .bind(episode)
+        .bind(confidence)
+        .bind(indexed_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_file_index(&self, file_path: &str) -> anyhow::Result<Option<FileIndexRow>> {
+        let row = sqlx::query(
+            "SELECT file_path, anime_id, episode, confidence, indexed_at
+             FROM file_index WHERE file_path = ?1",
+        )
+        .bind(file_path)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|row| FileIndexRow {
+            file_path: row.get("file_path"),
+            anime_id: row.get("anime_id"),
+            episode: row.get("episode"),
+            confidence: row.get("confidence"),
+            indexed_at: row.get("indexed_at"),
+        }))
+    }
+
+    pub async fn list_file_index(&self, limit: i64, offset: i64) -> anyhow::Result<Vec<FileIndexRow>> {
+        let rows = sqlx::query(
+            "SELECT file_path, anime_id, episode, confidence, indexed_at
+             FROM file_index ORDER BY indexed_at DESC LIMIT ?1 OFFSET ?2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|row| FileIndexRow {
+                file_path: row.get("file_path"),
+                anime_id: row.get("anime_id"),
+                episode: row.get("episode"),
+                confidence: row.get("confidence"),
+                indexed_at: row.get("indexed_at"),
             })
             .collect())
     }

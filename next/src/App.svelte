@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { drainEngineEvents, getEngineStatus, getSetting, setSetting, type EngineStatus } from './lib/api';
+  import { onMount, onDestroy } from 'svelte';
+  import { drainEngineEvents, getEngineStatus, getSetting, setSetting, type EngineStatus, type EngineEvent } from './lib/api';
   import NowPlaying from './lib/NowPlaying.svelte';
   import MarkWatched from './lib/MarkWatched.svelte';
+  import RecognitionCard from './lib/RecognitionCard.svelte';
+  import KnownFiles from './lib/KnownFiles.svelte';
 
   const navItems = ['Home', 'Library', 'Tracking', 'Sync', 'Settings'];
 
@@ -10,15 +12,27 @@
   let statusError = '';
   let trackingEnabled = true;
   let eventCount = 0;
+  let latestEvents: EngineEvent[] = [];
+  let eventIntervalId: ReturnType<typeof setInterval> | null = null;
+  let knownFilesRef: { load: () => Promise<void> } | undefined;
 
   async function refreshRuntime() {
     statusError = '';
     try {
       status = await getEngineStatus();
       trackingEnabled = (await getSetting<boolean>('tracking.enabled')) ?? true;
-      eventCount = (await drainEngineEvents()).length;
     } catch (error) {
       statusError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function pollEvents() {
+    try {
+      const events = await drainEngineEvents();
+      latestEvents = events;
+      eventCount += events.length;
+    } catch {
+      // Keep polling alive; individual errors are surfaced by consumers if needed.
     }
   }
 
@@ -32,8 +46,17 @@
     }
   }
 
+  function handleConfirmed() {
+    void knownFilesRef?.load();
+  }
+
   onMount(() => {
     void refreshRuntime();
+    eventIntervalId = setInterval(pollEvents, 3000);
+  });
+
+  onDestroy(() => {
+    if (eventIntervalId) clearInterval(eventIntervalId);
   });
 </script>
 
@@ -86,8 +109,10 @@
       </button>
     </section>
 
-    <NowPlaying />
+    <NowPlaying events={latestEvents} />
     <MarkWatched />
+    <RecognitionCard events={latestEvents} onConfirmed={handleConfirmed} />
+    <KnownFiles bind:this={knownFilesRef} />
   </section>
 </main>
 

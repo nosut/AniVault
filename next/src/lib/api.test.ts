@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  confirmIdentification,
   deleteSetting,
   drainEngineEvents,
   getEngineStatus,
   getSetting,
   getTrackingStatus,
+  identifyFile,
+  listKnownFiles,
   listRecentHistory,
   markEpisodeWatched,
   previewMigrationReport,
@@ -66,6 +69,7 @@ describe('api wrappers', () => {
           file_path: 'C:/anime/ep01.mkv',
           window_title: null,
           episode_guess: 1,
+          candidates: [{ anime_id: 1, title: 'Test Anime', confidence: 45, match_source: 'library' }],
           detected_at_unix: 1719000000,
         },
       },
@@ -77,6 +81,10 @@ describe('api wrappers', () => {
     if ('PlaybackDetected' in event) {
       expect(event.PlaybackDetected.player_name).toBe('mpv.exe');
       expect(event.PlaybackDetected.episode_guess).toBe(1);
+      expect(event.PlaybackDetected.candidates).toHaveLength(1);
+      expect(event.PlaybackDetected.candidates).toEqual([
+        { anime_id: 1, title: 'Test Anime', confidence: 45, match_source: 'library' },
+      ]);
     } else {
       throw new Error('expected PlaybackDetected event');
     }
@@ -114,5 +122,25 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(history);
     await expect(listRecentHistory(10, invoke)).resolves.toEqual(history);
     expect(invoke).toHaveBeenCalledWith('list_recent_history', { limit: 10 });
+  });
+
+  it('identifies file through invoke', async () => {
+    const result = { known_file: false, parsed: null, candidates: [] };
+    const invoke = vi.fn().mockResolvedValue(result);
+    await expect(identifyFile('test.mkv', null, invoke)).resolves.toEqual(result);
+    expect(invoke).toHaveBeenCalledWith('identify_file', { file_path: 'test.mkv', window_title: null });
+  });
+
+  it('confirms identification', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(confirmIdentification('test.mkv', 1, 5, invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('confirm_identification', { file_path: 'test.mkv', anime_id: 1, episode: 5 });
+  });
+
+  it('lists known files', async () => {
+    const entries = [{ file_path: 'test.mkv', anime_id: 1, episode: 1, confidence: 100, indexed_at: 1782769008 }];
+    const invoke = vi.fn().mockResolvedValue(entries);
+    await expect(listKnownFiles(10, invoke)).resolves.toEqual(entries);
+    expect(invoke).toHaveBeenCalledWith('list_known_files', { limit: 10 });
   });
 });

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { getTrackingStatus, startTracking, stopTracking, drainEngineEvents, type TrackingStatus } from './api';
+  import { getTrackingStatus, startTracking, stopTracking, type TrackingStatus, type EngineEvent } from './api';
+
+  export let events: EngineEvent[] = [];
 
   let status: TrackingStatus = { active: false, watching: null };
   let lastEvent: string | null = null;
@@ -8,22 +10,24 @@
   let intervalId: ReturnType<typeof setInterval> | null = null;
   let loading = false;
 
+  $: {
+    const last = events.at(-1);
+    if (last) {
+      if ('PlaybackDetected' in last) {
+        const pd = last.PlaybackDetected;
+        lastEvent = `Detected: ${pd.player_name}${pd.episode_guess ? ` ep ${pd.episode_guess}` : ''}`;
+      } else if ('ProgressAdvanced' in last) {
+        const pa = last.ProgressAdvanced;
+        lastEvent = `Progress: anime ${pa.anime_id} ep ${pa.new_episode}`;
+      }
+    }
+  }
+
   async function poll() {
     if (loading) return;
     loading = true;
     try {
       status = await getTrackingStatus();
-      const events = await drainEngineEvents();
-      if (events.length > 0) {
-        const last = events[events.length - 1];
-        if ('PlaybackDetected' in last) {
-          const pd = last.PlaybackDetected;
-          lastEvent = `Detected: ${pd.player_name}${pd.episode_guess ? ` ep ${pd.episode_guess}` : ''}`;
-        } else if ('ProgressAdvanced' in last) {
-          const pa = last.ProgressAdvanced;
-          lastEvent = `Progress: anime ${pa.anime_id} ep ${pa.new_episode}`;
-        }
-      }
       error = null;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);

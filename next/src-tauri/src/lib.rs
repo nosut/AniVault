@@ -30,6 +30,9 @@ pub fn run() {
             commands::get_tracking_status,
             commands::mark_episode_watched,
             commands::list_recent_history,
+            commands::identify_file,
+            commands::confirm_identification,
+            commands::list_known_files,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Taiga Next");

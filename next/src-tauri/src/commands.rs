@@ -3,9 +3,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
 use crate::engine::events::EngineEvent;
+use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
 use crate::engine::migration::MigrationReport;
 use crate::engine::runtime::EngineState;
-use crate::engine::storage::WatchHistoryRow;
+use crate::engine::storage::{FileIndexRow, WatchHistoryRow};
 use crate::engine::tracker::run_tracking_loop;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -25,6 +26,10 @@ fn unix_now() -> Result<i64, String> {
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?;
     Ok(duration.as_secs() as i64)
+}
+
+pub fn unix_now_inner() -> anyhow::Result<i64> {
+    unix_now().map_err(|e| anyhow::anyhow!(e))
 }
 
 pub async fn get_engine_status_inner(state: &EngineState) -> Result<EngineStatus, String> {
@@ -164,6 +169,40 @@ pub async fn list_recent_history_inner(
         .map_err(command_error)
 }
 
+// Recognition commands
+
+pub async fn identify_file_inner(
+    file_path: &str,
+    window_title: Option<&str>,
+    state: &EngineState,
+) -> Result<RecognitionResult, String> {
+    recognize_file(file_path, window_title, &state.storage)
+        .await
+        .map_err(command_error)
+}
+
+pub async fn confirm_identification_inner(
+    file_path: &str,
+    anime_id: i64,
+    episode: i32,
+    state: &EngineState,
+) -> Result<(), String> {
+    matcher_confirm(state, file_path, anime_id, episode)
+        .await
+        .map_err(command_error)
+}
+
+pub async fn list_known_files_inner(
+    limit: i64,
+    state: &EngineState,
+) -> Result<Vec<FileIndexRow>, String> {
+    state
+        .storage
+        .list_file_index(limit, 0)
+        .await
+        .map_err(command_error)
+}
+
 // Tauri command wrappers
 
 #[tauri::command]
@@ -246,4 +285,31 @@ pub async fn list_recent_history(
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<WatchHistoryRow>, String> {
     list_recent_history_inner(limit, &state).await
+}
+
+#[tauri::command]
+pub async fn identify_file(
+    file_path: String,
+    window_title: Option<String>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<RecognitionResult, String> {
+    identify_file_inner(&file_path, window_title.as_deref(), &state).await
+}
+
+#[tauri::command]
+pub async fn confirm_identification(
+    file_path: String,
+    anime_id: i64,
+    episode: i32,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    confirm_identification_inner(&file_path, anime_id, episode, &state).await
+}
+
+#[tauri::command]
+pub async fn list_known_files(
+    limit: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<FileIndexRow>, String> {
+    list_known_files_inner(limit, &state).await
 }

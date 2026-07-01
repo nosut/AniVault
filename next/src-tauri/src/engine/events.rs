@@ -1,6 +1,14 @@
 use crate::engine::models::{AnimeId, EpisodeNumber, ServiceId};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct MatchCandidate {
+    pub anime_id: AnimeId,
+    pub title: String,
+    pub confidence: u8,
+    pub match_source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MediaDetected {
     pub player_name: String,
     pub file_path: Option<String>,
@@ -25,6 +33,7 @@ pub enum EngineEvent {
         file_path: Option<String>,
         window_title: Option<String>,
         episode_guess: Option<EpisodeNumber>,
+        candidates: Vec<MatchCandidate>,
         detected_at_unix: i64,
     },
     ProgressAdvanced {

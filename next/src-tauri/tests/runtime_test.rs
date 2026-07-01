@@ -1,7 +1,25 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use taiga_next::engine::events::EngineEvent;
 use taiga_next::engine::runtime::{initialize_engine_at, sqlite_url_for_path};
+
+fn remove_dir_all_retry(path: PathBuf) {
+    let mut last_err = None;
+    for _ in 0..10 {
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => return,
+            Err(err) => {
+                last_err = Some(err);
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        }
+    }
+
+    if let Some(err) = last_err {
+        panic!("failed to remove {}: {err}", path.display());
+    }
+}
 
 #[test]
 fn sqlite_url_for_path_normalizes_windows_separators() {
@@ -39,5 +57,5 @@ async fn initialize_engine_creates_parent_dir_and_migrates_database() {
 
     // Close pool before cleanup to release file lock on Windows
     state.storage.close().await;
-    std::fs::remove_dir_all(root).unwrap();
+    remove_dir_all_retry(root);
 }
