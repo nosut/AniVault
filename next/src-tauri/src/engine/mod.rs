@@ -1,3 +1,4 @@
+pub mod anilist;
 pub mod detection;
 pub mod event_bus;
 pub mod events;

@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 const CURRENT_ANIME_TIMEOUT: Duration = Duration::from_secs(5);
 
+use crate::engine::anilist::search_anilist_fallback;
 use crate::engine::event_bus::EventBus;
 use crate::engine::events::{AnimeIdentified, EngineEvent, MediaDetected};
 use crate::engine::models::ParseResult;
@@ -115,8 +116,15 @@ async fn handle_media_detected_event(
         return Ok(None);
     };
 
-    let Some(matched) = search_local(storage, &parsed).await? else {
-        return Ok(None);
+    let matched = match search_local(storage, &parsed).await? {
+        Some(m) => m,
+        None => {
+            // Fallback to AniList search with auto-add
+            match search_anilist_fallback(storage, &parsed.title).await? {
+                Some(m) => m,
+                None => return Ok(None),
+            }
+        }
     };
 
     let old_episode = storage
