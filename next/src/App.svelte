@@ -1,5 +1,6 @@
 <script lang="ts">
   import bannerUrl from './assets/banner.png';
+  import NowPlaying from './lib/now-playing.svelte';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
   let activeTab = $state('Home');
@@ -16,6 +17,7 @@
   {#if activeTab === 'Home'}
   <section class="home">
     <img class="banner" src={bannerUrl} alt="AniVault" />
+    <NowPlaying />
     <p class="eyebrow">Foundation build</p>
     <h1>Your premium dark anime vault.</h1>
     <div class="card">

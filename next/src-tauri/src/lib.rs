@@ -15,6 +15,7 @@ pub fn run() {
             commands::get_engine_status,
             commands::preview_migration_report,
             commands::get_tracking_status,
+            commands::app_exit,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AniVault");

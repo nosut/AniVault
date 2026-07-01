@@ -1,0 +1,7 @@
+{
+  "identifier": "main-capability",
+  "windows": ["main"],
+  "permissions": [
+    "core:tray:default"
+  ]
+}

@@ -19,4 +19,9 @@ describe('AniVault brand assets', () => {
     expect(existsSync(resolve('src-tauri/icons/icon.png'))).toBe(true);
     expect(existsSync(resolve('src-tauri/icons/icon.ico'))).toBe(true);
   });
+
+  it('includes tracking tray and now playing UI modules', () => {
+    expect(existsSync(resolve('src/lib/tray.ts'))).toBe(true);
+    expect(existsSync(resolve('src/lib/now-playing.svelte'))).toBe(true);
+  });
 });

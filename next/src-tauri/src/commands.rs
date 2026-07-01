@@ -50,3 +50,8 @@ impl TrackingRuntime {
 pub fn get_tracking_status(runtime: tauri::State<'_, TrackingRuntime>) -> TrackingStatus {
     runtime.status()
 }
+
+#[tauri::command]
+pub fn app_exit(app: tauri::AppHandle) {
+    app.exit(0);
+}
