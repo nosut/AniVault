@@ -52,3 +52,12 @@ export function completeOAuth(invokeFn: InvokeFn = tauriInvoke): Promise<OAuthSt
 export function getOAuthStatus(invokeFn: InvokeFn = tauriInvoke): Promise<OAuthStatus> {
   return invokeFn<OAuthStatus>('get_oauth_status');
 }
+
+export interface SyncStatus {
+  pending: number;
+  failed: number;
+}
+
+export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<SyncStatus> {
+  return invokeFn<SyncStatus>('get_sync_status');
+}

@@ -10,3 +10,4 @@ pub mod recognition;
 pub mod secrets;
 pub mod settings;
 pub mod storage;
+pub mod sync;

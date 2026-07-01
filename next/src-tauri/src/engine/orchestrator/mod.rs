@@ -144,6 +144,16 @@ async fn handle_media_detected_event(
         .await?;
     storage.update_watched_episodes(matched.anime_id, episode).await?;
 
+    crate::engine::sync::queue_sync_results(
+        storage,
+        matched.anime_id,
+        episode,
+        detected.detected_at_unix,
+        detected.detected_at_unix,
+    )
+    .await
+    .ok();
+
     Ok(Some(TrackingOutcome {
         matched,
         episode,

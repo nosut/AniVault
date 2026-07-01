@@ -3,6 +3,8 @@
   import NowPlaying from './lib/now-playing.svelte';
   import { startOAuth, completeOAuth, getOAuthStatus } from './lib/api';
   import type { OAuthStatus } from './lib/api';
+  import { getSyncStatus } from './lib/api';
+  import type { SyncStatus } from './lib/api';
 
   const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
   let activeTab = $state('Home');
@@ -10,6 +12,17 @@
   let oauthStatus: OAuthStatus = $state({ authenticated: false, username: null });
   let oauthLoading: boolean = $state(false);
   let oauthMessage: string | null = $state(null);
+  let syncPending: number = $state(0);
+
+  async function refreshSyncStatus() {
+    try {
+      const s = await getSyncStatus();
+      syncPending = s.pending;
+    } catch { /* ignore */ }
+  }
+
+  setInterval(refreshSyncStatus, 10_000);
+  refreshSyncStatus();
 
   async function refreshOAuthStatus() {
     try {
@@ -52,6 +65,12 @@
 <main class="shell">
   <aside class="rail" aria-label="Main navigation">
     <div class="brand">AniVault</div>
+    <div class="sync-dot" class:amber={syncPending > 0} title={syncPending ? `${syncPending} pending sync` : 'Sync up to date'}>
+      <span class="dot"></span>
+      {#if syncPending > 0}
+        <span class="count">{syncPending}</span>
+      {/if}
+    </div>
     {#each navItems as item}
       <button class:active={item === activeTab} onclick={() => activeTab = item}>{item}</button>
     {/each}
@@ -122,7 +141,32 @@
   .brand {
     font-weight: 800;
     letter-spacing: -0.04em;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
+  }
+
+  .sync-dot {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.72rem;
+    color: var(--color-muted);
+  }
+
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+  }
+
+  .sync-dot.amber .dot {
+    background: #f59e0b;
+  }
+
+  .count {
+    color: var(--color-text);
   }
 
   button {

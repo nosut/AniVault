@@ -21,6 +21,7 @@ pub fn run() {
             commands::start_oauth,
             commands::complete_oauth,
             commands::get_oauth_status,
+            commands::get_sync_status,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run AniVault");
@@ -43,9 +44,10 @@ fn start_local_tracking(runtime: commands::TrackingRuntime) {
         let status_runtime = runtime.clone();
         engine::orchestrator::start_tracking_loop_with_status(
             bus.clone(),
-            storage,
+            storage.clone(),
             Arc::new(move |current_anime| status_runtime.set_current_anime(current_anime)),
         );
+        let _sync = engine::sync::SyncManager::start(storage.clone());
         let _manager = engine::detection::DetectionManager::start(
             bus,
             engine::settings::detection_config_from_settings("").unwrap_or_default(),

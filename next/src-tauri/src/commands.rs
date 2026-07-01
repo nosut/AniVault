@@ -166,6 +166,23 @@ pub async fn get_oauth_status(
     })
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SyncStatus {
+    pub pending: i64,
+    pub failed: i64,
+}
+
+#[tauri::command]
+pub async fn get_sync_status() -> Result<SyncStatus, String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+
+    let pending = storage.pending_sync_count("anilist").await.map_err(|e| format!("count: {e}"))?;
+    Ok(SyncStatus { pending, failed: 0 })
+}
+
 fn local_db_url() -> String {
     let app_data = std::env::var_os("APPDATA")
         .map(std::path::PathBuf::from)
