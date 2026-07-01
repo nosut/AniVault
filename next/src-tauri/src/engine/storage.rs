@@ -177,7 +177,7 @@ impl Storage {
         created_at: i64,
     ) -> anyhow::Result<i64> {
         let result = sqlx::query(
-            "INSERT INTO sync_queue (anime_id, service, operation, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT OR IGNORE INTO sync_queue (anime_id, service, operation, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         )
         .bind(anime_id)
         .bind(service)

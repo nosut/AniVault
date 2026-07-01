@@ -166,6 +166,9 @@ impl SyncManager {
 }
 
 async fn push_progress_to_anilist(access_token: &str, item: &SyncItem) -> anyhow::Result<()> {
+    use crate::engine::rate_limit::anilist_limiter;
+    anilist_limiter().acquire().await;
+
     let payload: serde_json::Value = serde_json::from_str(&item.payload_json)?;
     let episode = payload["episode"].as_i64().unwrap_or(0) as i32;
 

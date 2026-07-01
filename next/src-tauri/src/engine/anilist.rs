@@ -13,6 +13,11 @@ pub struct AniListSearchResult {
 
 pub fn parse_anilist_search_response(json: &str) -> anyhow::Result<Vec<AniListSearchResult>> {
     let parsed: serde_json::Value = serde_json::from_str(json)?;
+
+    if let Some(errors) = parsed.get("errors") {
+        anyhow::bail!("AniList GraphQL errors: {errors}");
+    }
+
     let media = parsed["data"]["Page"]["media"].as_array();
 
     let Some(media) = media else {
@@ -64,6 +69,8 @@ pub fn score_anilist_match(query: &str, result: &AniListSearchResult) -> u8 {
 }
 
 pub async fn search_anilist_graphql(title: &str) -> anyhow::Result<Vec<AniListSearchResult>> {
+    crate::engine::rate_limit::anilist_limiter().acquire().await;
+
     let client = reqwest::Client::new();
     let resp = client
         .post("https://graphql.anilist.co")

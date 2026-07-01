@@ -19,7 +19,7 @@ pub fn is_known_player(name: &str) -> bool {
 
 pub fn scan_players() -> Vec<PlayerInfo> {
     let output = std::process::Command::new("tasklist")
-        .args(["/FO", "CSV", "/NH"])
+        .args(["/V", "/FO", "CSV", "/NH"])
         .output();
 
     let Ok(output) = output else {
@@ -29,17 +29,21 @@ pub fn scan_players() -> Vec<PlayerInfo> {
     String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter_map(parse_tasklist_line)
-        .filter(|name| is_known_player(name))
-        .map(|process_name| PlayerInfo {
-            process_name,
-            window_title: None,
-        })
+        .filter(|info| is_known_player(&info.process_name))
         .collect()
 }
 
-fn parse_tasklist_line(line: &str) -> Option<String> {
-    line.split(',')
-        .next()
-        .map(|name| name.trim_matches('"').trim().to_string())
-        .filter(|name| !name.is_empty())
+fn parse_tasklist_line(line: &str) -> Option<PlayerInfo> {
+    let parts: Vec<&str> = line.split(',').collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let process_name = parts.first()?.trim_matches('"').trim().to_string();
+    if process_name.is_empty() {
+        return None;
+    }
+    let window_title = parts.get(8)
+        .map(|s| s.trim_matches('"').trim().to_string())
+        .filter(|s| !s.is_empty() && s != "N/A");
+    Some(PlayerInfo { process_name, window_title })
 }
