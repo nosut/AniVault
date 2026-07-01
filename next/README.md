@@ -2,6 +2,16 @@
 
 Clean-room Windows-only anime library and tracker.
 
+## Features
+
+- **Local tracking** — detect playback, recognize anime from filenames, update progress silently
+- **AniList integration** — OAuth, search, auto-add, sync with backoff
+- **Library** — poster grid with status filters and search
+- **Calendar** — seasonal anime browser via AniList
+- **Watching** — progress tracking with bars, sorted by recent activity
+- **Sonarr** — config, series mapping, monitored toggle
+- **Tray** — minimize-to-tray, Show/Quit menu
+
 ## Phase A2 scope (AniList integration)
 
 - AniList OAuth PKCE flow (token stored via DPAPI)
