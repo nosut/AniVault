@@ -5,8 +5,14 @@
 
   let status: SyncStatus | null = $state(null);
 
-  onMount(async () => {
-    try { status = await getSyncStatus(); } catch { /* empty */ }
+  async function refresh() {
+    try { status = await getSyncStatus(); } catch { status = { pending: -1, failed: 0 }; }
+  }
+
+  onMount(() => {
+    refresh();
+    const interval = setInterval(refresh, 10_000);
+    return () => clearInterval(interval);
   });
 </script>
 
@@ -14,6 +20,8 @@
   <span>Sync Queue</span>
   {#if status == null}
     <p style="color:var(--color-muted);font-size:0.82rem;">Loading...</p>
+  {:else if status.pending === -1}
+    <p style="color:#ef4444;font-size:0.82rem;">Failed to load sync status.</p>
   {:else if status.pending === 0}
     <p style="color:#22c55e;font-size:0.82rem;">All items synced to AniList.</p>
   {:else}

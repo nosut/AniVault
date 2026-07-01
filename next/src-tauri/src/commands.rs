@@ -87,7 +87,7 @@ impl OAuthRuntime {
 pub async fn start_oauth(
     runtime: tauri::State<'_, OAuthRuntime>,
 ) -> Result<u16, String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -135,7 +135,7 @@ pub async fn complete_oauth(
         return Err("no authorization code received yet".into());
     };
 
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -160,7 +160,7 @@ pub async fn complete_oauth(
 pub async fn get_oauth_status(
     _runtime: tauri::State<'_, OAuthRuntime>,
 ) -> Result<OAuthStatus, String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -184,7 +184,7 @@ pub struct SyncStatus {
 
 #[tauri::command]
 pub async fn get_sync_status() -> Result<SyncStatus, String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -195,7 +195,7 @@ pub async fn get_sync_status() -> Result<SyncStatus, String> {
 
 #[tauri::command]
 pub async fn set_watched_episodes(anime_id: i64, episode: i32) -> Result<(), String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -216,7 +216,7 @@ pub struct PendingMatchResponse {
 
 #[tauri::command]
 pub async fn get_pending_matches() -> Result<Vec<PendingMatchResponse>, String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -240,7 +240,7 @@ pub async fn get_pending_matches() -> Result<Vec<PendingMatchResponse>, String> 
 
 #[tauri::command]
 pub async fn confirm_match(anilist_id: i64) -> Result<(), String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -253,7 +253,7 @@ pub async fn confirm_match(anilist_id: i64) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn reject_match(anilist_id: i64) -> Result<(), String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -266,7 +266,7 @@ pub async fn reject_match(anilist_id: i64) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_library_anime() -> Result<Vec<crate::engine::storage::LibraryEntry>, String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -278,7 +278,7 @@ pub async fn get_library_anime() -> Result<Vec<crate::engine::storage::LibraryEn
 
 #[tauri::command]
 pub async fn get_sonarr_config() -> Result<crate::engine::sonarr::SonarrConfig, String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -290,7 +290,7 @@ pub async fn get_sonarr_config() -> Result<crate::engine::sonarr::SonarrConfig, 
 
 #[tauri::command]
 pub async fn set_sonarr_config(url: String, api_key: String) -> Result<(), String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -313,7 +313,7 @@ pub async fn test_sonarr_connection(url: String, api_key: String) -> Result<Stri
 
 #[tauri::command]
 pub async fn get_sonarr_mappings() -> Result<Vec<crate::engine::sonarr::SonarrMapping>, String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -325,7 +325,7 @@ pub async fn get_sonarr_mappings() -> Result<Vec<crate::engine::sonarr::SonarrMa
 
 #[tauri::command]
 pub async fn map_sonarr_series(anime_id: i64, sonarr_series_id: i64, sonarr_title: String) -> Result<(), String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -337,7 +337,7 @@ pub async fn map_sonarr_series(anime_id: i64, sonarr_series_id: i64, sonarr_titl
 
 #[tauri::command]
 pub async fn set_sonarr_monitored(anime_id: i64, monitored: bool) -> Result<(), String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -356,7 +356,7 @@ pub async fn get_seasonal_anime(season: String, year: i32) -> Result<Vec<crate::
 
 #[tauri::command]
 pub async fn get_watching_anime() -> Result<Vec<crate::engine::storage::LibraryEntry>, String> {
-    let db_url = local_db_url();
+    let db_url = crate::engine::database_url().map_err(|e| format!("{e}"))?;
     let storage = crate::engine::storage::Storage::connect(&db_url)
         .await
         .map_err(|e| format!("db connect: {e}"))?;
@@ -364,16 +364,6 @@ pub async fn get_watching_anime() -> Result<Vec<crate::engine::storage::LibraryE
     storage.get_watching_anime()
         .await
         .map_err(|e| format!("get watching: {e}"))
-}
-
-fn local_db_url() -> String {
-    let app_data = std::env::var_os("APPDATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
-    let directory = app_data.join("AniVault");
-    let _ = std::fs::create_dir_all(&directory);
-    let normalized = directory.join("anivault.db").to_string_lossy().replace('\\', "/");
-    format!("sqlite:///{}", normalized)
 }
 
 fn find_free_port() -> Result<u16, String> {

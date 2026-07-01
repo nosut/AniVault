@@ -223,6 +223,11 @@
     <p class="eyebrow">Sync</p>
     <SyncTab />
   </section>
+  {:else if activeTab === 'Integrations'}
+  <section class="home">
+    <p class="eyebrow">Integrations</p>
+    <div class="card"><span>Sonarr configured in Settings. MyAnimeList and Kitsu coming soon.</span></div>
+  </section>
   {:else}
   <section class="home">
     <p class="eyebrow">{activeTab}</p>

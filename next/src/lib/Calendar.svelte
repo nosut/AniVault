@@ -88,7 +88,7 @@
   {:else}
     <div class="grid">
       {#each anime as entry (entry.anilist_id)}
-        <div class="card" role="button" tabindex="0">
+        <button class="card" onclick={() => window.open(`https://anilist.co/anime/${entry.anilist_id}`, '_blank')} style="border:none;cursor:pointer;text-align:left;font:inherit;padding:0;background:none;width:100%;">
           <div class="poster-wrap">
             {#if entry.image_url}
               <img class="poster" src={entry.image_url} alt={entry.english_title ?? entry.title} loading="lazy" />
@@ -103,7 +103,7 @@
           <div class="meta">
             <span class="title">{entry.english_title ?? entry.title}</span>
           </div>
-        </div>
+        </button>
       {/each}
     </div>
   {/if}

@@ -14,3 +14,13 @@ pub mod settings;
 pub mod sonarr;
 pub mod storage;
 pub mod sync;
+
+pub fn database_url() -> anyhow::Result<String> {
+    let app_data = std::env::var_os("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+    let directory = app_data.join("AniVault");
+    std::fs::create_dir_all(&directory)?;
+    let normalized = directory.join("anivault.db").to_string_lossy().replace('\\', "/");
+    Ok(format!("sqlite:///{}", normalized))
+}

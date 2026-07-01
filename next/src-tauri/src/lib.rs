@@ -42,7 +42,10 @@ pub fn run() {
 
 fn start_local_tracking(runtime: commands::TrackingRuntime) {
     tauri::async_runtime::spawn(async move {
-        let database_url = local_database_url();
+        let database_url = match engine::database_url() {
+            Ok(url) => url,
+            Err(_) => return,
+        };
         let Ok(storage) = engine::storage::Storage::connect(&database_url).await else {
             return;
         };
@@ -52,6 +55,9 @@ fn start_local_tracking(runtime: commands::TrackingRuntime) {
         if engine::recognition::matcher::build_fts_index(&storage).await.is_err() {
             return;
         }
+
+        // Try importing from existing Taiga installation
+        try_import_from_taiga(&storage).await;
 
         let bus = engine::event_bus::EventBus::default();
         let status_runtime = runtime.clone();
@@ -69,12 +75,50 @@ fn start_local_tracking(runtime: commands::TrackingRuntime) {
     });
 }
 
-fn local_database_url() -> String {
-    let app_data = std::env::var_os("APPDATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
-    let directory = app_data.join("AniVault");
-    let _ = std::fs::create_dir_all(&directory);
-    let normalized = directory.join("anivault.db").to_string_lossy().replace('\\', "/");
-    format!("sqlite:///{}", normalized)
+async fn try_import_from_taiga(storage: &engine::storage::Storage) {
+    let app_data = match std::env::var_os("APPDATA") {
+        Some(p) => std::path::PathBuf::from(p),
+        None => return,
+    };
+    let taiga_db = app_data.join("Taiga").join("data").join("Taiga.db");
+    if !taiga_db.exists() {
+        return;
+    }
+
+    let taiga_url = format!("sqlite:///{}", taiga_db.to_string_lossy().replace('\\', "/"));
+    let Ok(taiga_pool) = sqlx::SqlitePool::connect(&taiga_url).await else {
+        return;
+    };
+
+    // Count existing anime to avoid re-import
+    let existing: i64 = sqlx::query("SELECT COUNT(*) FROM anime")
+        .fetch_one(storage.pool())
+        .await
+        .map(|r| r.get(0))
+        .unwrap_or(0);
+    if existing > 0 {
+        return; // already populated
+    }
+
+    let rows = match sqlx::query("SELECT id, title, watched_episodes FROM anime")
+        .fetch_all(&taiga_pool)
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return,
+    };
+
+    use sqlx::Row;
+    let snapshot = engine::migration::TaigaSnapshot {
+        anime: rows
+            .iter()
+            .map(|r| engine::migration::TaigaAnime {
+                id: r.get(0),
+                title: r.get(1),
+                watched_episodes: r.get(2),
+            })
+            .collect(),
+    };
+
+    let _ = engine::migration::import_taiga_snapshot(storage, snapshot).await;
 }
