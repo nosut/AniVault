@@ -19,10 +19,19 @@ export interface MigrationReport {
   warnings: MigrationWarning[];
 }
 
+export interface TrackingStatus {
+  is_running: boolean;
+  current_anime: string | null;
+}
+
 export function getEngineStatus(invokeFn: InvokeFn = tauriInvoke): Promise<EngineStatus> {
   return invokeFn<EngineStatus>('get_engine_status');
 }
 
 export function previewMigrationReport(invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport> {
   return invokeFn<MigrationReport>('preview_migration_report');
+}
+
+export function getTrackingStatus(invokeFn: InvokeFn = tauriInvoke): Promise<TrackingStatus> {
+  return invokeFn<TrackingStatus>('get_tracking_status');
 }

@@ -33,3 +33,9 @@ impl Default for DetectionConfig {
         }
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TrackingStatus {
+    pub is_running: bool,
+    pub current_anime: Option<String>,
+}

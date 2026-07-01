@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getEngineStatus, previewMigrationReport } from './api';
+import { getEngineStatus, getTrackingStatus, previewMigrationReport } from './api';
 
 describe('api wrappers', () => {
   it('gets engine status through invoke', async () => {
@@ -12,5 +12,11 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue({ imported_anime: 0, skipped_records: 0, warnings: [] });
     await expect(previewMigrationReport(invoke)).resolves.toEqual({ imported_anime: 0, skipped_records: 0, warnings: [] });
     expect(invoke).toHaveBeenCalledWith('preview_migration_report');
+  });
+
+  it('gets tracking status through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue({ is_running: true, current_anime: 'Spy x Family' });
+    await expect(getTrackingStatus(invoke)).resolves.toEqual({ is_running: true, current_anime: 'Spy x Family' });
+    expect(invoke).toHaveBeenCalledWith('get_tracking_status');
   });
 });

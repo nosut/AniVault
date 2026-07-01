@@ -6,4 +6,5 @@ pub mod models;
 pub mod orchestrator;
 pub mod recognition;
 pub mod secrets;
+pub mod settings;
 pub mod storage;
