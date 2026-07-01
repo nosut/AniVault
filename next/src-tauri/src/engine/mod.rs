@@ -6,6 +6,7 @@ pub mod migration;
 pub mod models;
 pub mod oauth;
 pub mod orchestrator;
+pub mod pending;
 pub mod rate_limit;
 pub mod recognition;
 pub mod secrets;

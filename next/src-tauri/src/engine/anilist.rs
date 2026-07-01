@@ -128,6 +128,7 @@ pub async fn search_anilist_fallback(
     };
 
     if confidence < 85 {
+        crate::engine::pending::store_pending_match(storage, &best_result, title, confidence).await?;
         return Ok(None);
     }
 

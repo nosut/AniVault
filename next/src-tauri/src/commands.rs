@@ -27,6 +27,8 @@ pub fn preview_migration_report() -> MigrationReport {
 pub struct TrackingRuntime {
     is_running: Arc<AtomicBool>,
     current_anime: Arc<Mutex<Option<String>>>,
+    current_anime_id: Arc<Mutex<Option<i64>>>,
+    current_episode: Arc<Mutex<Option<i32>>>,
 }
 
 impl TrackingRuntime {
@@ -38,10 +40,18 @@ impl TrackingRuntime {
         *self.current_anime.lock().expect("tracking runtime poisoned") = current_anime;
     }
 
+    pub fn set_tracking_info(&self, anime: Option<String>, anime_id: Option<i64>, episode: Option<i32>) {
+        *self.current_anime.lock().expect("tracking runtime poisoned") = anime;
+        *self.current_anime_id.lock().expect("tracking runtime poisoned") = anime_id;
+        *self.current_episode.lock().expect("tracking runtime poisoned") = episode;
+    }
+
     pub fn status(&self) -> TrackingStatus {
         TrackingStatus {
             is_running: self.is_running.load(Ordering::Relaxed),
             current_anime: self.current_anime.lock().expect("tracking runtime poisoned").clone(),
+            current_anime_id: *self.current_anime_id.lock().expect("tracking runtime poisoned"),
+            current_episode: *self.current_episode.lock().expect("tracking runtime poisoned"),
         }
     }
 }
@@ -181,6 +191,77 @@ pub async fn get_sync_status() -> Result<SyncStatus, String> {
 
     let pending = storage.pending_sync_count("anilist").await.map_err(|e| format!("count: {e}"))?;
     Ok(SyncStatus { pending, failed: 0 })
+}
+
+#[tauri::command]
+pub async fn set_watched_episodes(anime_id: i64, episode: i32) -> Result<(), String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+    storage.set_watched_episodes(anime_id, episode)
+        .await
+        .map_err(|e| format!("set episodes: {e}"))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PendingMatchResponse {
+    pub anilist_id: i64,
+    pub title_romaji: String,
+    pub parsed_title: String,
+    pub confidence: u8,
+    pub episode_count: Option<i32>,
+}
+
+#[tauri::command]
+pub async fn get_pending_matches() -> Result<Vec<PendingMatchResponse>, String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+
+    let pending = crate::engine::pending::get_pending_matches(&storage)
+        .await
+        .map_err(|e| format!("get pending: {e}"))?;
+
+    Ok(pending
+        .into_iter()
+        .map(|p| PendingMatchResponse {
+            anilist_id: p.anilist_id,
+            title_romaji: p.title_romaji,
+            parsed_title: p.parsed_title,
+            confidence: p.confidence,
+            episode_count: p.episode_count,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn confirm_match(anilist_id: i64) -> Result<(), String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+
+    crate::engine::pending::confirm_pending_match(&storage, anilist_id)
+        .await
+        .map_err(|e| format!("confirm: {e}"))
+}
+
+#[tauri::command]
+pub async fn reject_match(anilist_id: i64) -> Result<(), String> {
+    let db_url = local_db_url();
+    let storage = crate::engine::storage::Storage::connect(&db_url)
+        .await
+        .map_err(|e| format!("db connect: {e}"))?;
+    storage.migrate().await.map_err(|e| format!("migrate: {e}"))?;
+
+    crate::engine::pending::reject_pending_match(&storage, anilist_id)
+        .await
+        .map_err(|e| format!("reject: {e}"))
 }
 
 fn local_db_url() -> String {

@@ -21,13 +21,13 @@ pub async fn handle_media_detected(
 }
 
 pub fn start_tracking_loop(bus: EventBus, storage: Storage) {
-    start_tracking_loop_with_status(bus, storage, Arc::new(|_| {}));
+    start_tracking_loop_with_status(bus, storage, Arc::new(|_, _, _| {}));
 }
 
 pub fn start_tracking_loop_with_status(
     bus: EventBus,
     storage: Storage,
-    on_current_anime: Arc<dyn Fn(Option<String>) + Send + Sync>,
+    on_current_anime: Arc<dyn Fn(Option<String>, Option<i64>, Option<i32>) + Send + Sync>,
 ) {
     tokio::spawn(async move {
         let mut current_anime_timeout = CurrentAnimeTimeout::new(CURRENT_ANIME_TIMEOUT);
@@ -35,7 +35,7 @@ pub fn start_tracking_loop_with_status(
             for event in bus.drain() {
                 if let EngineEvent::MediaDetected(detected) = event {
                     if let Ok(Some(outcome)) = handle_media_detected_event(&storage, detected).await {
-                        on_current_anime(Some(outcome.matched.title.clone()));
+                        on_current_anime(Some(outcome.matched.title.clone()), Some(outcome.matched.anime_id), Some(outcome.episode));
                         current_anime_timeout.record_match(Instant::now());
                         bus.publish(EngineEvent::AnimeIdentified(AnimeIdentified {
                             anime_id: outcome.matched.anime_id,
@@ -53,7 +53,7 @@ pub fn start_tracking_loop_with_status(
                 }
             }
             if current_anime_timeout.should_clear(Instant::now()) {
-                on_current_anime(None);
+                on_current_anime(None, None, None);
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }

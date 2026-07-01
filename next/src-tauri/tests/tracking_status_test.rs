@@ -24,13 +24,23 @@ fn detection_settings_decodes_config_json() {
 #[test]
 fn tracking_runtime_reports_running_status() {
     let runtime = TrackingRuntime::default();
-    assert_eq!(runtime.status(), TrackingStatus { is_running: false, current_anime: None });
+    assert_eq!(runtime.status(), TrackingStatus {
+        is_running: false,
+        current_anime: None,
+        current_anime_id: None,
+        current_episode: None,
+    });
 
     runtime.mark_running();
-    runtime.set_current_anime(Some("Spy x Family".to_string()));
+    runtime.set_tracking_info(Some("Spy x Family".to_string()), Some(1), Some(17));
 
     assert_eq!(
         runtime.status(),
-        TrackingStatus { is_running: true, current_anime: Some("Spy x Family".to_string()) }
+        TrackingStatus {
+            is_running: true,
+            current_anime: Some("Spy x Family".to_string()),
+            current_anime_id: Some(1),
+            current_episode: Some(17),
+        }
     );
 }

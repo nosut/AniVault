@@ -22,6 +22,8 @@ export interface MigrationReport {
 export interface TrackingStatus {
   is_running: boolean;
   current_anime: string | null;
+  current_anime_id: number | null;
+  current_episode: number | null;
 }
 
 export interface OAuthStatus {
@@ -60,4 +62,8 @@ export interface SyncStatus {
 
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<SyncStatus> {
   return invokeFn<SyncStatus>('get_sync_status');
+}
+
+export function setWatchedEpisodes(animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_watched_episodes', { animeId, episode });
 }

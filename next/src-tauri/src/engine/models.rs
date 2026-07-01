@@ -38,6 +38,8 @@ impl Default for DetectionConfig {
 pub struct TrackingStatus {
     pub is_running: bool,
     pub current_anime: Option<String>,
+    pub current_anime_id: Option<i64>,
+    pub current_episode: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

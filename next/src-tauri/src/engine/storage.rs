@@ -100,6 +100,33 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn set_watched_episodes(&self, anime_id: i64, episode: i32) -> anyhow::Result<()> {
+        let now = unixepoch_inner();
+        sqlx::query(
+            "INSERT INTO list_entry (anime_id, status, watched_episodes, local_updated)
+             VALUES (?1, 'watching', ?2, ?3)
+             ON CONFLICT(anime_id) DO UPDATE SET watched_episodes = ?2, local_updated = ?3",
+        )
+        .bind(anime_id)
+        .bind(episode)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        // Log manual edit in watch_history
+        sqlx::query(
+            "INSERT OR IGNORE INTO watch_history (anime_id, episode, source, watched_at)
+             VALUES (?1, ?2, 'manual', ?3)",
+        )
+        .bind(anime_id)
+        .bind(episode)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn insert_or_ignore_anime_local(
         &self,
         id: i64,
@@ -205,4 +232,11 @@ impl Storage {
             .await?;
         Ok(row.get::<i64, _>(0))
     }
+}
+
+fn unixepoch_inner() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
