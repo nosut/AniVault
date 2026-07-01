@@ -12,6 +12,8 @@
   import { getSonarrMappings } from './lib/api';
   import type { SonarrMapping } from './lib/api';
   import { setSonarrMonitored } from './lib/api';
+  import { importTaiga } from './lib/api';
+  import { setAnilistClientId } from './lib/api';
   import Library from './lib/Library.svelte';
   import Calendar from './lib/Calendar.svelte';
   import Watching from './lib/Watching.svelte';
@@ -23,6 +25,11 @@
   let oauthStatus: OAuthStatus = $state({ authenticated: false, username: null });
   let oauthLoading: boolean = $state(false);
   let oauthMessage: string | null = $state(null);
+  let anilistClientId: string = $state('');
+
+  async function saveClientId() {
+    try { await setAnilistClientId(anilistClientId); oauthMessage = 'Client ID saved.'; } catch { /* ignore */ }
+  }
   let syncPending: number = $state(0);
   let library: LibraryEntry[] = $state([]);
   let sonarrUrl: string = $state('');
@@ -57,6 +64,12 @@
       await setSonarrMonitored(m.anime_id, !m.monitored);
       sonarrMappings = await getSonarrMappings();
     } catch { /* empty */ }
+  }
+
+  async function handleImportTaiga() {
+    try {
+      sonarrMsg = await importTaiga();
+    } catch (e) { sonarrMsg = `Import error: ${e}`; }
   }
 
   loadSonarrConfig();
@@ -144,6 +157,10 @@
     <p class="eyebrow">Settings</p>
     <div class="card">
       <span>AniList OAuth</span>
+      <div class="oauth-actions" style="flex-direction:column;align-items:stretch;">
+        <input class="oauth-btn" style="text-align:left;border-color:rgb(255 255 255 / 10%);" placeholder="Client ID (default: 18872)" bind:value={anilistClientId} />
+        <button class="oauth-btn" onclick={saveClientId}>Save Client ID</button>
+      </div>
       <p class="oauth-status">
         {#if oauthStatus.authenticated}
           Connected as <strong>{oauthStatus.username ?? 'unknown'}</strong>.
@@ -165,6 +182,15 @@
       </div>
       {#if oauthMessage}
         <p class="oauth-msg">{oauthMessage}</p>
+      {/if}
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <span>Taiga Migration</span>
+      <p class="oauth-status">Import your library from an existing Taiga installation.</p>
+      <button class="oauth-btn" onclick={handleImportTaiga}>Import from Taiga</button>
+      {#if sonarrMsg}
+        <p class="oauth-msg">{sonarrMsg}</p>
       {/if}
     </div>
 

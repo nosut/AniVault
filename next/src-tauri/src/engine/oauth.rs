@@ -4,9 +4,34 @@ use sha2::{Digest, Sha256};
 use sqlx::Row;
 use std::sync::{Arc, Mutex};
 
-const ANILIST_CLIENT_ID: &str = "18872";
+const DEFAULT_CLIENT_ID: &str = "18872";
+const SETTING_CLIENT_ID: &str = "anilist_client_id";
 const SETTING_KEY_OAUTH_STATE: &str = "oauth_state";
 const SETTING_KEY_OAUTH_TOKEN: &str = "oauth_token";
+
+pub async fn get_client_id(storage: &crate::engine::storage::Storage) -> String {
+    let row = sqlx::query("SELECT value_json FROM settings WHERE key = ?1")
+        .bind(SETTING_CLIENT_ID)
+        .fetch_optional(storage.pool())
+        .await
+        .ok()
+        .flatten();
+    row.map(|r| r.get::<String, _>(0))
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| DEFAULT_CLIENT_ID.to_string())
+}
+
+pub async fn set_client_id(storage: &crate::engine::storage::Storage, client_id: &str) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO settings (key, value_json, updated_at) VALUES (?1, ?2, unixepoch())
+         ON CONFLICT(key) DO UPDATE SET value_json = ?2, updated_at = unixepoch()",
+    )
+    .bind(SETTING_CLIENT_ID)
+    .bind(client_id)
+    .execute(storage.pool())
+    .await?;
+    Ok(())
+}
 
 // ── PKCE ──
 
@@ -133,13 +158,14 @@ pub async fn finish_oauth(
     storage: &crate::engine::storage::Storage,
     code: &str,
     state: &OAuthState,
+    client_id: &str,
 ) -> anyhow::Result<OAuthToken> {
     let client = reqwest::Client::new();
     let resp = client
         .post("https://anilist.co/api/v2/oauth/token")
         .json(&serde_json::json!({
             "grant_type": "authorization_code",
-            "client_id": ANILIST_CLIENT_ID,
+            "client_id": client_id,
             "client_secret": "",
             "redirect_uri": state.redirect_uri,
             "code": code,

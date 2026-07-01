@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getSeasonalAnime } from './api';
+  import { getSeasonalAnime, addToLibrary } from './api';
   import type { SeasonalAnime } from './api';
   import { invoke } from '@tauri-apps/api/core';
 
@@ -24,6 +24,7 @@
   let anime: SeasonalAnime[] = $state([]);
   let loading = $state(false);
   let error = $state(false);
+  let addedIds = $state<Record<number, boolean>>({});
 
   async function load() {
     loading = true;
@@ -35,6 +36,18 @@
       anime = [];
     } finally {
       loading = false;
+    }
+  }
+
+  async function handleAdd(anilistId: number) {
+    try {
+      await addToLibrary(anilistId);
+      addedIds[anilistId] = true;
+      setTimeout(() => {
+        addedIds[anilistId] = false;
+      }, 2000);
+    } catch {
+      // silently fail
     }
   }
 
@@ -89,9 +102,11 @@
   {:else}
     <div class="grid">
       {#each anime as entry (entry.anilist_id)}
-        <button
+        <div
           class="card"
           onclick={() => invoke('open_url', { url: `https://anilist.co/anime/${entry.anilist_id}` })}
+          role="button"
+          tabindex="0"
         >
           <div class="poster-wrap">
             {#if entry.image_url}
@@ -106,8 +121,16 @@
           </div>
           <div class="meta">
             <span class="title">{entry.english_title ?? entry.title}</span>
+            <button
+              class="add-btn"
+              class:added={addedIds[entry.anilist_id]}
+              onclick={(e) => { e.stopPropagation(); handleAdd(entry.anilist_id); }}
+              disabled={addedIds[entry.anilist_id]}
+            >
+              {addedIds[entry.anilist_id] ? 'Added' : 'Add to Library'}
+            </button>
           </div>
-        </button>
+        </div>
       {/each}
     </div>
   {/if}
@@ -269,5 +292,27 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .add-btn {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--color-accent, #8fb7ff);
+    background: none;
+    border: none;
+    padding: 0;
+    margin-top: 0.1rem;
+    cursor: pointer;
+    text-align: left;
+    transition: color 0.2s;
+  }
+
+  .add-btn:hover:not(:disabled) {
+    color: var(--color-text);
+  }
+
+  .add-btn.added {
+    color: var(--color-muted);
+    cursor: default;
   }
 </style>

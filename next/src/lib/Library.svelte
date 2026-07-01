@@ -11,8 +11,8 @@
     { key: 'all', label: 'All' },
     { key: 'watching', label: 'Watching' },
     { key: 'completed', label: 'Completed' },
-    { key: 'on_hold', label: 'On Hold' },
     { key: 'dropped', label: 'Dropped' },
+    { key: 'on_hold', label: 'On Hold' },
     { key: 'plan_to_watch', label: 'Plan to Watch' },
   ];
 

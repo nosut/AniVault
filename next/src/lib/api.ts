@@ -135,3 +135,15 @@ export function getSeasonalAnime(season: string, year: number, invokeFn: InvokeF
 export function getWatchingAnime(invokeFn: InvokeFn = tauriInvoke): Promise<LibraryEntry[]> {
   return invokeFn<LibraryEntry[]>('get_watching_anime');
 }
+
+export function importTaiga(invokeFn: InvokeFn = tauriInvoke): Promise<string> {
+  return invokeFn<string>('import_taiga');
+}
+
+export function setAnilistClientId(clientId: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_anilist_client_id', { clientId });
+}
+
+export function addToLibrary(anilistId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('add_to_library', { anilistId });
+}

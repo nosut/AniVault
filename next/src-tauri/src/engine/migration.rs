@@ -81,3 +81,66 @@ pub async fn import_taiga_snapshot(storage: &Storage, snapshot: TaigaSnapshot) -
 
     Ok(report)
 }
+
+pub async fn import_taiga_snapshot_from_fs(storage: &Storage) -> anyhow::Result<MigrationReport> {
+    use sqlx::Row;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    let app_data = std::env::var_os("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let local_app_data = std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+
+    let candidates = [
+        app_data.join("Taiga").join("data").join("taiga.db"),
+        app_data.join("Taiga").join("data").join("Taiga.db"),
+        app_data.join("taiga").join("data").join("taiga.db"),
+        app_data.join("Taiga").join("taiga.db"),
+        local_app_data.join("Taiga").join("data").join("taiga.db"),
+    ];
+
+    let taiga_db = candidates
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .ok_or_else(|| {
+            let paths: Vec<String> = candidates.iter().map(|p| p.display().to_string()).collect();
+            anyhow::anyhow!("No Taiga database found. Tried:\n{}", paths.join("\n"))
+        })?;
+
+    let taiga_path = taiga_db.to_string_lossy().to_string();
+    let taiga_pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(
+            sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(&taiga_path)
+                .read_only(true),
+        )
+        .await?;
+
+    let primary = sqlx::query("SELECT id, title, watched_episodes FROM anime")
+        .fetch_all(&taiga_pool)
+        .await;
+
+    let rows = match primary {
+        Ok(r) if !r.is_empty() => r,
+        _ => sqlx::query("SELECT id, title, COALESCE(progress, 0) as watched_episodes FROM anime")
+            .fetch_all(&taiga_pool)
+            .await?,
+    };
+
+    let snapshot = TaigaSnapshot {
+        anime: rows
+            .iter()
+            .map(|r| TaigaAnime {
+                id: r.get(0),
+                title: r.get(1),
+                watched_episodes: r.get(2),
+            })
+            .collect(),
+    };
+
+    import_taiga_snapshot(storage, snapshot).await
+}
