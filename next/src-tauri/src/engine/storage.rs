@@ -1,4 +1,6 @@
-use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{Row, SqlitePool};
+use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct Storage {
@@ -7,9 +9,11 @@ pub struct Storage {
 
 impl Storage {
     pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
+        let opts = SqliteConnectOptions::from_str(database_url)?
+            .create_if_missing(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(database_url)
+            .connect_with(opts)
             .await?;
         Ok(Self { pool })
     }
@@ -23,6 +27,10 @@ impl Storage {
     pub async fn journal_mode(&self) -> anyhow::Result<String> {
         let row = sqlx::query("PRAGMA journal_mode").fetch_one(&self.pool).await?;
         Ok(row.get::<String, _>(0))
+    }
+
+    pub async fn close(self) {
+        self.pool.close().await;
     }
 
     pub(crate) fn pool(&self) -> &SqlitePool {
@@ -98,5 +106,46 @@ impl Storage {
             .fetch_one(&self.pool)
             .await?;
         Ok(row.get::<i64, _>(0))
+    }
+
+    pub async fn migration_count(&self) -> anyhow::Result<i64> {
+        let row = sqlx::query("SELECT COUNT(*) FROM _sqlx_migrations")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.get::<i64, _>(0))
+    }
+
+    pub async fn get_setting(&self, key: &str) -> anyhow::Result<Option<String>> {
+        let row = sqlx::query("SELECT value_json FROM settings WHERE key = ?1")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|row| row.get::<String, _>(0)))
+    }
+
+    pub async fn set_setting(
+        &self,
+        key: &str,
+        value_json: &str,
+        updated_at: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+        )
+        .bind(key)
+        .bind(value_json)
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete_setting(&self, key: &str) -> anyhow::Result<bool> {
+        let result = sqlx::query("DELETE FROM settings WHERE key = ?1")
+            .bind(key)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected() > 0)
     }
 }

@@ -1,5 +1,38 @@
 <script lang="ts">
-  const navItems = ['Home', 'Library', 'Watching', 'Calendar', 'Sync', 'Integrations', 'Settings'];
+  import { onMount } from 'svelte';
+  import { drainEngineEvents, getEngineStatus, getSetting, setSetting, type EngineStatus } from './lib/api';
+
+  const navItems = ['Home', 'Library', 'Tracking', 'Sync', 'Settings'];
+
+  let status: EngineStatus | null = null;
+  let statusError = '';
+  let trackingEnabled = true;
+  let eventCount = 0;
+
+  async function refreshRuntime() {
+    statusError = '';
+    try {
+      status = await getEngineStatus();
+      trackingEnabled = (await getSetting<boolean>('tracking.enabled')) ?? true;
+      eventCount = (await drainEngineEvents()).length;
+    } catch (error) {
+      statusError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function toggleTracking() {
+    trackingEnabled = !trackingEnabled;
+    try {
+      await setSetting('tracking.enabled', trackingEnabled);
+      await refreshRuntime();
+    } catch (error) {
+      statusError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  onMount(() => {
+    void refreshRuntime();
+  });
 </script>
 
 <main class="shell">
@@ -17,6 +50,39 @@
       <span>Phase 0</span>
       <strong>Engine scaffold ready for storage, migration, sync, and Sonarr integration.</strong>
     </div>
+
+    <section class="status-card">
+      <div>
+        <p class="eyebrow">Runtime</p>
+        <h2>{status?.database === 'ready' ? 'Engine ready' : 'Engine loading'}</h2>
+      </div>
+
+      {#if statusError}
+        <p class="error">{statusError}</p>
+      {:else if status}
+        <dl class="status-list">
+          <div>
+            <dt>Database</dt>
+            <dd>{status.database}</dd>
+          </div>
+          <div>
+            <dt>Migrations</dt>
+            <dd>{status.migration_count}</dd>
+          </div>
+          <div>
+            <dt>Events drained</dt>
+            <dd>{eventCount}</dd>
+          </div>
+        </dl>
+        <p class="database-path">{status.database_path}</p>
+      {:else}
+        <p>Checking engine status…</p>
+      {/if}
+
+      <button class="toggle" type="button" aria-pressed={trackingEnabled} on:click={toggleTracking}>
+        Tracking setting: {trackingEnabled ? 'enabled' : 'disabled'}
+      </button>
+    </section>
   </section>
 </main>
 
@@ -90,5 +156,59 @@
 
   .card span {
     color: var(--color-muted);
+  }
+
+  .status-card {
+    border: 1px solid rgba(143, 183, 255, 0.18);
+    border-radius: var(--radius-card);
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.04);
+    display: grid;
+    gap: 1rem;
+  }
+
+  .status-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 0;
+  }
+
+  .status-list div {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .status-list dt {
+    color: var(--color-muted);
+    font-size: 0.78rem;
+  }
+
+  .status-list dd {
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .database-path {
+    color: var(--color-muted);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+  }
+
+  .error {
+    color: var(--color-error);
+  }
+
+  .toggle {
+    justify-self: start;
+    width: auto;
+    display: inline-block;
+    border: 1px solid rgba(143, 183, 255, 0.35);
+    border-radius: 999px;
+    padding: 0.65rem 1rem;
+    background: rgba(143, 183, 255, 0.12);
+    color: #e9eefc;
+    cursor: pointer;
   }
 </style>

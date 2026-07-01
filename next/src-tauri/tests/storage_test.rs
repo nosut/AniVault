@@ -1,7 +1,7 @@
 use taiga_next::engine::storage::Storage;
 
 #[tokio::test]
-async fn storage_migrates_and_uses_wal_mode() {
+async fn storage_migrates_and_uses_journal_mode_supported_by_memory_sqlite() {
     let storage = Storage::connect("sqlite::memory:").await.unwrap();
     storage.migrate().await.unwrap();
 
