@@ -91,7 +91,7 @@ impl Storage {
         sqlx::query(
             "INSERT INTO list_entry (anime_id, status, watched_episodes, local_updated)
              VALUES (?1, 'watching', ?2, unixepoch())
-             ON CONFLICT(anime_id) DO UPDATE SET watched_episodes = ?2, local_updated = unixepoch()",
+             ON CONFLICT(anime_id) DO UPDATE SET watched_episodes = MAX(watched_episodes, ?2), local_updated = unixepoch()",
         )
         .bind(anime_id)
         .bind(episode)
@@ -144,6 +144,24 @@ impl Storage {
         .execute(&self.pool)
         .await?;
         Ok(result.last_insert_rowid())
+    }
+
+    pub async fn append_watch_history_once(
+        &self,
+        anime_id: i64,
+        episode: i32,
+        file_path: Option<&str>,
+        player: Option<&str>,
+        watched_at: i64,
+    ) -> anyhow::Result<bool> {
+        let exists = self.watch_history_count(anime_id, episode).await? > 0;
+        if exists {
+            return Ok(false);
+        }
+
+        self.append_watch_history(anime_id, episode, file_path, player, watched_at)
+            .await?;
+        Ok(true)
     }
 
     pub async fn queue_sync(
