@@ -15,7 +15,7 @@ async fn match_exact_romaji_title() {
 
     assert_eq!(result.anime_id, 1);
     assert_eq!(result.title, "Spy x Family");
-    assert!(result.confidence >= 85);
+    assert_eq!(result.confidence, 100);
     assert_eq!(result.source, "local_exact");
 }
 
@@ -35,7 +35,8 @@ async fn match_synonym_title() {
 
     assert_eq!(result.anime_id, 2);
     assert_eq!(result.title, "Kusuriya no Hitorigoto");
-    assert!(result.confidence >= 70);
+    assert_eq!(result.confidence, 85);
+    assert_eq!(result.source, "local_synonym");
 }
 
 #[tokio::test]
