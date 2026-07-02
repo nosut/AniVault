@@ -54,9 +54,11 @@
 
   {#if !connected}
     <div class="connect-row">
+      <label for="anilist-token" class="input-label">AniList Access Token</label>
       <input
+        id="anilist-token"
         type="text"
-        placeholder="Client ID / token"
+        placeholder="Access Token"
         bind:value={clientId}
         disabled={loading}
       />
@@ -64,6 +66,10 @@
         Connect
       </button>
     </div>
+    <p class="help-text">
+      Get your token at <a href="https://anilist.co/settings/developer" target="_blank" rel="noopener noreferrer">https://anilist.co/settings/developer</a> → create a client → copy the token.
+      The token is NOT your Client ID. It's a long alphanumeric string generated when you create an application.
+    </p>
   {:else}
     <div class="connected-row">
       <span class="status">Connected</span>
@@ -108,10 +114,30 @@
     font-size: 0.82rem;
   }
 
+  .input-label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.25rem;
+  }
+
   .connect-row {
     display: flex;
     gap: 0.5rem;
     align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .help-text {
+    font-size: 0.78rem;
+    color: var(--color-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .help-text a {
+    color: var(--color-accent);
   }
 
   input {

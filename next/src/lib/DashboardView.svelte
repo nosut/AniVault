@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getLibraryStats, type LibraryStats, type EngineEvent } from './api';
-  import NowPlaying from './NowPlaying.svelte';
   import RecognitionCard from './RecognitionCard.svelte';
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
@@ -80,7 +79,6 @@
   </section>
 
   <section class="widgets-grid" aria-label="Widgets">
-    <NowPlaying {events} />
     <RecognitionCard {events} onConfirmed={handleConfirmed} />
     <AniListConnect />
     <SyncStatus />

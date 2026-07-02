@@ -1,10 +1,16 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use windows::Win32::Foundation::CloseHandle;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::LPARAM;
 use windows::Win32::System::ProcessStatus::K32EnumProcesses;
 use windows::Win32::System::ProcessStatus::K32GetModuleFileNameExW;
 use windows::Win32::System::Threading::OpenProcess;
 use windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION;
 use windows::Win32::System::Threading::PROCESS_VM_READ;
+use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
+use windows::Win32::UI::WindowsAndMessaging::GetWindowTextLengthW;
+use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
+use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 
 #[derive(Debug, Clone)]
 pub struct PlayerDef {
@@ -38,6 +44,45 @@ fn known_process_names(config: &ScannerConfig) -> Vec<String> {
         .iter()
         .map(|p| p.process_name.to_lowercase())
         .collect()
+}
+
+struct EnumState {
+    target_pid: u32,
+    title: Option<String>,
+}
+
+unsafe extern "system" fn enum_window_callback(
+    hwnd: HWND,
+    lparam: LPARAM,
+) -> windows::core::BOOL {
+    let state = &mut *(lparam.0 as *mut EnumState);
+    let mut pid: u32 = 0;
+    GetWindowThreadProcessId(hwnd, Some(&mut pid as *mut u32));
+    if pid == state.target_pid {
+        let len = GetWindowTextLengthW(hwnd);
+        if len > 0 {
+            let mut buf = vec![0u16; (len + 1) as usize];
+            let actual = GetWindowTextW(hwnd, &mut buf);
+            if actual > 0 {
+                let title = String::from_utf16_lossy(&buf[..actual as usize]);
+                if !title.is_empty() {
+                    state.title = Some(title);
+                    return windows::core::BOOL::from(false);
+                }
+            }
+        }
+    }
+    windows::core::BOOL::from(true)
+}
+
+unsafe fn get_process_window_title(target_pid: u32) -> Option<String> {
+    let mut state = EnumState {
+        target_pid,
+        title: None,
+    };
+    let state_ptr = &mut state as *mut EnumState;
+    let _ = EnumWindows(Some(enum_window_callback), LPARAM(state_ptr as isize));
+    state.title
 }
 
 pub fn scan_active_players(config: &ScannerConfig) -> Vec<ScanResult> {
@@ -96,10 +141,13 @@ pub fn scan_active_players(config: &ScannerConfig) -> Vec<ScanResult> {
                 if name_lower.ends_with(&format!("\\{}", process_lower))
                     || name_lower == process_lower
                 {
+                    // SAFETY: get_process_window_title uses EnumWindows with a valid PID.
+                    let window_title = unsafe { get_process_window_title(pid) };
+
                     results.push(ScanResult {
                         player_name: player.process_name.clone(),
-                        file_path: Some(name),
-                        window_title: None,
+                        file_path: window_title.clone().or(Some(name)),
+                        window_title,
                         detected_at_unix: unix_now(),
                     });
                     break;

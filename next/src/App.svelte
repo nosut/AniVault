@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { drainEngineEvents, type EngineEvent } from './lib/api';
+  import NowPlaying from './lib/NowPlaying.svelte';
   import DashboardView from './lib/DashboardView.svelte';
   import LibraryView from './lib/LibraryView.svelte';
   import DetailView from './lib/DetailView.svelte';
@@ -79,6 +80,9 @@
         </button>
       {/each}
     </nav>
+    <div class="now-playing-sidebar">
+      <NowPlaying events={latestEvents} />
+    </div>
   </aside>
 
   <section class="content">
@@ -179,6 +183,12 @@
     outline-offset: 2px;
   }
 
+  .now-playing-sidebar {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid rgb(255 255 255 / 8%);
+  }
+
   .content {
     padding: 1.5rem;
     overflow-y: auto;
@@ -208,7 +218,13 @@
       padding: 0.6rem 0.9rem;
     }
 
-    .content {
+  .now-playing-sidebar {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid rgb(255 255 255 / 8%);
+  }
+
+  .content {
       padding: 1rem;
     }
   }
