@@ -168,7 +168,8 @@ impl AniListClient {
         &self,
         user_name: Option<&str>,
     ) -> anyhow::Result<MediaListCollectionRaw> {
-        let query_str = if let Some(name) = user_name {
+        // When no user_name specified, get the authenticated user's ID first
+        let query_str: String = if let Some(name) = user_name {
             format!(r#"
 query {{
   MediaListCollection(userName: "{}", type: ANIME) {{
@@ -182,18 +183,27 @@ query {{
 }}
 "#, name)
         } else {
-            r#"
-query {
-  MediaListCollection(type: ANIME) {
-    lists { entries {
-      media { id title { romaji english native } episodes type status coverImage { large } description }
-      status score progress updatedAt notes
-      startedAt { year month day }
-      completedAt { year month day }
-    }}
-  }
-}
-"#.to_string()
+            // Query Viewer to get authenticated user ID
+            let viewer_raw: serde_json::Value = self.query(
+                "query { Viewer { id name }}",
+                serde_json::json!({}),
+            ).await?;
+            let user_id = viewer_raw
+                .get("data")
+                .and_then(|d| d.get("Viewer"))
+                .and_then(|v| v.get("id"))
+                .and_then(|id| id.as_i64())
+                .ok_or_else(|| anyhow::anyhow!("Could not get authenticated user ID"))?;
+
+            format!(
+                "query {{ MediaListCollection(userId: {}, type: ANIME) {{ lists {{ entries {{ \
+                 media {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description }} \
+                 status score progress updatedAt notes \
+                 startedAt {{ year month day }} \
+                 completedAt {{ year month day }} \
+                 }}}} }}}}",
+                user_id
+            )
         };
         let variables = serde_json::json!({});
         self.query(&query_str, variables).await
