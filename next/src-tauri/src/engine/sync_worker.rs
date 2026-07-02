@@ -90,9 +90,9 @@ async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
 }
 
 /// Spawn a background task that polls the sync queue every 30 seconds.
-pub fn spawn_sync_worker(state: &EngineState) -> tokio::task::JoinHandle<()> {
+pub fn spawn_sync_worker(state: &EngineState) -> tauri::async_runtime::JoinHandle<()> {
     let state = state.clone();
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         tracing::debug!("Sync worker started for service: anilist");
         loop {
             let _ = drain_queue(&state).await;
