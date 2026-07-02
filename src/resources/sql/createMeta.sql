@@ -1,5 +1,0 @@
-CREATE TABLE IF NOT EXISTS meta(
-  id INTEGER PRIMARY KEY,
-  name TEXT,
-  value TEXT
-);

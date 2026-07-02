@@ -1,9 +1,0 @@
-{
-  Viewer {
-    id
-    name
-    mediaListOptions {
-      scoreFormat
-    }
-  }
-}

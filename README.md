@@ -1,25 +1,33 @@
-# Taiga
+# AniVault
 
-[![](https://img.shields.io/github/license/erengy/taiga)](https://github.com/erengy/taiga/blob/master/LICENSE)
-[![](https://img.shields.io/github/v/release/erengy/taiga)](https://taiga.moe/download.php)
-[![](https://img.shields.io/discord/423475967051169813?logo=discord)](https://discord.gg/yeGNktZ)
-[![](https://img.shields.io/github/sponsors/erengy?logo=github)](https://github.com/sponsors/erengy)
+Windows desktop anime library and tracker. Rebuilt in Rust + Tauri 2 + Svelte 5 + SQLite. AniList-only tracker integration.
 
-[Taiga](https://taiga.moe) is an open-source desktop application for Windows. It automatically detects the anime videos you watch on your computer and synchronizes your progress with [AniList](https://anilist.co), [Kitsu](https://kitsu.app) or [MyAnimeList](https://myanimelist.net). It helps you manage your anime library, discover new series, share watched episodes and download new ones.
+Based on [Taiga](https://github.com/erengy/taiga) by Eren Okka. Licensed under GPLv3.
 
-## Links
+## Quick Start
 
-- [Changelog](https://github.com/erengy/taiga/wiki/Changelog)
-- [Contribution guidelines](https://github.com/erengy/taiga/wiki/Guidelines)
-- [How to compile](https://github.com/erengy/taiga/wiki/How-to-Compile)
+```powershell
+cd next
+npm install
+npm run dev      # development
+npm run test     # 45 tests
+npm run bundle   # Windows installer (NSIS)
+```
 
-### Related projects
+## Structure
 
-- [Anime relations](https://github.com/erengy/anime-relations) (episode redirections)
-- [Anisthesia](https://github.com/erengy/anisthesia) (media detection library)
-- [Anitomy](https://github.com/erengy/anitomy) (anime video filename parser)
-- [taiga.moe](https://github.com/erengy/taiga-moe) (home page of Taiga)
+```
+next/
+├── src/            # Svelte frontend (TypeScript, Vitest)
+├── src-tauri/      # Rust backend (Tauri 2.4, sqlx, reqwest, tracing)
+│   ├── src/engine/  # Core: scanner, parser, matcher, anilist, sonarr, migration
+│   ├── migrations/  # SQLite schema
+│   └── tests/       # Rust integration tests
+└── scripts/        # verify.ps1, bundle.ps1
+
+docs/               # Design specs and implementation plans
+```
 
 ## License
 
-Taiga is licensed under [GNU General Public License v3](https://www.gnu.org/licenses/gpl-3.0.html).
+[GNU General Public License v3](https://www.gnu.org/licenses/gpl-3.0.html)

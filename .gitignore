@@ -5,3 +5,7 @@
 /build/
 /.worktrees/
 /.superpowers/
+/authorize.json
+/next/src-tauri/target/
+/next/dist/
+/next/node_modules/
