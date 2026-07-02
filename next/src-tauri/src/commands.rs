@@ -10,6 +10,7 @@ use crate::engine::matcher::{confirm_identification as matcher_confirm, recogniz
 use crate::engine::migration::MigrationReport;
 use crate::engine::runtime::EngineState;
 use crate::engine::storage::{FileIndexRow, LibraryRow, LibraryStats, WatchHistoryRow};
+use crate::engine::sonarr::client::SonarrClient;
 use crate::engine::tracker::run_tracking_loop;
 use tauri_plugin_notification::NotificationExt;
 
@@ -51,6 +52,27 @@ pub struct AnimeDetailResponse {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SessionState {
     pub paused: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SonarrStatus {
+    pub connected: bool,
+    pub series_count: i64,
+    pub mapped_count: i64,
+    pub last_sync_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SonarrAvailabilityResponse {
+    pub sonarr_id: i64,
+    pub sonarr_title: String,
+    pub monitored: bool,
+    pub episode_count: i32,
+    pub episode_file_count: i32,
+    pub next_airing: Option<i64>,
+    pub path: Option<String>,
+    pub season_count: i32,
+    pub sonarr_status: Option<String>,
 }
 
 fn command_error(error: anyhow::Error) -> String {
@@ -415,6 +437,141 @@ pub async fn update_list_entry_inner(
         .await
 }
 
+// ── Sonarr command inner functions ──────────────────────────────────────────
+
+fn load_sonarr_connection(state: &EngineState) -> Option<(String, String)> {
+    let state1 = state.clone();
+    let url: Option<String> = std::thread::spawn(move || {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            state1.storage.get_setting("sonarr.url").await.ok().flatten()
+        })
+    }).join().ok().flatten();
+
+    let url = url?;
+    let url = serde_json::from_str::<String>(&url).ok()?;
+
+    let state2 = state.clone();
+    let encrypted: Option<String> = std::thread::spawn(move || {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            state2.storage.get_setting("sonarr.api_key").await.ok().flatten()
+        })
+    }).join().ok().flatten();
+
+    let encrypted = encrypted?;
+    let api_key = crate::engine::secrets::unprotect_secret(&encrypted).ok()?;
+
+    Some((url, api_key))
+}
+
+pub async fn connect_sonarr_inner(url: &str, api_key: &str, state: &EngineState) -> anyhow::Result<()> {
+    let client = SonarrClient::new(url.to_string(), api_key.to_string());
+
+    // Validate connection
+    client.validate_connection().await?;
+
+    // Store settings
+    let url_json = serde_json::to_string(url)?;
+    let encrypted_key = crate::engine::secrets::protect_secret(api_key)?;
+    let encrypted_json = serde_json::to_string(&encrypted_key)?;
+    let now = unix_now().map_err(|e| anyhow::anyhow!(e))?;
+
+    state.storage.set_setting("sonarr.url", &url_json, now).await?;
+    state.storage.set_setting("sonarr.api_key", &encrypted_json, now).await?;
+
+    // Import series
+    crate::engine::sonarr::import::import_sonarr_series(&client, &state.storage).await?;
+
+    Ok(())
+}
+
+pub async fn disconnect_sonarr_inner(state: &EngineState) -> anyhow::Result<()> {
+    state.storage.delete_setting("sonarr.url").await?;
+    state.storage.delete_setting("sonarr.api_key").await?;
+    state.storage.sonarr_mapping_delete_all().await?;
+    state.storage.sonarr_series_delete_all().await?;
+    Ok(())
+}
+
+pub async fn get_sonarr_status_inner(state: &EngineState) -> anyhow::Result<SonarrStatus> {
+    let connected = state.storage.get_setting("sonarr.api_key").await?.is_some();
+    let series_count = if connected {
+        state.storage.sonarr_series_count().await?
+    } else {
+        0
+    };
+    let mapped_count = if connected {
+        state.storage.sonarr_mapping_count().await?
+    } else {
+        0
+    };
+    let last_sync_at = if connected {
+        state.storage.get_setting("sonarr.last_sync_at").await?
+            .and_then(|v| serde_json::from_str::<i64>(&v).ok())
+    } else {
+        None
+    };
+
+    Ok(SonarrStatus {
+        connected,
+        series_count,
+        mapped_count,
+        last_sync_at,
+    })
+}
+
+pub async fn import_sonarr_series_inner(state: &EngineState) -> anyhow::Result<crate::engine::sonarr::import::ImportReport> {
+    let (url, api_key) = load_sonarr_connection(state)
+        .ok_or_else(|| anyhow::anyhow!("Sonarr not connected"))?;
+    let client = SonarrClient::new(url, api_key);
+    let report = crate::engine::sonarr::import::import_sonarr_series(&client, &state.storage).await?;
+
+    // Update last sync time
+    let now = unix_now().map_err(|e| anyhow::anyhow!(e))?;
+    let now_json = serde_json::to_string(&now)?;
+    state.storage.set_setting("sonarr.last_sync_at", &now_json, now).await?;
+
+    Ok(report)
+}
+
+pub async fn get_sonarr_availability_inner(
+    anime_id: i64,
+    state: &EngineState,
+) -> anyhow::Result<Option<SonarrAvailabilityResponse>> {
+    let row = state.storage.sonarr_availability(anime_id).await?;
+    Ok(row.map(|r| SonarrAvailabilityResponse {
+        sonarr_id: r.sonarr_id,
+        sonarr_title: r.sonarr_title,
+        monitored: r.monitored,
+        episode_count: r.episode_count,
+        episode_file_count: r.episode_file_count,
+        next_airing: r.next_airing,
+        path: r.path,
+        season_count: r.season_count,
+        sonarr_status: r.sonarr_status,
+    }))
+}
+
+pub async fn remap_sonarr_inner(
+    sonarr_id: i64,
+    anime_id: Option<i64>,
+    state: &EngineState,
+) -> anyhow::Result<()> {
+    let now = unix_now().map_err(|e| anyhow::anyhow!(e))?;
+
+    // Update existing mapping or insert new
+    let mapping = crate::engine::storage::SonarrMappingDb {
+        id: None,
+        sonarr_id,
+        anime_id,
+        title_match: "manual".into(),
+        confidence: if anime_id.is_some() { 100 } else { 0 },
+        mapped_at: now,
+        user_confirmed: true,
+    };
+    state.storage.sonarr_mapping_upsert(&mapping).await?;
+    Ok(())
+}
+
 // Tauri command wrappers
 
 #[tauri::command]
@@ -604,6 +761,61 @@ pub async fn update_list_entry(
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
     update_list_entry_inner(anime_id, status, watched_episodes, score, &state)
+        .await
+        .map_err(command_error)
+}
+
+// ── Sonarr command wrappers ─────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn connect_sonarr(
+    url: String,
+    api_key: String,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    connect_sonarr_inner(&url, &api_key, &state)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn disconnect_sonarr(
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    disconnect_sonarr_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_sonarr_status(
+    state: tauri::State<'_, EngineState>,
+) -> Result<SonarrStatus, String> {
+    get_sonarr_status_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn import_sonarr_series(
+    state: tauri::State<'_, EngineState>,
+) -> Result<crate::engine::sonarr::import::ImportReport, String> {
+    import_sonarr_series_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_sonarr_availability(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Option<SonarrAvailabilityResponse>, String> {
+    get_sonarr_availability_inner(anime_id, &state)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn remap_sonarr(
+    sonarr_id: i64,
+    anime_id: Option<i64>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    remap_sonarr_inner(sonarr_id, anime_id, &state)
         .await
         .map_err(command_error)
 }
