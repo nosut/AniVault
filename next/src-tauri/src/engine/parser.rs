@@ -142,6 +142,12 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
         .join(" ");
     cleaned = cleaned.trim().to_string();
 
+    // Collapse double-dash artifacts from " - S01E01 - EpisodeTitle" pattern removal
+    // e.g., "2.5 Dimensional Seduction - - Title" -> "2.5 Dimensional Seduction"
+    if let Some(pos) = cleaned.find(" - - ") {
+        cleaned = cleaned[..pos].to_string();
+    }
+
     if cleaned.is_empty() {
         return None;
     }

@@ -16,9 +16,22 @@
     return { season: s, year: now.getFullYear() };
   }
 
-  let current = getCurrentSeason();
-  let season = current.season;
-  let year = current.year;
+  function loadSeasonState(): { season: string; year: number } {
+    try {
+      const saved = localStorage.getItem('anivault-season-state');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return getCurrentSeason();
+  }
+
+  function saveSeasonState(s: string, y: number) {
+    try { localStorage.setItem('anivault-season-state', JSON.stringify({ season: s, year: y })); }
+    catch {}
+  }
+
+  let initial = loadSeasonState();
+  let season = initial.season;
+  let year = initial.year;
   let genre: string = '';
   let entries: SeasonAnimeEntry[] = [];
   let loading = true;
@@ -74,6 +87,8 @@
     if (score >= 60) return '#f0c040';
     return '#ff9d9d';
   }
+
+  $: saveSeasonState(season, year);
 
   async function loadAll() {
     await Promise.all([load(), loadLibraryIds()]);
@@ -152,7 +167,7 @@
   .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem; }
   .poster-card { position: relative; border: 1px solid rgba(143,183,255,0.1); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
   .poster-card:hover { border-color: rgba(143,183,255,0.3); transform: translateY(-2px); }
-  .in-library-badge { position: absolute; top: 0.3rem; right: 0.3rem; font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 999px; background: rgba(126,232,126,0.2); color: #7ee87e; font-weight: 600; z-index: 1; }
+  .in-library-badge { position: absolute; top: 0.3rem; left: 0.3rem; font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(126,232,126,0.25); color: #7ee87e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; z-index: 1; }
   .add-btn { position: absolute; top: 0.3rem; right: 0.3rem; border: 1px solid rgba(143,183,255,0.3); border-radius: 4px; padding: 0.1rem 0.4rem; background: rgba(143,183,255,0.15); color: var(--color-accent); cursor: pointer; font-size: 0.85rem; line-height: 1.2; z-index: 1; }
   .add-btn:hover { background: rgba(143,183,255,0.3); }
   .poster-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }

@@ -301,7 +301,7 @@
         <div class="detail-header">
           <h1 class="title">
             {pickTitle(detail)}
-            <a class="anilist-link" href="https://anilist.co/anime/{detail.anime_id}" target="_blank" rel="noopener" title="View on AniList">↗</a>
+            <button class="anilist-link" on:click={() => openEpisodeFile(`https://anilist.co/anime/${detail.anime_id}`)} title="View on AniList">↗</button>
           </h1>
           {#if titles.english && titles.english !== (titles.romaji ?? '')}
             <p class="alt-title">English: {titles.english}</p>
