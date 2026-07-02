@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const ANILIST_API_URL: &str = "https://graphql.anilist.co";
@@ -52,7 +52,7 @@ pub struct MediaListEntry {
     pub completed_at: Option<AniListDate>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Media {
     pub id: i64,
     pub title: Option<MediaTitle>,
@@ -63,16 +63,27 @@ pub struct Media {
     #[serde(rename = "coverImage")]
     pub cover_image: Option<CoverImage>,
     pub description: Option<String>,
+    #[serde(rename = "nextAiringEpisode")]
+    pub next_airing_episode: Option<AiringEpisode>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AiringEpisode {
+    #[serde(rename = "airingAt")]
+    pub airing_at: i64,
+    #[serde(rename = "timeUntilAiring")]
+    pub time_until_airing: i64,
+    pub episode: i32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MediaTitle {
     pub romaji: Option<String>,
     pub english: Option<String>,
     pub native: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CoverImage {
     pub large: Option<String>,
 }
@@ -228,4 +239,47 @@ mutation ($mediaId: Int, $progress: Int) {
         self.query::<serde_json::Value>(query_str, variables).await?;
         Ok(())
     }
+
+    /// Fetch the authenticated user's currently-watching anime with airing schedule.
+    pub async fn fetch_airing_schedule(&self) -> anyhow::Result<Vec<AiringEntryRaw>> {
+        let query_str = r#"query {
+  MediaListCollection(status: CURRENT, type: ANIME) {
+    lists { entries {
+      media {
+        id title { romaji english native }
+        coverImage { large }
+        episodes
+        nextAiringEpisode { airingAt timeUntilAiring episode }
+      }
+      progress
+    }}
+  }
+}"#;
+
+        let raw: serde_json::Value = self.query(query_str, serde_json::json!({})).await?;
+        let mut entries = Vec::new();
+        if let Some(lists) = raw
+            .get("data")
+            .and_then(|d| d.get("MediaListCollection"))
+            .and_then(|c| c.get("lists"))
+            .and_then(|l| l.as_array())
+        {
+            for group in lists {
+                if let Some(group_entries) = group.get("entries").and_then(|e| e.as_array()) {
+                    for e in group_entries {
+                        if let Ok(entry) = serde_json::from_value::<AiringEntryRaw>(e.clone()) {
+                            entries.push(entry);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(entries)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AiringEntryRaw {
+    pub media: Option<Media>,
+    pub progress: Option<i32>,
 }

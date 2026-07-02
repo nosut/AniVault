@@ -374,6 +374,21 @@ export function remapSonarr(
   return invokeFn<void>('remap_sonarr', { sonarrId: sonarrId, animeId: animeId });
 }
 
+export interface CalendarEntry {
+  animeId: number;
+  title: string;
+  image_url: string | null;
+  episode_count: number | null;
+  progress: number | null;
+  next_episode: number | null;
+  airing_at: number | null;
+  time_until_airing: number | null;
+}
+
+export function getCalendar(invokeFn: InvokeFn = tauriInvoke): Promise<CalendarEntry[]> {
+  return invokeFn<CalendarEntry[]>('get_calendar');
+}
+
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {
   return invokeFn<AniListSyncStatus>('get_sync_status');
 }

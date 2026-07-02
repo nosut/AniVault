@@ -647,7 +647,56 @@ pub async fn import_database_inner(
         .map_err(command_error)
 }
 
+// ── Calendar ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CalendarEntry {
+    pub anime_id: i64,
+    pub title: String,
+    pub image_url: Option<String>,
+    pub episode_count: Option<i32>,
+    pub progress: Option<i32>,
+    pub next_episode: Option<i32>,
+    pub airing_at: Option<i64>,
+    pub time_until_airing: Option<i64>,
+}
+
+pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<CalendarEntry>> {
+    use crate::engine::anilist::client::AniListClient;
+    let token = crate::engine::anilist::auth::load_token(&state.storage)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("AniList not connected"))?;
+    let client = AniListClient::new(token);
+    let entries = client.fetch_airing_schedule().await?;
+
+    Ok(entries.into_iter().filter_map(|e| {
+        let media = e.media?;
+        let title = media.title.as_ref()?
+            .romaji.clone()
+            .or_else(|| media.title.as_ref()?.english.clone())
+            .unwrap_or_else(|| format!("Anime #{}", media.id));
+        let next_ep = media.next_airing_episode.as_ref();
+        Some(CalendarEntry {
+            anime_id: media.id,
+            title,
+            image_url: media.cover_image.as_ref().and_then(|c| c.large.clone()),
+            episode_count: media.episodes,
+            progress: e.progress,
+            next_episode: next_ep.map(|e| e.episode),
+            airing_at: next_ep.map(|e| e.airing_at),
+            time_until_airing: next_ep.map(|e| e.time_until_airing),
+        })
+    }).collect())
+}
+
 // Tauri command wrappers
+
+#[tauri::command]
+pub async fn get_calendar(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<CalendarEntry>, String> {
+    get_calendar_inner(&state).await.map_err(command_error)
+}
 
 #[tauri::command]
 pub async fn get_engine_status(
