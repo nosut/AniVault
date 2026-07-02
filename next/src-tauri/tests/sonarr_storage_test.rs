@@ -97,6 +97,16 @@ async fn sonarr_mapping_crud_and_availability() {
     assert!(found.is_some());
     assert_eq!(found.unwrap().sonarr_id, 1);
 
+    // Verify availability join returns enriched series data
+    let avail = storage.sonarr_availability(42).await.unwrap();
+    assert!(avail.is_some(), "availability should return Some for mapped anime");
+    let avail = avail.unwrap();
+    assert_eq!(avail.sonarr_title, "Test Anime");
+    assert!(avail.monitored);
+    assert_eq!(avail.episode_count, 12);
+    assert_eq!(avail.episode_file_count, 0);
+    assert!(avail.path.is_none());
+
     storage.sonarr_mapping_delete_all().await.unwrap();
     assert_eq!(storage.sonarr_mapping_count().await.unwrap(), 0);
 }
