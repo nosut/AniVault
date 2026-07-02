@@ -53,6 +53,7 @@
   let libraryFoldersError: string | null = null;
   let libraryScanning = false;
   let libraryScanReport: LibraryScanReport | null = null;
+  let libraryScanError: string | null = null;
 
   // Migration state
   let migrationDiscovering = false;
@@ -255,8 +256,9 @@
   async function handleScanFolders() {
     libraryScanning = true;
     libraryScanReport = null;
+    libraryScanError = null;
     try { libraryScanReport = await scanLibraryFolders(); }
-    catch(e) { libraryFoldersError = e instanceof Error ? e.message : String(e); }
+    catch(e) { libraryScanError = e instanceof Error ? e.message : String(e); }
     finally { libraryScanning = false; }
   }
 
@@ -454,6 +456,9 @@
               </button>
             </div>
 
+            {#if libraryScanError}
+              <div class="error-row"><p class="error">{libraryScanError}</p></div>
+            {/if}
             {#if libraryScanReport}
               <div class="import-report">
                 <p>Found {libraryScanReport.found} video files. Indexed {libraryScanReport.indexed} new.</p>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { searchLibrary, updateListEntry, type LibraryEntry } from './api';
+  import { searchLibrary, updateListEntry, getEpisodeFiles, openEpisodeFile, type LibraryEntry, type FileIndexEntry } from './api';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
@@ -20,6 +20,7 @@
   let entries: LibraryEntry[] = [];
   let loading = false;
   let error = '';
+  let episodeFilesMap = new Map<number, FileIndexEntry[]>();
 
   let sortKey: 'title' | 'status' | 'progress' = 'title';
   let sortDir: 'asc' | 'desc' = 'asc';
@@ -47,11 +48,26 @@
     try {
       const results = await searchLibrary(query, statusFilter, 200, 0);
       entries = results;
+      if (results.length > 0) {
+        loadEpisodeFiles(results);
+      }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
     }
+  }
+
+  async function loadEpisodeFiles(entries: LibraryEntry[]) {
+    for (const entry of entries.slice(0, 50)) {
+      try {
+        const files = await getEpisodeFiles(entry.anime_id);
+        if (files.length > 0) {
+          episodeFilesMap.set(entry.anime_id, files);
+        }
+      } catch {}
+    }
+    episodeFilesMap = new Map(episodeFilesMap);
   }
 
   function debouncedReload() {
@@ -349,6 +365,9 @@
                 {/if}
               </button>
             </th>
+            <th class="col-files" scope="col">
+              <span class="sr-only">Files</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -364,7 +383,7 @@
             {/each}
           {:else if sortedEntries.length === 0}
             <tr class="empty-row">
-              <td colspan="5">
+              <td colspan="6">
                 <p class="empty">No anime found.</p>
               </td>
             </tr>
@@ -409,6 +428,17 @@
                       <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
                     </div>
                   </div>
+                </td>
+                <td class="col-files">
+                  {#if episodeFilesMap.has(entry.anime_id)}
+                    <button class="play-inline-btn" on:click|stopPropagation={() => {
+                      const files = episodeFilesMap.get(entry.anime_id);
+                      if (!files || files.length === 0) return;
+                      const nextEp = files.find(f => (f.episode ?? 0) > entry.watched_episodes);
+                      const target = nextEp ?? files[0];
+                      if (target) openEpisodeFile(target.file_path);
+                    }} title="Play next episode">&#9654;</button>
+                  {/if}
                 </td>
               </tr>
             {/each}
@@ -885,6 +915,26 @@
 
   .action-btn:hover {
     background: rgba(143, 183, 255, 0.2);
+  }
+
+  .col-files {
+    width: 2rem;
+    text-align: center;
+  }
+
+  .play-inline-btn {
+    border: none;
+    background: rgba(143,183,255,0.15);
+    color: var(--color-accent);
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .play-inline-btn:hover {
+    background: rgba(143,183,255,0.3);
   }
 
   .poster-check {

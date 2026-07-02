@@ -48,7 +48,7 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
             error_msgs.push(format!("Folder not found: {}", folder));
             continue;
         }
-        find_video_files(path, &mut video_files);
+        find_video_files(path, &mut video_files, &mut error_msgs);
 
         for file_path in &video_files {
             let file_path_str = file_path.to_string_lossy().to_string();
@@ -118,21 +118,29 @@ pub async fn get_episode_files(
 }
 
 /// Recursively find video files under a directory.
-fn find_video_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                find_video_files(&path, files);
-            } else if path.is_file() {
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-                    files.push(path);
+/// Collects errors for unreadable directories instead of silently skipping.
+fn find_video_files(dir: &Path, files: &mut Vec<std::path::PathBuf>, errors: &mut Vec<String>) {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    find_video_files(&path, files, errors);
+                } else if path.is_file() {
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
+                        files.push(path);
+                    }
                 }
+            }
+        }
+        Err(e) => {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                errors.push(format!("Cannot read {}: {}", dir.display(), e));
             }
         }
     }

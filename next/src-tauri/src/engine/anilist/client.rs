@@ -241,29 +241,23 @@ mutation ($mediaId: Int, $progress: Int) {
     }
 
     /// Fetch the authenticated user's currently-watching anime with airing schedule.
+    /// Uses the authenticated user's token (no userId/Viewer query needed).
     pub async fn fetch_airing_schedule(&self) -> anyhow::Result<Vec<AiringEntryRaw>> {
-        // Query Viewer to get authenticated user ID (MediaListCollection requires userId)
-        let viewer_raw: serde_json::Value = self.query(
-            "query { Viewer { id name }}",
-            serde_json::json!({}),
-        ).await?;
-        let user_id = viewer_raw
-            .get("data")
-            .and_then(|d| d.get("Viewer"))
-            .and_then(|v| v.get("id"))
-            .and_then(|id| id.as_i64())
-            .ok_or_else(|| anyhow::anyhow!("Could not get authenticated user ID"))?;
+        let query_str = r#"query {
+  MediaListCollection(status: CURRENT, type: ANIME) {
+    lists { entries {
+      media {
+        id title { romaji english native }
+        coverImage { large }
+        episodes
+        nextAiringEpisode { airingAt timeUntilAiring episode }
+      }
+      progress
+    } }
+  }
+}"#;
 
-        let query_str = format!("query {{ MediaListCollection(userId: {}, status: CURRENT, type: ANIME) {{ \
-            lists {{ entries {{ \
-                media {{ id title {{ romaji english native }} coverImage {{ large }} episodes \
-                    nextAiringEpisode {{ airingAt timeUntilAiring episode }} \
-                }} \
-                progress \
-            }} }} \
-        }} }}", user_id);
-
-        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let raw: serde_json::Value = self.query(query_str, serde_json::json!({})).await?;
         let mut entries = Vec::new();
         if let Some(lists) = raw
             .get("data")
