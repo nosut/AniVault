@@ -456,7 +456,21 @@
 
             {#if libraryScanReport}
               <div class="import-report">
-                <p>Found {libraryScanReport.found} video files, indexed {libraryScanReport.indexed} new entries.</p>
+                <p>Found {libraryScanReport.found} video files. Indexed {libraryScanReport.indexed} new.</p>
+                {#if libraryScanReport.skipped > 0}
+                  <p>Skipped {libraryScanReport.skipped} already-indexed files.</p>
+                {/if}
+                {#if libraryScanReport.errors.length > 0}
+                  <p class="scan-errors">Errors:</p>
+                  <ul class="scan-error-list">
+                    {#each libraryScanReport.errors as err}
+                      <li>{err}</li>
+                    {/each}
+                  </ul>
+                {/if}
+                {#if libraryScanReport.found === 0 && libraryScanReport.errors.length === 0}
+                  <p class="muted">No video files found in configured folders. Make sure the folders contain .mkv, .mp4, .avi, or other video files in their directory tree.</p>
+                {/if}
               </div>
             {/if}
           {/if}
@@ -1147,6 +1161,18 @@
     background: rgba(143, 183, 255, 0.06);
     font-size: 0.82rem;
     color: #c8d2e0;
+  }
+
+  .scan-errors {
+    color: #ff9d9d;
+    font-size: 0.82rem;
+    margin-top: 0.5rem;
+  }
+
+  .scan-error-list {
+    margin: 0.25rem 0 0 1.2rem;
+    font-size: 0.78rem;
+    color: #ff9d9d;
   }
 
   .success-msg {

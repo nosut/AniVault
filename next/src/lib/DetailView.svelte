@@ -299,7 +299,10 @@
 
       <div class="info-col">
         <div class="detail-header">
-          <h1 class="title">{pickTitle(detail)}</h1>
+          <h1 class="title">
+            {pickTitle(detail)}
+            <a class="anilist-link" href="https://anilist.co/anime/{detail.anime_id}" target="_blank" rel="noopener" title="View on AniList">↗</a>
+          </h1>
           {#if titles.english && titles.english !== (titles.romaji ?? '')}
             <p class="alt-title">English: {titles.english}</p>
           {/if}
@@ -660,6 +663,15 @@
     margin-top: 0.15rem;
     margin-bottom: 0;
   }
+
+  .anilist-link {
+    font-size: 0.9rem;
+    color: var(--color-accent);
+    text-decoration: none;
+    margin-left: 0.5rem;
+    opacity: 0.7;
+  }
+  .anilist-link:hover { opacity: 1; }
 
   .synopsis {
     margin: 0;

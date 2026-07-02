@@ -24,6 +24,12 @@ pub struct SyncStatus {
     pub last_sync_at: Option<i64>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SyncResult {
+    pub processed: usize,
+    pub failed: usize,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct EngineStatus {
     pub ok: bool,
@@ -544,11 +550,7 @@ pub async fn set_library_folders_inner(
 pub async fn scan_library_folders_inner(
     state: &EngineState,
 ) -> anyhow::Result<library_scanner::LibraryScanReport> {
-    let report = library_scanner::scan_library_folders(&state.storage).await?;
-    Ok(library_scanner::LibraryScanReport {
-        found: report.found,
-        indexed: report.indexed,
-    })
+    library_scanner::scan_library_folders(&state.storage).await
 }
 
 pub async fn get_episode_files_inner(
@@ -1137,11 +1139,19 @@ pub async fn get_sync_status(
         .map_err(|e| e.to_string())
 }
 
+pub async fn trigger_sync_inner(state: &EngineState) -> anyhow::Result<SyncResult> {
+    let (pending_before, _, _) = state.storage.sync_status_counts("anilist").await?;
+    crate::engine::sync_worker::drain_queue(state).await?;
+    let (pending_after, failed, _) = state.storage.sync_status_counts("anilist").await?;
+    Ok(SyncResult {
+        processed: (pending_before as usize).saturating_sub(pending_after as usize),
+        failed: failed as usize,
+    })
+}
+
 #[tauri::command]
-pub async fn trigger_sync(state: tauri::State<'_, EngineState>) -> Result<(), String> {
-    crate::engine::sync_worker::drain_queue(&state)
-        .await
-        .map_err(command_error)
+pub async fn trigger_sync(state: tauri::State<'_, EngineState>) -> Result<SyncResult, String> {
+    trigger_sync_inner(&state).await.map_err(command_error)
 }
 
 // ── Library command wrappers ───────────────────────────────────────────────

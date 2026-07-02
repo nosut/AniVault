@@ -74,6 +74,8 @@ export interface FileIndexEntry {
 export interface LibraryScanReport {
   found: number;
   indexed: number;
+  skipped: number;
+  errors: string[];
 }
 
 export interface AniListSyncStatus {
@@ -81,6 +83,11 @@ export interface AniListSyncStatus {
   failed: number;
   blocked: number;
   last_sync_at: number | null;
+}
+
+export interface SyncResult {
+  processed: number;
+  failed: number;
 }
 
 export interface ImportReport {
@@ -460,8 +467,8 @@ export function getSeasonAnime(season: string, year: number, genre?: string, inv
   return invokeFn<SeasonAnimeEntry[]>('get_season_anime', { season, year, genre: genre ?? null });
 }
 
-export function triggerSync(invokeFn: InvokeFn = tauriInvoke): Promise<void> {
-  return invokeFn<void>('trigger_sync');
+export function triggerSync(invokeFn: InvokeFn = tauriInvoke): Promise<SyncResult> {
+  return invokeFn<SyncResult>('trigger_sync');
 }
 
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {

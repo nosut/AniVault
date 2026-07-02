@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getSyncStatus, triggerSync, type AniListSyncStatus } from './api';
+  import { getSyncStatus, triggerSync, type AniListSyncStatus, type SyncResult } from './api';
 
   let status: AniListSyncStatus | null = null;
   let error: string | null = null;
   let loading = false;
   let syncing = false;
   let intervalId: ReturnType<typeof setInterval> | null = null;
+  let syncResult: SyncResult | null = null;
+  let syncResultTimeout: ReturnType<typeof setTimeout> | null = null;
 
   async function refresh() {
     if (loading) return;
@@ -23,9 +25,11 @@
 
   async function handleSyncNow() {
     syncing = true;
+    if (syncResultTimeout) clearTimeout(syncResultTimeout);
     try {
-      await triggerSync();
+      syncResult = await triggerSync();
       await refresh();
+      syncResultTimeout = setTimeout(() => { syncResult = null; }, 5000);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -55,6 +59,9 @@
     <button type="button" class="btn-refresh" on:click={handleSyncNow} disabled={syncing || loading}>
       {syncing ? 'Syncing…' : 'Sync Now'}
     </button>
+    {#if syncResult}
+      <span class="sync-result">Synced {syncResult.processed}, {syncResult.failed} failed</span>
+    {/if}
   </div>
 
   {#if error}
@@ -164,5 +171,10 @@
   .error {
     color: var(--color-error, #ff9d9d);
     font-size: 0.82rem;
+  }
+
+  .sync-result {
+    font-size: 0.78rem;
+    color: var(--color-accent);
   }
 </style>

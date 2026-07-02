@@ -63,7 +63,11 @@
     </div>
   {:else if sorted.length === 0}
     <div class="cal-empty">
-      <p>No upcoming episodes. Add anime to your Watching list on AniList.</p>
+      {#if stats && stats.watching > 0}
+        <p>No upcoming episodes scheduled. Your watching anime may not have known airing dates yet.</p>
+      {:else}
+        <p>No currently watching anime. Add anime to your Watching list on AniList.</p>
+      {/if}
     </div>
   {:else}
     <div class="cal-grid">

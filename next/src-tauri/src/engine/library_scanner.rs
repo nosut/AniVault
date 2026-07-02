@@ -34,6 +34,8 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
     let folders = get_library_folders(storage).await?;
     let mut found = 0;
     let mut indexed = 0;
+    let mut skip_count = 0i64;
+    let mut error_msgs: Vec<String> = Vec::new();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -41,7 +43,12 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
 
     for folder in &folders {
         let mut video_files = Vec::new();
-        find_video_files(Path::new(folder), &mut video_files);
+        let path = Path::new(folder);
+        if !path.exists() {
+            error_msgs.push(format!("Folder not found: {}", folder));
+            continue;
+        }
+        find_video_files(path, &mut video_files);
 
         for file_path in &video_files {
             let file_path_str = file_path.to_string_lossy().to_string();
@@ -49,6 +56,7 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
 
             // Skip if already indexed
             if storage.get_file_index(&file_path_str).await?.is_some() {
+                skip_count += 1;
                 continue;
             }
 
@@ -98,7 +106,7 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
         }
     }
 
-    Ok(LibraryScanReport { found, indexed })
+    Ok(LibraryScanReport { found, indexed, skipped: skip_count, errors: error_msgs })
 }
 
 /// Get all episode files for a specific anime, ordered by episode number.
@@ -134,6 +142,8 @@ fn find_video_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
 pub struct LibraryScanReport {
     pub found: i64,
     pub indexed: i64,
+    pub skipped: i64,
+    pub errors: Vec<String>,
 }
 
 /// Open a file with the default system application (plays video files).
