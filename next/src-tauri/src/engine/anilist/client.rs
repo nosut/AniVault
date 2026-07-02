@@ -168,9 +168,23 @@ impl AniListClient {
         &self,
         user_name: Option<&str>,
     ) -> anyhow::Result<MediaListCollectionRaw> {
-        let query_str = r#"
-query ($userName: String) {
-  MediaListCollection(userName: $userName, type: ANIME) {
+        let query_str = if let Some(name) = user_name {
+            format!(r#"
+query {{
+  MediaListCollection(userName: "{}", type: ANIME) {{
+    lists {{ entries {{
+      media {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description }}
+      status score progress updatedAt notes
+      startedAt {{ year month day }}
+      completedAt {{ year month day }}
+    }}}}
+  }}
+}}
+"#, name)
+        } else {
+            r#"
+query {
+  MediaListCollection(type: ANIME) {
     lists { entries {
       media { id title { romaji english native } episodes type status coverImage { large } description }
       status score progress updatedAt notes
@@ -179,12 +193,10 @@ query ($userName: String) {
     }}
   }
 }
-"#;
-        let variables = match user_name {
-            Some(name) => serde_json::json!({ "userName": name }),
-            None => serde_json::json!({}),
+"#.to_string()
         };
-        self.query(query_str, variables).await
+        let variables = serde_json::json!({});
+        self.query(&query_str, variables).await
     }
 
     /// Push episode progress for a given anime.
