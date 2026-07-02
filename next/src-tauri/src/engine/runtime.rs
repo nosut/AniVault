@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use tauri::AppHandle;
 use tokio::sync::watch;
 
 use crate::engine::event_bus::EventBus;
@@ -13,6 +15,8 @@ pub async fn fresh_test_state() -> EngineState {
         events: EventBus::default(),
         database_path: PathBuf::from(":memory:"),
         tracking: Arc::new(std::sync::Mutex::new(TrackingControl::default())),
+        tracking_paused: Arc::new(AtomicBool::new(false)),
+        app_handle: None,
     }
 }
 
@@ -22,6 +26,8 @@ pub struct EngineState {
     pub events: EventBus,
     pub database_path: PathBuf,
     pub tracking: Arc<std::sync::Mutex<TrackingControl>>,
+    pub tracking_paused: Arc<AtomicBool>,
+    pub app_handle: Option<AppHandle>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +59,10 @@ pub fn sqlite_url_for_path(path: &Path) -> String {
     format!("sqlite:///{}", path.to_string_lossy().replace('\\', "/"))
 }
 
-pub async fn initialize_engine_at(database_path: PathBuf) -> anyhow::Result<EngineState> {
+pub async fn initialize_engine_at(
+    database_path: PathBuf,
+    app_handle: Option<AppHandle>,
+) -> anyhow::Result<EngineState> {
     if let Some(parent) = database_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -67,5 +76,7 @@ pub async fn initialize_engine_at(database_path: PathBuf) -> anyhow::Result<Engi
         events: EventBus::default(),
         database_path,
         tracking: Arc::new(std::sync::Mutex::new(TrackingControl::default())),
+        tracking_paused: Arc::new(AtomicBool::new(false)),
+        app_handle,
     })
 }

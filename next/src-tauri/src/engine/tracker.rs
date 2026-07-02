@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use tokio::sync::watch;
@@ -19,6 +20,11 @@ pub async fn run_tracking_loop(
     loop {
         if *cancel.borrow() {
             break;
+        }
+
+        if state.tracking_paused.load(Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            continue;
         }
 
         let config_clone = config.clone();

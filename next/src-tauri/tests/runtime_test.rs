@@ -42,7 +42,7 @@ async fn initialize_engine_creates_parent_dir_and_migrates_database() {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
-    let state = initialize_engine_at(db_path.clone()).await.unwrap();
+    let state = initialize_engine_at(db_path.clone(), None).await.unwrap();
 
     assert_eq!(state.database_path, db_path);
     assert!(state.database_path.exists());

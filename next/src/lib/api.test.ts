@@ -4,7 +4,11 @@ import {
   deleteSetting,
   disconnectAniList,
   drainEngineEvents,
+  fetchAnimeDetail,
   getEngineStatus,
+  getLaunchOnStartup,
+  getLibraryStats,
+  getSessionState,
   getSetting,
   getSyncStatus,
   getTrackingStatus,
@@ -14,10 +18,14 @@ import {
   listRecentHistory,
   markEpisodeWatched,
   previewMigrationReport,
+  searchLibrary,
+  setLaunchOnStartup,
   setSetting,
   startTracking,
   stopTracking,
   storeAniListToken,
+  togglePauseTracking,
+  updateListEntry,
 } from './api';
 
 describe('api wrappers', () => {
@@ -172,5 +180,64 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(status);
     await expect(getSyncStatus(invoke)).resolves.toEqual(status);
     expect(invoke).toHaveBeenCalledWith('get_sync_status');
+  });
+
+  it('searches library through invoke', async () => {
+    const entries = [
+      { anime_id: 1, title: 'Cowboy Bebop', status: 'watching', watched_episodes: 5, episode_count: 26, score: 8, image_url: null },
+    ];
+    const invoke = vi.fn().mockResolvedValue(entries);
+    await expect(searchLibrary('bebop', 'watching', 10, 0, invoke)).resolves.toEqual(entries);
+    expect(invoke).toHaveBeenCalledWith('search_library', { query: 'bebop', statusFilter: 'watching', limit: 10, offset: 0 });
+  });
+
+  it('gets library stats through invoke', async () => {
+    const stats = { total: 10, watching: 3, completed: 4, on_hold: 1, dropped: 1, plan_to_watch: 1 };
+    const invoke = vi.fn().mockResolvedValue(stats);
+    await expect(getLibraryStats(invoke)).resolves.toEqual(stats);
+    expect(invoke).toHaveBeenCalledWith('get_library_stats');
+  });
+
+  it('fetches anime detail through invoke', async () => {
+    const detail = {
+      anime_id: 1, titles_json: '{}', episode_count: 26, image_url: null, synopsis: '...', anime_status: 'finished',
+      last_modified: 0, list_status: 'watching', watched_episodes: 12, score: null, notes: null,
+      local_updated: null, remote_updated: null, tracker_id: null, recent_history: [],
+    };
+    const invoke = vi.fn().mockResolvedValue(detail);
+    await expect(fetchAnimeDetail(1, invoke)).resolves.toEqual(detail);
+    expect(invoke).toHaveBeenCalledWith('fetch_anime_detail', { anime_id: 1 });
+  });
+
+  it('updates list entry through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(updateListEntry(1, { watched_episodes: 7 }, invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('update_list_entry', { anime_id: 1, status: null, watched_episodes: 7, score: null });
+  });
+
+  it('gets session state through invoke', async () => {
+    const state = { paused: false };
+    const invoke = vi.fn().mockResolvedValue(state);
+    await expect(getSessionState(invoke)).resolves.toEqual(state);
+    expect(invoke).toHaveBeenCalledWith('get_session_state');
+  });
+
+  it('toggles pause tracking through invoke', async () => {
+    const state = { paused: true };
+    const invoke = vi.fn().mockResolvedValue(state);
+    await expect(togglePauseTracking(invoke)).resolves.toEqual(state);
+    expect(invoke).toHaveBeenCalledWith('toggle_pause_tracking');
+  });
+
+  it('gets launch on startup through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue(true);
+    await expect(getLaunchOnStartup(invoke)).resolves.toBe(true);
+    expect(invoke).toHaveBeenCalledWith('get_launch_on_startup');
+  });
+
+  it('sets launch on startup through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(setLaunchOnStartup(true, invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('set_launch_on_startup', { enabled: true });
   });
 });

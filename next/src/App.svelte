@@ -1,59 +1,56 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { drainEngineEvents, getEngineStatus, getSetting, setSetting, type EngineStatus, type EngineEvent } from './lib/api';
-  import NowPlaying from './lib/NowPlaying.svelte';
-  import MarkWatched from './lib/MarkWatched.svelte';
-  import RecognitionCard from './lib/RecognitionCard.svelte';
-  import KnownFiles from './lib/KnownFiles.svelte';
-  import AniListConnect from './lib/AniListConnect.svelte';
-  import SyncStatus from './lib/SyncStatus.svelte';
+  import { drainEngineEvents, type EngineEvent } from './lib/api';
+  import DashboardView from './lib/DashboardView.svelte';
+  import LibraryView from './lib/LibraryView.svelte';
+  import DetailView from './lib/DetailView.svelte';
+  import SettingsView from './lib/SettingsView.svelte';
 
-  const navItems = ['Home', 'Library', 'Tracking', 'Sync', 'Settings'];
+  type View = 'dashboard' | 'library' | 'detail' | 'settings';
 
-  let status: EngineStatus | null = null;
-  let statusError = '';
-  let trackingEnabled = true;
-  let eventCount = 0;
+  const navItems = [
+    { id: 'dashboard' as View, label: 'Dashboard' },
+    { id: 'library' as View, label: 'Library' },
+    { id: 'settings' as View, label: 'Settings' },
+  ];
+
+  let currentView: View = 'dashboard';
+  let detailAnimeId: number | null = null;
   let latestEvents: EngineEvent[] = [];
   let eventIntervalId: ReturnType<typeof setInterval> | null = null;
-  let knownFilesRef: { load: () => Promise<void> } | undefined;
-
-  async function refreshRuntime() {
-    statusError = '';
-    try {
-      status = await getEngineStatus();
-      trackingEnabled = (await getSetting<boolean>('tracking.enabled')) ?? true;
-    } catch (error) {
-      statusError = error instanceof Error ? error.message : String(error);
-    }
-  }
 
   async function pollEvents() {
     try {
       const events = await drainEngineEvents();
       latestEvents = events;
-      eventCount += events.length;
     } catch {
       // Keep polling alive; individual errors are surfaced by consumers if needed.
     }
   }
 
-  async function toggleTracking() {
-    trackingEnabled = !trackingEnabled;
-    try {
-      await setSetting('tracking.enabled', trackingEnabled);
-      await refreshRuntime();
-    } catch (error) {
-      statusError = error instanceof Error ? error.message : String(error);
+  function handleLibrarySelect(event: CustomEvent<{ anime_id: number }>) {
+    detailAnimeId = event.detail.anime_id;
+    currentView = 'detail';
+  }
+
+  function handleDetailBack() {
+    currentView = 'library';
+  }
+
+  function isNavActive(itemId: View): boolean {
+    if (itemId === currentView) return true;
+    if (itemId === 'library' && currentView === 'detail') return true;
+    return false;
+  }
+
+  function setView(view: View) {
+    currentView = view;
+    if (view !== 'detail') {
+      detailAnimeId = null;
     }
   }
 
-  function handleConfirmed() {
-    void knownFilesRef?.load();
-  }
-
   onMount(() => {
-    void refreshRuntime();
     eventIntervalId = setInterval(pollEvents, 3000);
   });
 
@@ -65,58 +62,31 @@
 <main class="shell">
   <aside class="rail" aria-label="Main navigation">
     <div class="brand">Taiga Next</div>
-    {#each navItems as item}
-      <button class:active={item === 'Home'}>{item}</button>
-    {/each}
+    <nav class="nav-list">
+      {#each navItems as item}
+        <button
+          type="button"
+          class="nav-item"
+          class:active={isNavActive(item.id)}
+          class:subtle-active={currentView === 'detail' && item.id === 'library'}
+          on:click={() => setView(item.id)}
+        >
+          {item.label}
+        </button>
+      {/each}
+    </nav>
   </aside>
 
-  <section class="home">
-    <p class="eyebrow">Foundation build</p>
-    <h1>Premium dark anime library, local-first engine.</h1>
-    <div class="card">
-      <span>Phase 0</span>
-      <strong>Engine scaffold ready for storage, migration, sync, and Sonarr integration.</strong>
-    </div>
-
-    <section class="status-card">
-      <div>
-        <p class="eyebrow">Runtime</p>
-        <h2>{status?.database === 'ready' ? 'Engine ready' : 'Engine loading'}</h2>
-      </div>
-
-      {#if statusError}
-        <p class="error">{statusError}</p>
-      {:else if status}
-        <dl class="status-list">
-          <div>
-            <dt>Database</dt>
-            <dd>{status.database}</dd>
-          </div>
-          <div>
-            <dt>Migrations</dt>
-            <dd>{status.migration_count}</dd>
-          </div>
-          <div>
-            <dt>Events drained</dt>
-            <dd>{eventCount}</dd>
-          </div>
-        </dl>
-        <p class="database-path">{status.database_path}</p>
-      {:else}
-        <p>Checking engine status…</p>
-      {/if}
-
-      <button class="toggle" type="button" aria-pressed={trackingEnabled} on:click={toggleTracking}>
-        Tracking setting: {trackingEnabled ? 'enabled' : 'disabled'}
-      </button>
-    </section>
-
-    <NowPlaying events={latestEvents} />
-    <MarkWatched />
-    <RecognitionCard events={latestEvents} onConfirmed={handleConfirmed} />
-    <AniListConnect />
-    <SyncStatus />
-    <KnownFiles bind:this={knownFilesRef} />
+  <section class="content">
+    {#if currentView === 'dashboard'}
+      <DashboardView events={latestEvents} />
+    {:else if currentView === 'library'}
+      <LibraryView on:select={handleLibrarySelect} />
+    {:else if currentView === 'detail' && detailAnimeId !== null}
+      <DetailView animeId={detailAnimeId} on:back={handleDetailBack} />
+    {:else if currentView === 'settings'}
+      <SettingsView />
+    {/if}
   </section>
 </main>
 
@@ -132,117 +102,88 @@
     background: rgb(10 13 20 / 72%);
     padding: 1.5rem;
     backdrop-filter: blur(24px);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
   }
 
   .brand {
     font-weight: 800;
     letter-spacing: -0.04em;
-    margin-bottom: 2rem;
+    font-size: 1.1rem;
   }
 
-  button {
+  .nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .nav-item {
     display: block;
     width: 100%;
     border: 0;
     border-radius: 999px;
-    margin: 0.25rem 0;
     padding: 0.8rem 1rem;
     text-align: left;
     color: var(--color-muted);
     background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.9rem;
+    transition: background 0.15s ease, color 0.15s ease;
   }
 
-  button.active,
-  button:hover {
+  .nav-item:hover {
     color: var(--color-text);
     background: rgb(255 255 255 / 8%);
   }
 
-  .home {
-    padding: 4rem;
+  .nav-item.active {
+    color: var(--color-text);
+    background: rgb(255 255 255 / 10%);
   }
 
-  .eyebrow {
+  .nav-item.subtle-active {
     color: var(--color-accent);
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-    font-size: 0.78rem;
-    font-weight: 800;
   }
 
-  h1 {
-    max-width: 54rem;
-    font-size: clamp(3rem, 7vw, 6rem);
-    line-height: 0.94;
-    letter-spacing: -0.08em;
+  .nav-item:focus-visible {
+    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline-offset: 2px;
   }
 
-  .card {
-    display: grid;
-    gap: 0.5rem;
-    max-width: 34rem;
-    border: 1px solid rgb(255 255 255 / 10%);
-    border-radius: var(--radius-card);
-    background: linear-gradient(145deg, rgb(255 255 255 / 12%), rgb(255 255 255 / 4%));
-    box-shadow: var(--shadow-card);
+  .content {
     padding: 1.5rem;
+    overflow-y: auto;
   }
 
-  .card span {
-    color: var(--color-muted);
-  }
+  @media (max-width: 768px) {
+    .shell {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+    }
 
-  .status-card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
-    border-radius: var(--radius-card);
-    padding: 1.25rem;
-    background: rgba(255, 255, 255, 0.04);
-    display: grid;
-    gap: 1rem;
-  }
+    .rail {
+      border-right: none;
+      border-bottom: 1px solid rgb(255 255 255 / 8%);
+      flex-direction: row;
+      align-items: center;
+      padding: 1rem;
+    }
 
-  .status-list {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem;
-    margin: 0;
-  }
+    .nav-list {
+      flex-direction: row;
+      gap: 0.5rem;
+    }
 
-  .status-list div {
-    display: grid;
-    gap: 0.25rem;
-  }
+    .nav-item {
+      width: auto;
+      padding: 0.6rem 0.9rem;
+    }
 
-  .status-list dt {
-    color: var(--color-muted);
-    font-size: 0.78rem;
-  }
-
-  .status-list dd {
-    margin: 0;
-    font-weight: 700;
-  }
-
-  .database-path {
-    color: var(--color-muted);
-    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-    font-size: 0.78rem;
-    overflow-wrap: anywhere;
-  }
-
-  .error {
-    color: var(--color-error);
-  }
-
-  .toggle {
-    justify-self: start;
-    width: auto;
-    display: inline-block;
-    border: 1px solid rgba(143, 183, 255, 0.35);
-    border-radius: 999px;
-    padding: 0.65rem 1rem;
-    background: rgba(143, 183, 255, 0.12);
-    color: #e9eefc;
-    cursor: pointer;
+    .content {
+      padding: 1rem;
+    }
   }
 </style>

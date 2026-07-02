@@ -10,7 +10,7 @@ async fn test_state(name: &str) -> taiga_next::engine::runtime::EngineState {
     if root.exists() {
         std::fs::remove_dir_all(&root).unwrap();
     }
-    initialize_engine_at(root.join("anivault.db")).await.unwrap()
+    initialize_engine_at(root.join("anivault.db"), None).await.unwrap()
 }
 
 #[tokio::test]

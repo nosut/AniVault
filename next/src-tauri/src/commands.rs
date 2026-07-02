@@ -9,8 +9,9 @@ use crate::engine::events::EngineEvent;
 use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
 use crate::engine::migration::MigrationReport;
 use crate::engine::runtime::EngineState;
-use crate::engine::storage::{FileIndexRow, WatchHistoryRow};
+use crate::engine::storage::{FileIndexRow, LibraryRow, LibraryStats, WatchHistoryRow};
 use crate::engine::tracker::run_tracking_loop;
+use tauri_plugin_notification::NotificationExt;
 
 #[derive(Debug, serde::Serialize)]
 pub struct SyncStatus {
@@ -26,6 +27,30 @@ pub struct EngineStatus {
     pub database: String,
     pub database_path: String,
     pub migration_count: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AnimeDetailResponse {
+    pub anime_id: i64,
+    pub titles_json: String,
+    pub episode_count: Option<i32>,
+    pub image_url: Option<String>,
+    pub synopsis: Option<String>,
+    pub anime_status: Option<String>,
+    pub last_modified: i64,
+    pub list_status: Option<String>,
+    pub watched_episodes: Option<i32>,
+    pub score: Option<i32>,
+    pub notes: Option<String>,
+    pub local_updated: Option<i64>,
+    pub remote_updated: Option<i64>,
+    pub tracker_id: Option<String>,
+    pub recent_history: Vec<WatchHistoryRow>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionState {
+    pub paused: bool,
 }
 
 fn command_error(error: anyhow::Error) -> String {
@@ -115,6 +140,73 @@ pub async fn delete_setting_inner(key: &str, state: &EngineState) -> Result<bool
     state.storage.delete_setting(key).await.map_err(command_error)
 }
 
+pub async fn get_session_state_inner(state: &EngineState) -> anyhow::Result<SessionState> {
+    Ok(SessionState {
+        paused: state.tracking_paused.load(std::sync::atomic::Ordering::Relaxed),
+    })
+}
+
+pub async fn toggle_pause_tracking_inner(state: &EngineState) -> anyhow::Result<SessionState> {
+    let current = state.tracking_paused.load(std::sync::atomic::Ordering::Relaxed);
+    state
+        .tracking_paused
+        .store(!current, std::sync::atomic::Ordering::Relaxed);
+    Ok(SessionState { paused: !current })
+}
+
+pub async fn get_launch_on_startup_inner(state: &EngineState) -> anyhow::Result<bool> {
+    let val: Option<String> = state.storage.get_setting("startup.launch_on_startup").await?;
+    match val {
+        Some(s) => {
+            let v: serde_json::Value = serde_json::from_str(&s)?;
+            Ok(v.as_bool().unwrap_or(false))
+        }
+        None => Ok(false),
+    }
+}
+
+pub async fn set_launch_on_startup_inner(enabled: bool, state: &EngineState) -> anyhow::Result<()> {
+    let value_json = serde_json::to_string(&serde_json::Value::Bool(enabled))?;
+    state
+        .storage
+        .set_setting("startup.launch_on_startup", &value_json, unix_now_inner()?)
+        .await?;
+    // Only write registry when a real Tauri app handle exists (not in tests)
+    if state.app_handle.is_some() {
+        let exe_path = std::env::current_exe()?.to_string_lossy().to_string();
+        if enabled {
+            let output = std::process::Command::new("reg")
+                .args([
+                    "add",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    "AniVault",
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    &exe_path,
+                    "/f",
+                ])
+                .output()?;
+            if !output.status.success() {
+                anyhow::bail!("Failed to write registry key");
+            }
+        } else {
+            // Delete key; ignore error if key doesn't exist
+            let _ = std::process::Command::new("reg")
+                .args([
+                    "delete",
+                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                    "/v",
+                    "AniVault",
+                    "/f",
+                ])
+                .output()?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn drain_engine_events_inner(state: &EngineState) -> Result<Vec<EngineEvent>, String> {
     Ok(state.events.drain())
 }
@@ -195,6 +287,29 @@ pub async fn mark_episode_watched_inner(
         source: "manual".to_string(),
     });
 
+    if !state.tracking_paused.load(std::sync::atomic::Ordering::Relaxed) {
+        if let Some(ref handle) = state.app_handle {
+            let title = state
+                .storage
+                .anime_detail(anime_id)
+                .await
+                .map(|d| {
+                    serde_json::from_str::<serde_json::Value>(&d.titles_json)
+                        .ok()
+                        .and_then(|v| v.get("romaji").and_then(|r| r.as_str()).map(String::from))
+                        .unwrap_or_else(|| format!("Anime #{}", anime_id))
+                })
+                .unwrap_or_else(|_| format!("Anime #{}", anime_id));
+
+            let _ = handle
+                .notification()
+                .builder()
+                .title(title)
+                .body(format!("Episode {} watched", episode))
+                .show();
+        }
+    }
+
     Ok(())
 }
 
@@ -241,6 +356,63 @@ pub async fn list_known_files_inner(
         .list_file_index(limit, 0)
         .await
         .map_err(command_error)
+}
+
+// ── Library command inner functions ─────────────────────────────────────────
+
+pub async fn search_library_inner(
+    query: String,
+    status_filter: Option<String>,
+    limit: i64,
+    offset: i64,
+    state: &EngineState,
+) -> anyhow::Result<Vec<LibraryRow>> {
+    state
+        .storage
+        .search_library(&query, status_filter.as_deref(), limit, offset)
+        .await
+}
+
+pub async fn get_library_stats_inner(state: &EngineState) -> anyhow::Result<LibraryStats> {
+    state.storage.library_stats().await
+}
+
+pub async fn fetch_anime_detail_inner(
+    anime_id: i64,
+    state: &EngineState,
+) -> anyhow::Result<AnimeDetailResponse> {
+    let detail = state.storage.anime_detail(anime_id).await?;
+    let recent_history = state.storage.list_recent_watch_history(10).await?;
+    Ok(AnimeDetailResponse {
+        anime_id: detail.anime_id,
+        titles_json: detail.titles_json,
+        episode_count: detail.episode_count,
+        image_url: detail.image_url,
+        synopsis: detail.synopsis,
+        anime_status: detail.anime_status,
+        last_modified: detail.last_modified,
+        list_status: detail.list_status,
+        watched_episodes: detail.watched_episodes,
+        score: detail.score,
+        notes: detail.notes,
+        local_updated: detail.local_updated,
+        remote_updated: detail.remote_updated,
+        tracker_id: detail.tracker_id,
+        recent_history,
+    })
+}
+
+pub async fn update_list_entry_inner(
+    anime_id: i64,
+    status: Option<String>,
+    watched_episodes: Option<i32>,
+    score: Option<i32>,
+    state: &EngineState,
+) -> anyhow::Result<()> {
+    state
+        .storage
+        .update_list_entry_partial(anime_id, status.as_deref(), watched_episodes, score)
+        .await
 }
 
 // Tauri command wrappers
@@ -391,4 +563,80 @@ pub async fn get_sync_status(
     get_sync_status_inner(&state)
         .await
         .map_err(|e| e.to_string())
+}
+
+// ── Library command wrappers ───────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn search_library(
+    query: String,
+    status_filter: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<LibraryRow>, String> {
+    search_library_inner(query, status_filter, limit.unwrap_or(50), offset.unwrap_or(0), &state)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_library_stats(
+    state: tauri::State<'_, EngineState>,
+) -> Result<LibraryStats, String> {
+    get_library_stats_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn fetch_anime_detail(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<AnimeDetailResponse, String> {
+    fetch_anime_detail_inner(anime_id, &state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn update_list_entry(
+    anime_id: i64,
+    status: Option<String>,
+    watched_episodes: Option<i32>,
+    score: Option<i32>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    update_list_entry_inner(anime_id, status, watched_episodes, score, &state)
+        .await
+        .map_err(command_error)
+}
+
+// ── Session commands ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_session_state(
+    state: tauri::State<'_, EngineState>,
+) -> Result<SessionState, String> {
+    get_session_state_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn toggle_pause_tracking(
+    state: tauri::State<'_, EngineState>,
+) -> Result<SessionState, String> {
+    toggle_pause_tracking_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_launch_on_startup(
+    state: tauri::State<'_, EngineState>,
+) -> Result<bool, String> {
+    get_launch_on_startup_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn set_launch_on_startup(
+    enabled: bool,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    set_launch_on_startup_inner(enabled, &state)
+        .await
+        .map_err(command_error)
 }
