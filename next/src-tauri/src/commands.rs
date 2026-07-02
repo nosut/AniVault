@@ -439,25 +439,11 @@ pub async fn update_list_entry_inner(
 
 // ── Sonarr command inner functions ──────────────────────────────────────────
 
-fn load_sonarr_connection(state: &EngineState) -> Option<(String, String)> {
-    let state1 = state.clone();
-    let url: Option<String> = std::thread::spawn(move || {
-        tokio::runtime::Runtime::new().unwrap().block_on(async {
-            state1.storage.get_setting("sonarr.url").await.ok().flatten()
-        })
-    }).join().ok().flatten();
+async fn load_sonarr_connection(state: &EngineState) -> Option<(String, String)> {
+    let url_raw = state.storage.get_setting("sonarr.url").await.ok()??;
+    let url: String = serde_json::from_str(&url_raw).ok()?;
 
-    let url = url?;
-    let url = serde_json::from_str::<String>(&url).ok()?;
-
-    let state2 = state.clone();
-    let encrypted: Option<String> = std::thread::spawn(move || {
-        tokio::runtime::Runtime::new().unwrap().block_on(async {
-            state2.storage.get_setting("sonarr.api_key").await.ok().flatten()
-        })
-    }).join().ok().flatten();
-
-    let encrypted = encrypted?;
+    let encrypted = state.storage.get_setting("sonarr.api_key").await.ok()??;
     let api_key = crate::engine::secrets::unprotect_secret(&encrypted).ok()?;
 
     Some((url, api_key))
@@ -472,11 +458,10 @@ pub async fn connect_sonarr_inner(url: &str, api_key: &str, state: &EngineState)
     // Store settings
     let url_json = serde_json::to_string(url)?;
     let encrypted_key = crate::engine::secrets::protect_secret(api_key)?;
-    let encrypted_json = serde_json::to_string(&encrypted_key)?;
     let now = unix_now().map_err(|e| anyhow::anyhow!(e))?;
 
     state.storage.set_setting("sonarr.url", &url_json, now).await?;
-    state.storage.set_setting("sonarr.api_key", &encrypted_json, now).await?;
+    state.storage.set_setting("sonarr.api_key", &encrypted_key, now).await?;
 
     // Import series
     crate::engine::sonarr::import::import_sonarr_series(&client, &state.storage).await?;
@@ -520,7 +505,7 @@ pub async fn get_sonarr_status_inner(state: &EngineState) -> anyhow::Result<Sona
 }
 
 pub async fn import_sonarr_series_inner(state: &EngineState) -> anyhow::Result<crate::engine::sonarr::import::ImportReport> {
-    let (url, api_key) = load_sonarr_connection(state)
+    let (url, api_key) = load_sonarr_connection(state).await
         .ok_or_else(|| anyhow::anyhow!("Sonarr not connected"))?;
     let client = SonarrClient::new(url, api_key);
     let report = crate::engine::sonarr::import::import_sonarr_series(&client, &state.storage).await?;
@@ -531,6 +516,12 @@ pub async fn import_sonarr_series_inner(state: &EngineState) -> anyhow::Result<c
     state.storage.set_setting("sonarr.last_sync_at", &now_json, now).await?;
 
     Ok(report)
+}
+
+pub async fn test_sonarr_connection_inner(url: &str, api_key: &str) -> anyhow::Result<()> {
+    let client = SonarrClient::new(url.to_string(), api_key.to_string());
+    client.validate_connection().await?;
+    Ok(())
 }
 
 pub async fn get_sonarr_availability_inner(
@@ -816,6 +807,16 @@ pub async fn remap_sonarr(
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
     remap_sonarr_inner(sonarr_id, anime_id, &state)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn test_sonarr_connection(
+    url: String,
+    api_key: String,
+) -> Result<(), String> {
+    test_sonarr_connection_inner(&url, &api_key)
         .await
         .map_err(command_error)
 }

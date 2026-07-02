@@ -138,6 +138,7 @@ pub fn run() {
             commands::start_tracking,
             commands::stop_tracking,
             commands::store_anilist_token,
+            commands::test_sonarr_connection,
             commands::toggle_pause_tracking,
             commands::update_list_entry,
         ])
