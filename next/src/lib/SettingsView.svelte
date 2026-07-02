@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getEngineStatus, getLaunchOnStartup, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, type SonarrStatus, type SonarrImportReport } from './api';
+  import { getEngineStatus, getLaunchOnStartup, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport } from './api';
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
 
@@ -151,12 +151,10 @@
   async function handleTestConnection() {
     sonarrTesting = true;
     sonarrTestResult = null;
+    sonarrConnectionError = null;
     try {
-      await connectSonarr(sonarrUrl, sonarrApiKey);
+      await testSonarrConnection(sonarrUrl, sonarrApiKey);
       sonarrTestResult = 'success';
-      // Clean up test connection
-      await disconnectSonarr();
-      await loadSonarrStatus();
     } catch (e) {
       sonarrTestResult = 'failure';
       sonarrConnectionError = e instanceof Error ? e.message : String(e);
@@ -721,6 +719,26 @@
     display: flex;
     gap: 0.75rem;
     margin-top: 0.75rem;
+  }
+
+  .action-btn {
+    border: 1px solid rgba(143, 183, 255, 0.35);
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    background: rgba(143, 183, 255, 0.12);
+    color: #e9eefc;
+    cursor: pointer;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
+  .action-btn:hover:not(:disabled) {
+    background: rgba(143, 183, 255, 0.22);
+  }
+
+  .action-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
 
   .action-btn.danger {
