@@ -25,6 +25,7 @@
   ];
 
   let currentView: View = 'dashboard';
+  let previousView: View = 'dashboard';
   let detailAnimeId: number | null = null;
   let latestEvents: EngineEvent[] = [];
   let eventIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -39,17 +40,19 @@
   }
 
   function handleLibrarySelect(event: CustomEvent<{ anime_id: number }>) {
+    previousView = currentView;
     detailAnimeId = event.detail.anime_id;
     currentView = 'detail';
   }
 
   function handleSeasonSelect(event: CustomEvent<{ anime_id: number }>) {
+    previousView = currentView;
     detailAnimeId = event.detail.anime_id;
     currentView = 'detail';
   }
 
   function handleDetailBack() {
-    currentView = 'library';
+    currentView = previousView;
   }
 
   function isNavActive(itemId: View): boolean {

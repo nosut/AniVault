@@ -36,7 +36,10 @@
     try {
       const all = await searchLibrary('', null, 500, 0);
       libraryIds = new Set(all.map(e => e.anime_id));
-    } catch { libraryIds = new Set(); }
+      libraryIds = libraryIds; // force reactivity
+    } catch {
+      libraryIds = new Set();
+    }
   }
 
   async function handleAddToList(animeId: number, title: string) {
@@ -45,6 +48,10 @@
       libraryIds.add(animeId);
       libraryIds = new Set(libraryIds);
     } catch(e) { /* show error? */ }
+  }
+
+  async function handleQuickAdd(animeId: number) {
+    await handleAddToList(animeId, '');
   }
 
   function prevSeason() {
@@ -68,7 +75,10 @@
     return '#ff9d9d';
   }
 
-  onMount(() => { load(); loadLibraryIds(); });
+  async function loadAll() {
+    await Promise.all([load(), loadLibraryIds()]);
+  }
+  onMount(() => { loadAll(); });
 </script>
 
 <div class="season-view">
@@ -102,6 +112,7 @@
           role="button"
           aria-label={entry.title}
           on:click={() => dispatch('select', { anime_id: entry.id })}
+          on:contextmenu|preventDefault={() => handleQuickAdd(entry.id)}
           on:keydown={(e) => e.key === 'Enter' && dispatch('select', { anime_id: entry.id })}
         >
           {#if entry.image_url}

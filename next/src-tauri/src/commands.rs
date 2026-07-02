@@ -774,7 +774,7 @@ pub async fn get_season_anime_inner(
     let entries = client.fetch_season_anime(&season, year, genre.as_deref()).await?;
     Ok(entries.into_iter().map(|e| SeasonAnimeEntry {
         id: e.id,
-        title: e.title.as_ref().and_then(|t| t.romaji.clone()).or_else(|| e.title.as_ref().and_then(|t| t.english.clone())).unwrap_or_else(|| format!("#{}", e.id)),
+        title: e.title.as_ref().and_then(|t| t.english.clone()).or_else(|| e.title.as_ref().and_then(|t| t.romaji.clone())).unwrap_or_else(|| format!("#{}", e.id)),
         image_url: e.cover_image.and_then(|c| c.large),
         episodes: e.episodes,
         status: e.status,

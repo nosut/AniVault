@@ -17,10 +17,12 @@ pub struct SonarrSystemStatus {
 pub struct SonarrSeriesRaw {
     pub id: i64,
     pub title: String,
+    #[serde(rename = "seasonCount")]
     pub season_count: Option<i32>,
     #[serde(default)]
     pub seasons: Vec<SonarrSeasonRaw>,
     pub monitored: bool,
+    #[serde(rename = "nextAiring")]
     pub next_airing: Option<String>,
     pub path: Option<String>,
     #[serde(default)]
@@ -41,18 +43,24 @@ pub struct SonarrSeasonRaw {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SonarrStatisticsRaw {
+    #[serde(rename = "episodeCount")]
     #[serde(default)]
     pub episode_count: i32,
+    #[serde(rename = "episodeFileCount")]
     #[serde(default)]
     pub episode_file_count: i32,
+    #[serde(rename = "totalEpisodeCount")]
     #[serde(default)]
     pub total_episode_count: i32,
+    #[serde(rename = "nextAiring")]
     pub next_airing: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SonarrImageRaw {
+    #[serde(rename = "coverType")]
     pub cover_type: Option<String>,
+    #[serde(rename = "remoteUrl")]
     pub remote_url: Option<String>,
 }
 
