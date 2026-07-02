@@ -460,6 +460,10 @@ export function getSeasonAnime(season: string, year: number, genre?: string, inv
   return invokeFn<SeasonAnimeEntry[]>('get_season_anime', { season, year, genre: genre ?? null });
 }
 
+export function triggerSync(invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('trigger_sync');
+}
+
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {
   return invokeFn<AniListSyncStatus>('get_sync_status');
 }

@@ -26,7 +26,7 @@ pub fn backoff_delay(retry_count: i32) -> u64 {
 /// 5. On success: deletes the sync row.
 /// 6. On failure: increments retry, schedules backoff. At retry >= 3,
 ///    publishes `EngineEvent::SyncFailed` and leaves the row blocked.
-async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
+pub async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
     let token = match load_token(&state.storage).await? {
         Some(t) => t,
         None => return Ok(()), // not connected, nothing to drain

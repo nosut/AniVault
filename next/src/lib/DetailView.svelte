@@ -751,6 +751,11 @@
     font-size: 0.9rem;
   }
 
+  .select-input option {
+    background: #141820;
+    color: var(--color-text);
+  }
+
   .select-input:focus {
     outline: 2px solid rgba(143, 183, 255, 0.5);
     outline-offset: 2px;

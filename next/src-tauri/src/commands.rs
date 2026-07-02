@@ -1088,6 +1088,13 @@ pub async fn get_sync_status(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn trigger_sync(state: tauri::State<'_, EngineState>) -> Result<(), String> {
+    crate::engine::sync_worker::drain_queue(&state)
+        .await
+        .map_err(command_error)
+}
+
 // ── Library command wrappers ───────────────────────────────────────────────
 
 #[tauri::command]

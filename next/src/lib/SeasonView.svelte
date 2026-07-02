@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getSeasonAnime, type SeasonAnimeEntry } from './api';
+  import { createEventDispatcher } from 'svelte';
+  import { getSeasonAnime, searchLibrary, updateListEntry, type SeasonAnimeEntry } from './api';
+
+  const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
   const seasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
   const seasonLabels: Record<string, string> = { WINTER: 'Winter', SPRING: 'Spring', SUMMER: 'Summer', FALL: 'Fall' };
@@ -20,12 +23,28 @@
   let entries: SeasonAnimeEntry[] = [];
   let loading = true;
   let error: string | null = null;
+  let libraryIds = new Set<number>();
 
   async function load() {
     loading = true; error = null;
     try { entries = await getSeasonAnime(season, year, genre || undefined); }
     catch(e) { error = e instanceof Error ? e.message : String(e); }
     finally { loading = false; }
+  }
+
+  async function loadLibraryIds() {
+    try {
+      const all = await searchLibrary('', null, 500, 0);
+      libraryIds = new Set(all.map(e => e.anime_id));
+    } catch { libraryIds = new Set(); }
+  }
+
+  async function handleAddToList(animeId: number, title: string) {
+    try {
+      await updateListEntry(animeId, { status: 'plan_to_watch' });
+      libraryIds.add(animeId);
+      libraryIds = new Set(libraryIds);
+    } catch(e) { /* show error? */ }
   }
 
   function prevSeason() {
@@ -49,7 +68,7 @@
     return '#ff9d9d';
   }
 
-  onMount(load);
+  onMount(() => { load(); loadLibraryIds(); });
 </script>
 
 <div class="season-view">
@@ -78,11 +97,22 @@
   {:else}
     <div class="poster-grid">
       {#each entries as entry (entry.id)}
-        <div class="poster-card">
+        <div class="poster-card"
+          tabindex="0"
+          role="button"
+          aria-label={entry.title}
+          on:click={() => dispatch('select', { anime_id: entry.id })}
+          on:keydown={(e) => e.key === 'Enter' && dispatch('select', { anime_id: entry.id })}
+        >
           {#if entry.image_url}
             <img class="poster-img" src={entry.image_url} alt={entry.title} loading="lazy" />
           {:else}
             <div class="poster-img placeholder" />
+          {/if}
+          {#if libraryIds.has(entry.id)}
+            <span class="in-library-badge">In Library</span>
+          {:else}
+            <button class="add-btn" on:click|stopPropagation={() => handleAddToList(entry.id, entry.title)} aria-label="Add {entry.title} to list">+</button>
           {/if}
           <div class="poster-info">
             <p class="poster-title">{entry.title}</p>
@@ -109,8 +139,11 @@
   .genre-select { border: 1px solid rgba(143,183,255,0.2); border-radius: 999px; padding: 0.4rem 0.8rem; background: rgba(255,255,255,0.06); color: var(--color-text); font-size: 0.85rem; }
   .genre-select option { background: #141820; }
   .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem; }
-  .poster-card { border: 1px solid rgba(143,183,255,0.1); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+  .poster-card { position: relative; border: 1px solid rgba(143,183,255,0.1); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
   .poster-card:hover { border-color: rgba(143,183,255,0.3); transform: translateY(-2px); }
+  .in-library-badge { position: absolute; top: 0.3rem; right: 0.3rem; font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 999px; background: rgba(126,232,126,0.2); color: #7ee87e; font-weight: 600; z-index: 1; }
+  .add-btn { position: absolute; top: 0.3rem; right: 0.3rem; border: 1px solid rgba(143,183,255,0.3); border-radius: 4px; padding: 0.1rem 0.4rem; background: rgba(143,183,255,0.15); color: var(--color-accent); cursor: pointer; font-size: 0.85rem; line-height: 1.2; z-index: 1; }
+  .add-btn:hover { background: rgba(143,183,255,0.3); }
   .poster-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
   .poster-img.placeholder { background: rgba(143,183,255,0.08); }
   .poster-info { padding: 0.5rem 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }

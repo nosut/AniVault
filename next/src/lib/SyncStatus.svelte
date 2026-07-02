@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getSyncStatus, type AniListSyncStatus } from './api';
+  import { getSyncStatus, triggerSync, type AniListSyncStatus } from './api';
 
   let status: AniListSyncStatus | null = null;
   let error: string | null = null;
   let loading = false;
+  let syncing = false;
   let intervalId: ReturnType<typeof setInterval> | null = null;
 
   async function refresh() {
@@ -17,6 +18,18 @@
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function handleSyncNow() {
+    syncing = true;
+    try {
+      await triggerSync();
+      await refresh();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      syncing = false;
     }
   }
 
@@ -39,8 +52,8 @@
 <section class="sync-card" aria-label="Sync status">
   <div class="sync-header">
     <p class="eyebrow">Sync</p>
-    <button type="button" class="btn-refresh" on:click={refresh} disabled={loading}>
-      {loading ? 'Refreshing…' : 'Sync Now'}
+    <button type="button" class="btn-refresh" on:click={handleSyncNow} disabled={syncing || loading}>
+      {syncing ? 'Syncing…' : 'Sync Now'}
     </button>
   </div>
 

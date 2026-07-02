@@ -43,6 +43,11 @@
     currentView = 'detail';
   }
 
+  function handleSeasonSelect(event: CustomEvent<{ anime_id: number }>) {
+    detailAnimeId = event.detail.anime_id;
+    currentView = 'detail';
+  }
+
   function handleDetailBack() {
     currentView = 'library';
   }
@@ -99,7 +104,7 @@
     {:else if currentView === 'library'}
       <LibraryView on:select={handleLibrarySelect} />
     {:else if currentView === 'season'}
-      <SeasonView />
+      <SeasonView on:select={handleSeasonSelect} />
     {:else if currentView === 'calendar'}
       <CalendarView />
     {:else if currentView === 'history'}

@@ -5,13 +5,23 @@
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
+  function loadPersistedFilter(): string | null {
+    try { return localStorage.getItem('anivault-library-filter'); }
+    catch { return null; }
+  }
+
+  function persistFilter(value: string | null) {
+    try { localStorage.setItem('anivault-library-filter', value ?? ''); }
+    catch {}
+  }
+
   let query = '';
-  let statusFilter: string | null = null;
+  let statusFilter: string | null = loadPersistedFilter();
   let entries: LibraryEntry[] = [];
   let loading = false;
   let error = '';
 
-  let sortKey: 'title' | 'status' | 'progress' | 'score' = 'title';
+  let sortKey: 'title' | 'status' | 'progress' = 'title';
   let sortDir: 'asc' | 'desc' = 'asc';
   let viewMode: 'table' | 'grid' = 'table';
 
@@ -51,7 +61,7 @@
     }, 300);
   }
 
-  function setSort(key: 'title' | 'status' | 'progress' | 'score') {
+  function setSort(key: 'title' | 'status' | 'progress') {
     if (sortKey === key) {
       sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     } else {
@@ -195,12 +205,6 @@
           cmp = pa - pb;
           break;
         }
-        case 'score': {
-          const sa = a.score ?? -1;
-          const sb = b.score ?? -1;
-          cmp = sa - sb;
-          break;
-        }
       }
       return cmp * dir;
     });
@@ -235,7 +239,7 @@
         class:dragover={dragEntry !== null && dragEntry.status !== opt.value}
         on:dragover={(e) => { e.preventDefault(); }}
         on:drop={() => handleDrop(opt.value)}
-        on:click={() => { statusFilter = opt.value; load(); }}
+        on:click={() => { statusFilter = opt.value; persistFilter(statusFilter); load(); }}
       >
         {opt.label}
       </button>
@@ -345,24 +349,6 @@
                 {/if}
               </button>
             </th>
-            <th class="col-score" scope="col">
-              <button
-                type="button"
-                class="sort-btn"
-                aria-label="Sort by score"
-                aria-sort={sortKey === 'score'
-                  ? sortDir === 'asc'
-                    ? 'ascending'
-                    : 'descending'
-                  : 'none'}
-                on:click={() => setSort('score')}
-              >
-                Score
-                {#if sortKey === 'score'}
-                  <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
-                {/if}
-              </button>
-            </th>
           </tr>
         </thead>
         <tbody>
@@ -374,12 +360,11 @@
                 <td><div class="skeleton-line"></div></td>
                 <td><div class="skeleton-badge"></div></td>
                 <td><div class="skeleton-line short"></div></td>
-                <td><div class="skeleton-line short"></div></td>
               </tr>
             {/each}
           {:else if sortedEntries.length === 0}
             <tr class="empty-row">
-              <td colspan="6">
+              <td colspan="5">
                 <p class="empty">No anime found.</p>
               </td>
             </tr>
@@ -424,9 +409,6 @@
                       <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
                     </div>
                   </div>
-                </td>
-                <td class="num-cell">
-                  {entry.score ?? '-'}
                 </td>
               </tr>
             {/each}
