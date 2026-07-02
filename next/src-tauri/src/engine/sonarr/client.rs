@@ -68,10 +68,9 @@ impl SonarrClient {
 
     fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "X-Api-Key",
-            HeaderValue::from_str(&self.api_key).expect("invalid API key for header"),
-        );
+        if let Ok(value) = HeaderValue::from_str(&self.api_key) {
+            headers.insert("X-Api-Key", value);
+        }
         headers
     }
 
