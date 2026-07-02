@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getLibraryStats, type LibraryStats, type EngineEvent } from './api';
+  import { createEventDispatcher } from 'svelte';
+  import { getLibraryStats, getContinueWatching, type LibraryStats, type ContinueWatchingEntry, type EngineEvent } from './api';
+
+  const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
   import RecognitionCard from './RecognitionCard.svelte';
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
@@ -24,9 +27,28 @@
     }
   }
 
-  onMount(loadStats);
+  onMount(() => {
+    void loadStats();
+    void loadContinue();
+  });
 
   let knownFilesRef: KnownFiles | null = null;
+
+  let continueEntries: ContinueWatchingEntry[] = [];
+  let continueLoading = true;
+  let continueError: string | null = null;
+
+  async function loadContinue() {
+    continueLoading = true;
+    continueError = null;
+    try {
+      continueEntries = await getContinueWatching();
+    } catch (e) {
+      continueError = e instanceof Error ? e.message : String(e);
+    } finally {
+      continueLoading = false;
+    }
+  }
 
   function handleConfirmed() {
     knownFilesRef?.load();
@@ -46,6 +68,36 @@
   <header class="dash-header">
     <h1 class="dash-title">Dashboard</h1>
   </header>
+
+  <section class="continue-watching">
+    <h3>Continue Watching</h3>
+    {#if continueLoading}
+      <div class="skeleton-row" />
+    {:else if continueError}
+      <p class="muted">Could not load.</p>
+    {:else if continueEntries.length === 0}
+      <p class="muted">No anime in progress. Start watching to see them here.</p>
+    {:else}
+      <div class="continue-grid">
+        {#each continueEntries as entry}
+          <div class="continue-card" tabindex="0" on:click={() => dispatch('select', { anime_id: entry.anime_id })} on:keydown={(e) => e.key === 'Enter' && dispatch('select', { anime_id: entry.anime_id })}>
+            {#if entry.image_url}
+              <img class="continue-thumb" src={entry.image_url} alt={entry.anime_title} loading="lazy" />
+            {:else}
+              <div class="continue-thumb placeholder" />
+            {/if}
+            <div class="continue-info">
+              <p class="continue-title">{entry.anime_title}</p>
+              <div class="continue-progress-wrap">
+                <div class="continue-progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
+              </div>
+              <span class="continue-episodes">{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </section>
 
   <section class="stats-section" aria-label="Library stats">
     {#if loading}
@@ -219,6 +271,88 @@
     grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
     gap: 0.75rem;
     align-items: start;
+  }
+
+  .continue-watching {
+    margin-bottom: 1rem;
+  }
+
+  .continue-watching h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .continue-watching .muted {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+  }
+
+  .continue-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.6rem;
+  }
+
+  .continue-card {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.5rem;
+    border: 1px solid rgba(143,183,255,0.1);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .continue-card:hover {
+    border-color: rgba(143,183,255,0.3);
+  }
+
+  .continue-thumb {
+    width: 2.5rem;
+    height: 3.5rem;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .continue-thumb.placeholder {
+    background: rgba(143,183,255,0.08);
+  }
+
+  .continue-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .continue-title {
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 0.25rem;
+  }
+
+  .continue-progress-wrap {
+    height: 0.3rem;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+    margin-bottom: 0.2rem;
+  }
+
+  .continue-progress-bar {
+    height: 100%;
+    border-radius: 2px;
+    background: rgba(143,183,255,0.5);
+  }
+
+  .continue-episodes {
+    font-size: 0.72rem;
+    color: var(--color-muted);
   }
 
   @media (max-width: 480px) {

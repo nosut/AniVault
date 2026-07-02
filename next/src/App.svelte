@@ -9,13 +9,15 @@
   import CalendarView from './lib/CalendarView.svelte';
   import StatsView from './lib/StatsView.svelte';
   import HistoryView from './lib/HistoryView.svelte';
+  import SeasonView from './lib/SeasonView.svelte';
   import bannerUrl from './assets/banner.png';
 
-  type View = 'dashboard' | 'library' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
+  type View = 'dashboard' | 'library' | 'season' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
 
   const navItems = [
     { id: 'dashboard' as View, label: 'Dashboard' },
     { id: 'library' as View, label: 'Library' },
+    { id: 'season' as View, label: 'Season' },
     { id: 'calendar' as View, label: 'Calendar' },
     { id: 'history' as View, label: 'History' },
     { id: 'stats' as View, label: 'Stats' },
@@ -96,6 +98,8 @@
       <DashboardView events={latestEvents} />
     {:else if currentView === 'library'}
       <LibraryView on:select={handleLibrarySelect} />
+    {:else if currentView === 'season'}
+      <SeasonView />
     {:else if currentView === 'calendar'}
       <CalendarView />
     {:else if currentView === 'history'}

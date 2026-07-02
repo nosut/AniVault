@@ -413,6 +413,19 @@ export function getCalendar(invokeFn: InvokeFn = tauriInvoke): Promise<CalendarE
   return invokeFn<CalendarEntry[]>('get_calendar');
 }
 
+export interface ContinueWatchingEntry {
+  anime_id: number;
+  anime_title: string;
+  image_url: string | null;
+  watched_episodes: number;
+  episode_count: number | null;
+  last_watched_at: number;
+}
+
+export function getContinueWatching(invokeFn: InvokeFn = tauriInvoke): Promise<ContinueWatchingEntry[]> {
+  return invokeFn<ContinueWatchingEntry[]>('continue_watching');
+}
+
 export interface ScoreBucket {
   range: string;
   count: number;
@@ -430,6 +443,21 @@ export interface AnimeStats {
 
 export function getStatistics(invokeFn: InvokeFn = tauriInvoke): Promise<AnimeStats> {
   return invokeFn<AnimeStats>('get_statistics');
+}
+
+export interface SeasonAnimeEntry {
+  id: number;
+  title: string;
+  image_url: string | null;
+  episodes: number | null;
+  status: string | null;
+  format: string | null;
+  average_score: number | null;
+  popularity: number | null;
+}
+
+export function getSeasonAnime(season: string, year: number, genre?: string, invokeFn: InvokeFn = tauriInvoke): Promise<SeasonAnimeEntry[]> {
+  return invokeFn<SeasonAnimeEntry[]>('get_season_anime', { season, year, genre: genre ?? null });
 }
 
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {

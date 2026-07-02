@@ -123,6 +123,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::backup_database,
+            commands::continue_watching,
             commands::confirm_identification,
             commands::connect_anilist_oauth,
             commands::connect_sonarr,
@@ -138,6 +139,7 @@ pub fn run() {
             commands::get_statistics,
             commands::get_engine_status,
             commands::get_episode_files,
+            commands::get_season_anime,
             commands::get_launch_on_startup,
             commands::get_library_folders,
             commands::get_library_stats,

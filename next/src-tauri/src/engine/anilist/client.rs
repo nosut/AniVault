@@ -283,10 +283,48 @@ mutation ($mediaId: Int, $progress: Int) {
         }
         Ok(entries)
     }
+
+    /// Fetch anime from a specific season with optional genre filter.
+    /// season: "WINTER", "SPRING", "SUMMER", "FALL"
+    pub async fn fetch_season_anime(
+        &self,
+        season: &str,
+        year: i32,
+        genre: Option<&str>,
+    ) -> anyhow::Result<Vec<SeasonAnime>> {
+        let genre_filter = if let Some(g) = genre {
+            format!("genre: \"{}\", ", g)
+        } else {
+            String::new()
+        };
+        let query_str = format!(
+            "query {{ Page(page: 1, perPage: 50) {{ media(season: {}, seasonYear: {}, {}type: ANIME, sort: POPULARITY_DESC) {{ id title {{ romaji english }} coverImage {{ large }} episodes status format averageScore popularity }} }} }}",
+            season, year, genre_filter
+        );
+
+        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let media_list = raw.get("data").and_then(|d| d.get("Page")).and_then(|p| p.get("media")).and_then(|m| m.as_array()).cloned().unwrap_or_default();
+        let entries: Vec<SeasonAnime> = media_list.into_iter().filter_map(|m| serde_json::from_value::<SeasonAnime>(m).ok()).collect();
+        Ok(entries)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AiringEntryRaw {
     pub media: Option<Media>,
     pub progress: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SeasonAnime {
+    pub id: i64,
+    pub title: Option<MediaTitle>,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<CoverImage>,
+    pub episodes: Option<i32>,
+    pub status: Option<String>,
+    pub format: Option<String>,
+    #[serde(rename = "averageScore")]
+    pub average_score: Option<i32>,
+    pub popularity: Option<i32>,
 }

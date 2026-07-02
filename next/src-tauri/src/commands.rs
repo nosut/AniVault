@@ -11,7 +11,7 @@ use crate::engine::library_scanner;
 use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
 use crate::engine::migration::{backup, discovery, importer, DuplicateStrategy, MigrationReport, V1DataPaths};
 use crate::engine::runtime::EngineState;
-use crate::engine::storage::{AnimeStats, FileIndexRow, LibraryRow, LibraryStats, WatchHistoryFullRow, WatchHistoryRow};
+use crate::engine::storage::{AnimeStats, ContinueWatchingRow, FileIndexRow, LibraryRow, LibraryStats, WatchHistoryFullRow, WatchHistoryRow};
 use crate::engine::sonarr::client::SonarrClient;
 use crate::engine::tracker::run_tracking_loop;
 use tauri_plugin_notification::NotificationExt;
@@ -698,6 +698,51 @@ pub async fn import_database_inner(
         .map_err(command_error)
 }
 
+// ── Season Browser ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SeasonAnimeEntry {
+    pub id: i64,
+    pub title: String,
+    pub image_url: Option<String>,
+    pub episodes: Option<i32>,
+    pub status: Option<String>,
+    pub format: Option<String>,
+    pub average_score: Option<i32>,
+    pub popularity: Option<i32>,
+}
+
+pub async fn get_season_anime_inner(
+    state: &EngineState,
+    season: String,
+    year: i32,
+    genre: Option<String>,
+) -> anyhow::Result<Vec<SeasonAnimeEntry>> {
+    let token = crate::engine::anilist::auth::load_token(&state.storage).await?.ok_or_else(|| anyhow::anyhow!("not connected"))?;
+    let client = AniListClient::new(token);
+    let entries = client.fetch_season_anime(&season, year, genre.as_deref()).await?;
+    Ok(entries.into_iter().map(|e| SeasonAnimeEntry {
+        id: e.id,
+        title: e.title.as_ref().and_then(|t| t.romaji.clone()).or_else(|| e.title.as_ref().and_then(|t| t.english.clone())).unwrap_or_else(|| format!("#{}", e.id)),
+        image_url: e.cover_image.and_then(|c| c.large),
+        episodes: e.episodes,
+        status: e.status,
+        format: e.format,
+        average_score: e.average_score,
+        popularity: e.popularity,
+    }).collect())
+}
+
+#[tauri::command]
+pub async fn get_season_anime(
+    season: String,
+    year: i32,
+    genre: Option<String>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<SeasonAnimeEntry>, String> {
+    get_season_anime_inner(&state, season, year, genre).await.map_err(command_error)
+}
+
 // ── Calendar ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -747,6 +792,15 @@ pub async fn get_statistics_inner(state: &EngineState) -> anyhow::Result<AnimeSt
 #[tauri::command]
 pub async fn get_statistics(state: tauri::State<'_, EngineState>) -> Result<AnimeStats, String> {
     get_statistics_inner(&state).await.map_err(command_error)
+}
+
+pub async fn continue_watching_inner(state: &EngineState) -> anyhow::Result<Vec<ContinueWatchingRow>> {
+    state.storage.continue_watching(10).await
+}
+
+#[tauri::command]
+pub async fn continue_watching(state: tauri::State<'_, EngineState>) -> Result<Vec<ContinueWatchingRow>, String> {
+    continue_watching_inner(&state).await.map_err(command_error)
 }
 
 // Tauri command wrappers

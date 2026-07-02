@@ -62,6 +62,25 @@
 
   let progressUpdating = new Set<number>();
 
+  let dragEntry: LibraryEntry | null = null;
+
+  function handleDragStart(e: DragEvent, entry: LibraryEntry) {
+    dragEntry = entry;
+    e.dataTransfer!.effectAllowed = 'move';
+  }
+
+  async function handleDrop(newStatus: string | null) {
+    if (!dragEntry || !newStatus || dragEntry.status === newStatus) return;
+    const entry = dragEntry;
+    dragEntry = null;
+    try {
+      await updateListEntry(entry.anime_id, { status: newStatus });
+      entry.status = newStatus;
+    } catch (e) {
+      // revert on next reload
+    }
+  }
+
   async function handleIncrement(entry: LibraryEntry) {
     if (progressUpdating.has(entry.anime_id)) return;
     const newEp = entry.watched_episodes + 1;
@@ -157,6 +176,9 @@
         type="button"
         class="status-tab"
         class:active={statusFilter === opt.value}
+        class:dragover={dragEntry !== null && dragEntry.status !== opt.value}
+        on:dragover={(e) => { e.preventDefault(); }}
+        on:drop={() => handleDrop(opt.value)}
         on:click={() => { statusFilter = opt.value; load(); }}
       >
         {opt.label}
@@ -302,9 +324,12 @@
             {#each sortedEntries as entry (entry.anime_id)}
               <tr
                 class="data-row"
+                draggable="true"
                 tabindex="0"
                 on:click={() => handleRowActivate(entry)}
                 on:keydown={(e) => onRowKeydown(e, entry)}
+                on:dragstart={(e) => handleDragStart(e, entry)}
+                on:dragend={() => dragEntry = null}
               >
                 <td>
                   {#if entry.image_url}
@@ -406,6 +431,11 @@
     background: rgba(143, 183, 255, 0.18);
     color: var(--color-accent);
     border-color: rgba(143, 183, 255, 0.35);
+  }
+
+  .status-tab.dragover {
+    background: rgba(143, 183, 255, 0.25);
+    border-color: var(--color-accent);
   }
 
   .progress-cell {

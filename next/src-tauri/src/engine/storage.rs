@@ -1223,6 +1223,36 @@ impl Storage {
         Ok(AnimeStats { score_distribution, total_anime, total_episodes_watched: total_eps, total_rewatches, avg_score, episodes_today, episodes_this_week })
     }
 
+    pub async fn continue_watching(&self, limit: i64) -> anyhow::Result<Vec<ContinueWatchingRow>> {
+        let rows = sqlx::query(
+            "SELECT a.id as anime_id, \
+             COALESCE(json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             a.image_url, \
+             COALESCE(le.watched_episodes, 0) as watched_episodes, \
+             a.episode_count, \
+             MAX(wh.watched_at) as last_watched_at \
+             FROM watch_history wh \
+             JOIN anime a ON wh.anime_id = a.id \
+             LEFT JOIN list_entry le ON a.id = le.anime_id \
+             WHERE le.status = 'watching' \
+             GROUP BY a.id \
+             ORDER BY last_watched_at DESC \
+             LIMIT ?1"
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.iter().map(|r| ContinueWatchingRow {
+            anime_id: r.get("anime_id"),
+            anime_title: r.get("anime_title"),
+            image_url: r.get("image_url"),
+            watched_episodes: r.get("watched_episodes"),
+            episode_count: r.get("episode_count"),
+            last_watched_at: r.get("last_watched_at"),
+        }).collect())
+    }
+
     pub async fn export_all_watch_history(&self) -> anyhow::Result<Vec<crate::engine::migration::backup::WatchHistoryExport>> {
         use crate::engine::migration::backup::WatchHistoryExport;
         let rows = sqlx::query(
@@ -1239,6 +1269,16 @@ impl Storage {
             source: r.get::<String, _>("source"),
         }).collect())
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ContinueWatchingRow {
+    pub anime_id: i64,
+    pub anime_title: String,
+    pub image_url: Option<String>,
+    pub watched_episodes: i32,
+    pub episode_count: Option<i32>,
+    pub last_watched_at: i64,
 }
 
 pub struct Tests;
