@@ -133,6 +133,7 @@ pub fn run() {
             commands::drain_engine_events,
             commands::export_database,
             commands::fetch_anime_detail,
+            commands::get_anilist_connection_status,
             commands::get_calendar,
             commands::get_engine_status,
             commands::get_launch_on_startup,

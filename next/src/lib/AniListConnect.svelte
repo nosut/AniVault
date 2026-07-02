@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { storeAniListToken, disconnectAniList, importAniListLibrary, connectAniListOauth } from './api';
+  import { onMount } from 'svelte';
+  import { storeAniListToken, disconnectAniList, importAniListLibrary, connectAniListOauth, getAniListConnectionStatus } from './api';
 
   // OAuth state
   let clientId = '';
@@ -10,9 +11,23 @@
   // Manual token state
   let manualToken = '';
   let connected = false;
+  let statusLoading = true;
   let loading = false;
   let error: string | null = null;
   let importReport: { imported: number; merged: number; skipped: number } | null = null;
+
+  async function loadStatus() {
+    statusLoading = true;
+    try {
+      connected = await getAniListConnectionStatus();
+    } catch {
+      connected = false;
+    } finally {
+      statusLoading = false;
+    }
+  }
+
+  onMount(loadStatus);
 
   async function handleOAuthConnect() {
     if (!clientId.trim() || !clientSecret.trim()) return;
@@ -76,7 +91,9 @@
     <p class="error" aria-live="polite">{error}</p>
   {/if}
 
-  {#if !connected}
+  {#if statusLoading}
+    <p class="checking">Checking connection…</p>
+  {:else if !connected}
     {#if oauthError}
       <p class="error" role="alert">{oauthError}</p>
     {/if}
@@ -341,6 +358,12 @@
 
   .btn-disconnect:hover:not(:disabled) {
     background: rgba(255, 157, 157, 0.25);
+  }
+
+  .checking {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    font-style: italic;
   }
 
   .report {

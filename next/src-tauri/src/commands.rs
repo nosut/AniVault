@@ -134,6 +134,10 @@ pub async fn import_anilist_library_inner(state: &EngineState) -> anyhow::Result
     import_library(&client, &state.storage).await
 }
 
+pub async fn get_anilist_connection_status_inner(state: &EngineState) -> anyhow::Result<bool> {
+    auth::is_connected(&state.storage).await
+}
+
 pub async fn get_sync_status_inner(state: &EngineState) -> anyhow::Result<SyncStatus> {
     let (pending, failed, blocked) = state.storage.sync_status_counts("anilist").await?;
     Ok(SyncStatus {
@@ -891,6 +895,15 @@ pub async fn import_anilist_library(
     state: tauri::State<'_, EngineState>,
 ) -> Result<ImportReport, String> {
     import_anilist_library_inner(&state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_anilist_connection_status(
+    state: tauri::State<'_, EngineState>,
+) -> Result<bool, String> {
+    get_anilist_connection_status_inner(&state)
         .await
         .map_err(|e| e.to_string())
 }

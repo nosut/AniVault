@@ -319,6 +319,10 @@ export function importAniListLibrary(invokeFn: InvokeFn = tauriInvoke): Promise<
   return invokeFn<ImportReport>('import_anilist_library');
 }
 
+export function getAniListConnectionStatus(invokeFn: InvokeFn = tauriInvoke): Promise<boolean> {
+  return invokeFn<boolean>('get_anilist_connection_status');
+}
+
 export function getSessionState(invokeFn: InvokeFn = tauriInvoke): Promise<SessionState> {
   return invokeFn<SessionState>('get_session_state');
 }
