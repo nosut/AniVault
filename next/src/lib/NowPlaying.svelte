@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { getTrackingStatus, startTracking, stopTracking, type TrackingStatus, type EngineEvent } from './api';
+  import { getTrackingStatus, startTracking, stopTracking, type TrackingStatus, type EngineEvent, type PlaybackDetectedEvent } from './api';
 
   export let events: EngineEvent[] = [];
 
@@ -9,12 +9,16 @@
   let error: string | null = null;
   let intervalId: ReturnType<typeof setInterval> | null = null;
   let loading = false;
+  let lastPlaybackEvent: PlaybackDetectedEvent['PlaybackDetected'] | null = null;
+  let playbackCandidates: PlaybackDetectedEvent['PlaybackDetected']['candidates'] | null = null;
 
   $: {
     const last = events.at(-1);
     if (last) {
       if ('PlaybackDetected' in last) {
         const pd = last.PlaybackDetected;
+        lastPlaybackEvent = pd;
+        playbackCandidates = pd.candidates;
         lastEvent = `Detected: ${pd.player_name}${pd.episode_guess ? ` ep ${pd.episode_guess}` : ''}`;
       } else if ('ProgressAdvanced' in last) {
         const pa = last.ProgressAdvanced;
@@ -116,6 +120,20 @@
         </div>
       {/if}
     </dl>
+
+    {#if playbackCandidates && playbackCandidates.length > 0}
+      <div class="np-candidates">
+        <p class="np-candidates-label">Match candidates:</p>
+        {#each playbackCandidates.slice(0, 5) as c}
+          <div class="np-candidate">
+            <span class="candidate-title">{c.title}</span>
+            <span class="candidate-confidence">{c.confidence}%</span>
+          </div>
+        {/each}
+      </div>
+    {:else if lastPlaybackEvent}
+      <p class="np-idle">No library matches found. Import your library from AniList first.</p>
+    {/if}
   {:else if status.active}
     <p class="np-idle" aria-live="polite">Waiting for playback…</p>
   {:else}
@@ -222,5 +240,35 @@
   .error {
     color: var(--color-error, #ff9d9d);
     font-size: 0.82rem;
+  }
+
+  .np-candidates {
+    margin-top: 0.25rem;
+  }
+
+  .np-candidates-label {
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .np-candidate {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid rgba(143, 183, 255, 0.2);
+    border-radius: 6px;
+    margin-bottom: 0.3rem;
+    font-size: 0.82rem;
+  }
+
+  .candidate-title {
+    color: var(--color-text);
+  }
+
+  .candidate-confidence {
+    color: var(--color-accent);
+    font-weight: 600;
   }
 </style>

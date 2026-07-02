@@ -287,14 +287,25 @@
 
   .search,
   .filter {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(143, 183, 255, 0.18);
     border-radius: var(--radius-card);
     color: var(--color-text);
     padding: 0.6rem 0.9rem;
     font-family: var(--font-ui);
     font-size: 0.9rem;
     outline: none;
+  }
+
+  .search {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(143, 183, 255, 0.18);
+    min-width: 16rem;
+    flex: 1 1 16rem;
+  }
+
+  .filter {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(143, 183, 255, 0.25);
+    min-width: 10rem;
   }
 
   .search {

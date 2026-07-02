@@ -91,6 +91,15 @@ pub fn unix_now_inner() -> anyhow::Result<i64> {
 }
 
 pub async fn store_anilist_token_inner(token: &str, state: &EngineState) -> anyhow::Result<()> {
+    // Validate token before storing
+    let client = AniListClient::new(token.to_string());
+    client.fetch_user_list(None).await.map_err(|e| {
+        anyhow::anyhow!(
+            "Invalid AniList token. Make sure you copied the Access Token (not the Client ID) from https://anilist.co/settings/developer. Error: {}",
+            e
+        )
+    })?;
+
     auth::store_token(&state.storage, token).await?;
     Ok(())
 }
