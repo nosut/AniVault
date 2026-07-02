@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   confirmIdentification,
   deleteSetting,
+  disconnectAniList,
   drainEngineEvents,
   getEngineStatus,
   getSetting,
+  getSyncStatus,
   getTrackingStatus,
   identifyFile,
+  importAniListLibrary,
   listKnownFiles,
   listRecentHistory,
   markEpisodeWatched,
@@ -14,6 +17,7 @@ import {
   setSetting,
   startTracking,
   stopTracking,
+  storeAniListToken,
 } from './api';
 
 describe('api wrappers', () => {
@@ -142,5 +146,31 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(entries);
     await expect(listKnownFiles(10, invoke)).resolves.toEqual(entries);
     expect(invoke).toHaveBeenCalledWith('list_known_files', { limit: 10 });
+  });
+
+  it('stores anilist token', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(storeAniListToken('tok', invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('store_anilist_token', { token: 'tok' });
+  });
+
+  it('disconnects anilist', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(disconnectAniList(invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('disconnect_anilist');
+  });
+
+  it('imports anilist library', async () => {
+    const report = { imported: 1, merged: 1, skipped: 0 };
+    const invoke = vi.fn().mockResolvedValue(report);
+    await expect(importAniListLibrary(invoke)).resolves.toEqual(report);
+    expect(invoke).toHaveBeenCalledWith('import_anilist_library');
+  });
+
+  it('gets sync status', async () => {
+    const status = { pending: 1, failed: 0, blocked: 0, last_sync_at: null };
+    const invoke = vi.fn().mockResolvedValue(status);
+    await expect(getSyncStatus(invoke)).resolves.toEqual(status);
+    expect(invoke).toHaveBeenCalledWith('get_sync_status');
   });
 });

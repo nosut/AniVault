@@ -5,6 +5,8 @@
   import MarkWatched from './lib/MarkWatched.svelte';
   import RecognitionCard from './lib/RecognitionCard.svelte';
   import KnownFiles from './lib/KnownFiles.svelte';
+  import AniListConnect from './lib/AniListConnect.svelte';
+  import SyncStatus from './lib/SyncStatus.svelte';
 
   const navItems = ['Home', 'Library', 'Tracking', 'Sync', 'Settings'];
 
@@ -112,6 +114,8 @@
     <NowPlaying events={latestEvents} />
     <MarkWatched />
     <RecognitionCard events={latestEvents} onConfirmed={handleConfirmed} />
+    <AniListConnect />
+    <SyncStatus />
     <KnownFiles bind:this={knownFilesRef} />
   </section>
 </main>

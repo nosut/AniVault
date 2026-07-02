@@ -2,6 +2,7 @@ pub mod commands;
 pub mod engine;
 
 use crate::engine::runtime::initialize_engine_at;
+use crate::engine::sync_worker;
 use tauri::Manager;
 
 pub fn run() {
@@ -15,6 +16,7 @@ pub fn run() {
 
             let state = tauri::async_runtime::block_on(initialize_engine_at(database_path))
                 .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
+            sync_worker::spawn_sync_worker(&state);
             app.manage(state);
             Ok(())
         })
@@ -33,6 +35,10 @@ pub fn run() {
             commands::identify_file,
             commands::confirm_identification,
             commands::list_known_files,
+            commands::store_anilist_token,
+            commands::disconnect_anilist,
+            commands::import_anilist_library,
+            commands::get_sync_status,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Taiga Next");

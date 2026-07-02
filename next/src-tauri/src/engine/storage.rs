@@ -2,6 +2,7 @@ use serde::Deserialize;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
+use std::time::SystemTime;
 
 pub struct AnimeRow {
     pub id: i64,
@@ -32,6 +33,29 @@ pub struct FileIndexRow {
     pub episode: Option<i32>,
     pub confidence: i32,
     pub indexed_at: i64,
+}
+
+pub struct ListEntryFullRow {
+    pub anime_id: i64,
+    pub status: String,
+    pub watched_episodes: i32,
+    pub score: Option<i32>,
+    pub notes: Option<String>,
+    pub date_started: Option<String>,
+    pub date_completed: Option<String>,
+    pub local_updated: i64,
+    pub remote_updated: Option<i64>,
+}
+
+pub struct SyncQueueRow {
+    pub id: i64,
+    pub anime_id: i64,
+    pub service: String,
+    pub operation: String,
+    pub payload_json: String,
+    pub created_at: i64,
+    pub retry_count: i32,
+    pub next_retry_at: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -336,6 +360,221 @@ impl Storage {
                 indexed_at: row.get("indexed_at"),
             })
             .collect())
+    }
+
+    // ── M3 AniList storage helpers ──────────────────────────────────────────
+
+    pub async fn upsert_anime(
+        &self,
+        id: i64,
+        titles_json: &str,
+        episode_count: i32,
+        image_url: Option<&str>,
+        last_modified: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO anime (id, titles_json, episode_count, image_url, last_modified)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET
+               titles_json = excluded.titles_json,
+               episode_count = excluded.episode_count,
+               image_url = excluded.image_url,
+               last_modified = excluded.last_modified",
+        )
+        .bind(id)
+        .bind(titles_json)
+        .bind(episode_count)
+        .bind(image_url)
+        .bind(last_modified)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn upsert_list_entry_full(
+        &self,
+        anime_id: i64,
+        status: &str,
+        watched_episodes: i32,
+        score: Option<i32>,
+        notes: &str,
+        local_updated: i64,
+        remote_updated: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO list_entry (anime_id, status, watched_episodes, score, notes, local_updated, remote_updated)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(anime_id) DO UPDATE SET
+               status = excluded.status,
+               watched_episodes = excluded.watched_episodes,
+               score = excluded.score,
+               notes = excluded.notes,
+               local_updated = excluded.local_updated,
+               remote_updated = excluded.remote_updated",
+        )
+        .bind(anime_id)
+        .bind(status)
+        .bind(watched_episodes)
+        .bind(score)
+        .bind(notes)
+        .bind(local_updated)
+        .bind(remote_updated)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_list_entry_full(
+        &self,
+        anime_id: i64,
+    ) -> anyhow::Result<Option<ListEntryFullRow>> {
+        let row = sqlx::query(
+            "SELECT anime_id, status, watched_episodes, score, notes,
+                    date_started, date_completed, local_updated, remote_updated
+             FROM list_entry WHERE anime_id = ?1",
+        )
+        .bind(anime_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| ListEntryFullRow {
+            anime_id: r.get("anime_id"),
+            status: r.get("status"),
+            watched_episodes: r.get("watched_episodes"),
+            score: r.get("score"),
+            notes: r.get("notes"),
+            date_started: r.get("date_started"),
+            date_completed: r.get("date_completed"),
+            local_updated: r.get("local_updated"),
+            remote_updated: r.get("remote_updated"),
+        }))
+    }
+
+    pub async fn upsert_tracker_mapping(
+        &self,
+        anime_id: i64,
+        service: &str,
+        remote_id: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT OR IGNORE INTO tracker_mapping (anime_id, service, remote_id)
+             VALUES (?1, ?2, ?3)",
+        )
+        .bind(anime_id)
+        .bind(service)
+        .bind(remote_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn fetch_pending_sync_rows(
+        &self,
+        service: &str,
+        limit: i64,
+    ) -> anyhow::Result<Vec<SyncQueueRow>> {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let rows = sqlx::query(
+            "SELECT id, anime_id, service, operation, payload_json,
+                    created_at, retry_count, next_retry_at
+             FROM sync_queue
+             WHERE service = ?1
+               AND (next_retry_at IS NULL OR next_retry_at <= ?2)
+             ORDER BY created_at ASC
+             LIMIT ?3",
+        )
+        .bind(service)
+        .bind(now)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| SyncQueueRow {
+                id: r.get("id"),
+                anime_id: r.get("anime_id"),
+                service: r.get("service"),
+                operation: r.get("operation"),
+                payload_json: r.get("payload_json"),
+                created_at: r.get("created_at"),
+                retry_count: r.get("retry_count"),
+                next_retry_at: r.get("next_retry_at"),
+            })
+            .collect())
+    }
+
+    pub async fn delete_sync_row(&self, id: i64) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM sync_queue WHERE id = ?1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete_tracker_mappings(&self, service: &str) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM tracker_mapping WHERE service = ?1")
+            .bind(service)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_sync_retry(
+        &self,
+        id: i64,
+        retry_count: i32,
+        next_retry_at: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE sync_queue SET retry_count = ?1, next_retry_at = ?2 WHERE id = ?3",
+        )
+        .bind(retry_count)
+        .bind(next_retry_at)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn sync_status_counts(
+        &self,
+        service: &str,
+    ) -> anyhow::Result<(i64, i64, i64)> {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let pending: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sync_queue WHERE service = ?1 AND retry_count = 0",
+        )
+        .bind(service)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let failed: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sync_queue
+             WHERE service = ?1
+               AND retry_count > 0
+               AND retry_count < 3
+               AND (next_retry_at IS NULL OR next_retry_at <= ?2)",
+        )
+        .bind(service)
+        .bind(now)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let blocked: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sync_queue WHERE service = ?1 AND retry_count >= 3",
+        )
+        .bind(service)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok((pending, failed, blocked))
     }
 }
 

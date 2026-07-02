@@ -59,6 +59,19 @@ export interface FileIndexEntry {
   indexed_at: number;
 }
 
+export interface AniListSyncStatus {
+  pending: number;
+  failed: number;
+  blocked: number;
+  last_sync_at: number | null;
+}
+
+export interface ImportReport {
+  imported: number;
+  merged: number;
+  skipped: number;
+}
+
 export interface PlaybackDetectedEvent {
   PlaybackDetected: {
     player_name: string;
@@ -186,4 +199,20 @@ export function confirmIdentification(filePath: string, animeId: number, episode
 
 export function listKnownFiles(limit: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileIndexEntry[]> {
   return invokeFn<FileIndexEntry[]>('list_known_files', { limit });
+}
+
+export function storeAniListToken(token: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('store_anilist_token', { token });
+}
+
+export function disconnectAniList(invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('disconnect_anilist');
+}
+
+export function importAniListLibrary(invokeFn: InvokeFn = tauriInvoke): Promise<ImportReport> {
+  return invokeFn<ImportReport>('import_anilist_library');
+}
+
+export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {
+  return invokeFn<AniListSyncStatus>('get_sync_status');
 }

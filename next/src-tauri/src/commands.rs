@@ -2,12 +2,23 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::watch;
 
+use crate::engine::anilist::auth;
+use crate::engine::anilist::client::AniListClient;
+use crate::engine::anilist::import::{import_library, ImportReport};
 use crate::engine::events::EngineEvent;
 use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
 use crate::engine::migration::MigrationReport;
 use crate::engine::runtime::EngineState;
 use crate::engine::storage::{FileIndexRow, WatchHistoryRow};
 use crate::engine::tracker::run_tracking_loop;
+
+#[derive(Debug, serde::Serialize)]
+pub struct SyncStatus {
+    pub pending: i64,
+    pub failed: i64,
+    pub blocked: i64,
+    pub last_sync_at: Option<i64>,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct EngineStatus {
@@ -30,6 +41,35 @@ fn unix_now() -> Result<i64, String> {
 
 pub fn unix_now_inner() -> anyhow::Result<i64> {
     unix_now().map_err(|e| anyhow::anyhow!(e))
+}
+
+pub async fn store_anilist_token_inner(token: &str, state: &EngineState) -> anyhow::Result<()> {
+    auth::store_token(&state.storage, token).await?;
+    Ok(())
+}
+
+pub async fn disconnect_anilist_inner(state: &EngineState) -> anyhow::Result<()> {
+    auth::delete_token(&state.storage).await?;
+    state.storage.delete_tracker_mappings("anilist").await?;
+    Ok(())
+}
+
+pub async fn import_anilist_library_inner(state: &EngineState) -> anyhow::Result<ImportReport> {
+    let token = auth::load_token(&state.storage)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("not connected"))?;
+    let client = AniListClient::new(token);
+    import_library(&client, &state.storage).await
+}
+
+pub async fn get_sync_status_inner(state: &EngineState) -> anyhow::Result<SyncStatus> {
+    let (pending, failed, blocked) = state.storage.sync_status_counts("anilist").await?;
+    Ok(SyncStatus {
+        pending,
+        failed,
+        blocked,
+        last_sync_at: None,
+    })
 }
 
 pub async fn get_engine_status_inner(state: &EngineState) -> Result<EngineStatus, String> {
@@ -312,4 +352,43 @@ pub async fn list_known_files(
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<FileIndexRow>, String> {
     list_known_files_inner(limit, &state).await
+}
+
+// ── AniList command wrappers ────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn store_anilist_token(
+    state: tauri::State<'_, EngineState>,
+    token: String,
+) -> Result<(), String> {
+    store_anilist_token_inner(&token, &state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn disconnect_anilist(
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    disconnect_anilist_inner(&state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_anilist_library(
+    state: tauri::State<'_, EngineState>,
+) -> Result<ImportReport, String> {
+    import_anilist_library_inner(&state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_sync_status(
+    state: tauri::State<'_, EngineState>,
+) -> Result<SyncStatus, String> {
+    get_sync_status_inner(&state)
+        .await
+        .map_err(|e| e.to_string())
 }
