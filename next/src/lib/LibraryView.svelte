@@ -13,6 +13,7 @@
 
   let sortKey: 'title' | 'status' | 'progress' | 'score' = 'title';
   let sortDir: 'asc' | 'desc' = 'asc';
+  let viewMode: 'table' | 'grid' = 'table';
 
   let debounceTimer: ReturnType<typeof setTimeout>;
 
@@ -146,6 +147,9 @@
       on:input={debouncedReload}
       aria-label="Search library"
     />
+    <button class="view-toggle" on:click={() => viewMode = viewMode === 'table' ? 'grid' : 'table'} aria-label="Toggle view">
+      {viewMode === 'table' ? '▦ Grid' : '☰ Table'}
+    </button>
   </div>
   <div class="status-tabs">
     {#each statusOptions as opt}
@@ -167,144 +171,179 @@
     </div>
   {/if}
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th class="col-thumb" scope="col">
-            <span class="sr-only">Thumbnail</span>
-          </th>
-          <th class="col-title" scope="col">
-            <button
-              type="button"
-              class="sort-btn"
-              aria-label="Sort by title"
-              aria-sort={sortKey === 'title'
-                ? sortDir === 'asc'
-                  ? 'ascending'
-                  : 'descending'
-                : 'none'}
-              on:click={() => setSort('title')}
-            >
-              Title
-              {#if sortKey === 'title'}
-                <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
-              {/if}
-            </button>
-          </th>
-          <th class="col-status" scope="col">
-            <button
-              type="button"
-              class="sort-btn"
-              aria-label="Sort by status"
-              aria-sort={sortKey === 'status'
-                ? sortDir === 'asc'
-                  ? 'ascending'
-                  : 'descending'
-                : 'none'}
-              on:click={() => setSort('status')}
-            >
-              Status
-              {#if sortKey === 'status'}
-                <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
-              {/if}
-            </button>
-          </th>
-          <th class="col-progress" scope="col">
-            <button
-              type="button"
-              class="sort-btn"
-              aria-label="Sort by progress"
-              aria-sort={sortKey === 'progress'
-                ? sortDir === 'asc'
-                  ? 'ascending'
-                  : 'descending'
-                : 'none'}
-              on:click={() => setSort('progress')}
-            >
-              Progress
-              {#if sortKey === 'progress'}
-                <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
-              {/if}
-            </button>
-          </th>
-          <th class="col-score" scope="col">
-            <button
-              type="button"
-              class="sort-btn"
-              aria-label="Sort by score"
-              aria-sort={sortKey === 'score'
-                ? sortDir === 'asc'
-                  ? 'ascending'
-                  : 'descending'
-                : 'none'}
-              on:click={() => setSort('score')}
-            >
-              Score
-              {#if sortKey === 'score'}
-                <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
-              {/if}
-            </button>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {#if loading}
-          {#each Array.from({ length: 5 }) as _, i (i)}
-            <tr class="skeleton-row">
-              <td><div class="skeleton-thumb"></div></td>
-              <td><div class="skeleton-line"></div></td>
-              <td><div class="skeleton-badge"></div></td>
-              <td><div class="skeleton-line short"></div></td>
-              <td><div class="skeleton-line short"></div></td>
-            </tr>
-          {/each}
-        {:else if sortedEntries.length === 0}
-          <tr class="empty-row">
-            <td colspan="5">
-              <p class="empty">No anime found.</p>
-            </td>
-          </tr>
-        {:else}
-          {#each sortedEntries as entry (entry.anime_id)}
-            <tr
-              class="data-row"
-              tabindex="0"
-              on:click={() => handleRowActivate(entry)}
-              on:keydown={(e) => onRowKeydown(e, entry)}
-            >
-              <td>
-                {#if entry.image_url}
-                  <img
-                    class="thumb"
-                    src={entry.image_url}
-                    alt=""
-                    width="24"
-                    height="24"
-                    loading="lazy"
-                  />
-                {:else}
-                  <div class="thumb fallback" aria-hidden="true"></div>
+  {#if viewMode === 'grid'}
+    <div class="poster-grid">
+      {#each sortedEntries as entry (entry.anime_id)}
+        <div class="poster-card"
+          tabindex="0"
+          role="button"
+          aria-label={`${entry.title}, ${entry.status}`}
+          on:click={() => handleRowActivate(entry)}
+          on:keydown={(e) => e.key === 'Enter' && handleRowActivate(entry)}
+        >
+          {#if entry.image_url}
+            <img class="poster-thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
+          {:else}
+            <div class="poster-thumb placeholder" />
+          {/if}
+          <div class="poster-info">
+            <p class="poster-title">{entry.title}</p>
+            <span class="badge">{formatStatus(entry.status)}</span>
+            <div class="progress-wrap poster-progress">
+              <div class="progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
+              <div class="progress-inner">
+                <span class="progress-text">{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-thumb" scope="col">
+              <span class="sr-only">Thumbnail</span>
+            </th>
+            <th class="col-title" scope="col">
+              <button
+                type="button"
+                class="sort-btn"
+                aria-label="Sort by title"
+                aria-sort={sortKey === 'title'
+                  ? sortDir === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none'}
+                on:click={() => setSort('title')}
+              >
+                Title
+                {#if sortKey === 'title'}
+                  <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
                 {/if}
-              </td>
-              <td class="title-cell">{entry.title}</td>
-              <td>
-                <span class="badge">{formatStatus(entry.status)}</span>
-              </td>
-              <td class="num-cell progress-cell">
-                <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
-                <span>{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
-                <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
-              </td>
-              <td class="num-cell">
-                {entry.score ?? '-'}
+              </button>
+            </th>
+            <th class="col-status" scope="col">
+              <button
+                type="button"
+                class="sort-btn"
+                aria-label="Sort by status"
+                aria-sort={sortKey === 'status'
+                  ? sortDir === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none'}
+                on:click={() => setSort('status')}
+              >
+                Status
+                {#if sortKey === 'status'}
+                  <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                {/if}
+              </button>
+            </th>
+            <th class="col-progress" scope="col">
+              <button
+                type="button"
+                class="sort-btn"
+                aria-label="Sort by progress"
+                aria-sort={sortKey === 'progress'
+                  ? sortDir === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none'}
+                on:click={() => setSort('progress')}
+              >
+                Progress
+                {#if sortKey === 'progress'}
+                  <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                {/if}
+              </button>
+            </th>
+            <th class="col-score" scope="col">
+              <button
+                type="button"
+                class="sort-btn"
+                aria-label="Sort by score"
+                aria-sort={sortKey === 'score'
+                  ? sortDir === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none'}
+                on:click={() => setSort('score')}
+              >
+                Score
+                {#if sortKey === 'score'}
+                  <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                {/if}
+              </button>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if loading}
+            {#each Array.from({ length: 5 }) as _, i (i)}
+              <tr class="skeleton-row">
+                <td><div class="skeleton-thumb"></div></td>
+                <td><div class="skeleton-line"></div></td>
+                <td><div class="skeleton-badge"></div></td>
+                <td><div class="skeleton-line short"></div></td>
+                <td><div class="skeleton-line short"></div></td>
+              </tr>
+            {/each}
+          {:else if sortedEntries.length === 0}
+            <tr class="empty-row">
+              <td colspan="5">
+                <p class="empty">No anime found.</p>
               </td>
             </tr>
-          {/each}
-        {/if}
-      </tbody>
-    </table>
-  </div>
+          {:else}
+            {#each sortedEntries as entry (entry.anime_id)}
+              <tr
+                class="data-row"
+                tabindex="0"
+                on:click={() => handleRowActivate(entry)}
+                on:keydown={(e) => onRowKeydown(e, entry)}
+              >
+                <td>
+                  {#if entry.image_url}
+                    <img
+                      class="thumb"
+                      src={entry.image_url}
+                      alt=""
+                      width="24"
+                      height="24"
+                      loading="lazy"
+                    />
+                  {:else}
+                    <div class="thumb fallback" aria-hidden="true"></div>
+                  {/if}
+                </td>
+                <td class="title-cell">{entry.title}</td>
+                <td>
+                  <span class="badge">{formatStatus(entry.status)}</span>
+                </td>
+                <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
+                  <div class="progress-wrap">
+                    <div class="progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
+                    <div class="progress-inner">
+                      <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
+                      <span class="progress-text">{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
+                      <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
+                    </div>
+                  </div>
+                </td>
+                <td class="num-cell">
+                  {entry.score ?? '-'}
+                </td>
+              </tr>
+            {/each}
+          {/if}
+        </tbody>
+      </table>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -370,11 +409,48 @@
   }
 
   .progress-cell {
+    white-space: nowrap;
+  }
+
+  .progress-wrap {
+    position: relative;
+    width: 100%;
+    height: 1.55rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: rgba(143, 183, 255, 0.25);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+
+  .progress-cell.completed .progress-bar {
+    background: rgba(126, 232, 126, 0.25);
+  }
+
+  .progress-inner {
+    position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.35rem;
-    justify-content: flex-end;
-    white-space: nowrap;
+    height: 100%;
+    padding: 0 0.3rem;
+  }
+
+  .progress-text {
+    font-size: 0.8rem;
+    font-weight: 500;
+    min-width: 3rem;
+    text-align: center;
   }
 
   .progress-btn {
@@ -578,6 +654,78 @@
     height: 1.1rem;
     width: 4rem;
     border-radius: 999px;
+  }
+
+  .view-toggle {
+    border: 1px solid rgba(143, 183, 255, 0.18);
+    border-radius: 999px;
+    padding: 0.45rem 0.8rem;
+    background: rgba(143, 183, 255, 0.06);
+    color: var(--color-muted);
+    cursor: pointer;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .view-toggle:hover {
+    background: rgba(143, 183, 255, 0.15);
+    color: var(--color-text);
+  }
+
+  .poster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: 1rem;
+  }
+
+  .poster-card {
+    border: 1px solid rgba(143, 183, 255, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+
+  .poster-card:hover {
+    border-color: rgba(143, 183, 255, 0.3);
+    transform: translateY(-2px);
+  }
+
+  .poster-thumb {
+    width: 100%;
+    aspect-ratio: 3/4;
+    object-fit: cover;
+    display: block;
+  }
+
+  .poster-thumb.placeholder {
+    background: rgba(143, 183, 255, 0.08);
+  }
+
+  .poster-info {
+    padding: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .poster-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .poster-progress {
+    height: 1.2rem;
+  }
+
+  .poster-progress .progress-text {
+    font-size: 0.72rem;
   }
 
   @keyframes pulse {

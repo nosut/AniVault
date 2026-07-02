@@ -331,6 +331,18 @@ pub async fn mark_episode_watched_inner(
         .await
         .map_err(command_error)?;
 
+    // Auto-complete if last episode marked
+    if let Ok(detail) = state.storage.anime_detail(anime_id).await {
+        if let Some(count) = detail.episode_count {
+            if count > 0 && episode >= count {
+                let _ = state
+                    .storage
+                    .update_list_entry_partial(anime_id, Some("completed"), None, None)
+                    .await;
+            }
+        }
+    }
+
     state.events.publish(EngineEvent::ProgressAdvanced {
         anime_id,
         old_episode: episode.saturating_sub(1),

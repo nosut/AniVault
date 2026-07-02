@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { getTrackingStatus, startTracking, stopTracking, type TrackingStatus, type EngineEvent, type PlaybackDetectedEvent } from './api';
+  import { confirmIdentification, getTrackingStatus, startTracking, stopTracking, type TrackingStatus, type EngineEvent, type PlaybackDetectedEvent } from './api';
 
   export let events: EngineEvent[] = [];
 
@@ -11,6 +11,7 @@
   let loading = false;
   let lastPlaybackEvent: PlaybackDetectedEvent['PlaybackDetected'] | null = null;
   let playbackCandidates: PlaybackDetectedEvent['PlaybackDetected']['candidates'] | null = null;
+  let confirming: number | null = null;
 
   $: {
     const last = events.at(-1);
@@ -62,6 +63,21 @@
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function handleConfirm(animeId: number) {
+    const filePath = status.watching?.file_path;
+    const episode = status.watching?.episode_guess ?? 0;
+    if (!filePath || episode <= 0) return;
+    confirming = animeId;
+    try {
+      await confirmIdentification(filePath, animeId, episode);
+      lastEvent = `Confirmed: anime ${animeId} ep ${episode}`;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      confirming = null;
     }
   }
 
@@ -128,6 +144,12 @@
           <div class="np-candidate">
             <span class="candidate-title">{c.title}</span>
             <span class="candidate-confidence">{c.confidence}%</span>
+            <button class="confirm-btn"
+              on:click|stopPropagation={() => handleConfirm(c.anime_id)}
+              disabled={confirming !== null}
+            >
+              {confirming === c.anime_id ? '...' : 'Confirm'}
+            </button>
           </div>
         {/each}
       </div>
@@ -270,5 +292,22 @@
   .candidate-confidence {
     color: var(--color-accent);
     font-weight: 600;
+  }
+
+  .confirm-btn {
+    border: 1px solid rgba(143, 183, 255, 0.35);
+    border-radius: 4px;
+    padding: 0.15rem 0.5rem;
+    background: rgba(143, 183, 255, 0.15);
+    color: var(--color-accent);
+    cursor: pointer;
+    font-size: 0.75rem;
+  }
+  .confirm-btn:hover {
+    background: rgba(143, 183, 255, 0.25);
+  }
+  .confirm-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 </style>
