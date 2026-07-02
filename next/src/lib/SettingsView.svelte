@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getEngineStatus, getLaunchOnStartup, getSetting, setLaunchOnStartup, setSetting, type EngineStatus } from './api';
+  import { getEngineStatus, getLaunchOnStartup, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, type SonarrStatus, type SonarrImportReport } from './api';
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
 
-  type Tab = 'general' | 'tracking' | 'anilist' | 'about';
+  type Tab = 'general' | 'tracking' | 'anilist' | 'sonarr' | 'about';
   let activeTab: Tab = 'general';
 
   let startupEnabled = false;
@@ -22,6 +22,24 @@
   let engineStatus: EngineStatus | null = null;
   let engineLoading = false;
   let engineError: string | null = null;
+
+  // Sonarr state
+  let sonarrStatus: SonarrStatus | null = null;
+  let sonarrStatusLoading = false;
+  let sonarrStatusError: string | null = null;
+
+  let sonarrUrl = '';
+  let sonarrApiKey = '';
+
+  let sonarrConnecting = false;
+  let sonarrConnectionError: string | null = null;
+
+  let sonarrTesting = false;
+  let sonarrTestResult: 'success' | 'failure' | null = null;
+
+  let sonarrImporting = false;
+  let sonarrImportReport: SonarrImportReport | null = null;
+  let sonarrImportError: string | null = null;
 
   async function loadStartup() {
     startupLoading = true;
@@ -92,10 +110,80 @@
     }
   }
 
+  async function loadSonarrStatus() {
+    sonarrStatusLoading = true;
+    sonarrStatusError = null;
+    try {
+      sonarrStatus = await getSonarrStatus();
+    } catch (e) {
+      sonarrStatusError = e instanceof Error ? e.message : String(e);
+    } finally {
+      sonarrStatusLoading = false;
+    }
+  }
+
+  async function handleConnectSonarr() {
+    sonarrConnecting = true;
+    sonarrConnectionError = null;
+    try {
+      await connectSonarr(sonarrUrl, sonarrApiKey);
+      sonarrApiKey = '';
+      await loadSonarrStatus();
+    } catch (e) {
+      sonarrConnectionError = e instanceof Error ? e.message : String(e);
+    } finally {
+      sonarrConnecting = false;
+    }
+  }
+
+  async function handleDisconnectSonarr() {
+    sonarrConnecting = true;
+    try {
+      await disconnectSonarr();
+      sonarrStatus = null;
+    } catch (e) {
+      sonarrConnectionError = e instanceof Error ? e.message : String(e);
+    } finally {
+      sonarrConnecting = false;
+    }
+  }
+
+  async function handleTestConnection() {
+    sonarrTesting = true;
+    sonarrTestResult = null;
+    try {
+      await connectSonarr(sonarrUrl, sonarrApiKey);
+      sonarrTestResult = 'success';
+      // Clean up test connection
+      await disconnectSonarr();
+      await loadSonarrStatus();
+    } catch (e) {
+      sonarrTestResult = 'failure';
+      sonarrConnectionError = e instanceof Error ? e.message : String(e);
+    } finally {
+      sonarrTesting = false;
+    }
+  }
+
+  async function handleImportSonarr() {
+    sonarrImporting = true;
+    sonarrImportError = null;
+    sonarrImportReport = null;
+    try {
+      sonarrImportReport = await importSonarrSeries();
+      await loadSonarrStatus();
+    } catch (e) {
+      sonarrImportError = e instanceof Error ? e.message : String(e);
+    } finally {
+      sonarrImporting = false;
+    }
+  }
+
   onMount(() => {
     loadStartup();
     loadTracking();
     loadEngineStatus();
+    loadSonarrStatus();
   });
 
   onDestroy(() => {
@@ -106,7 +194,7 @@
 
 <div class="settings-view">
   <nav class="tab-bar" role="tablist" aria-label="Settings sections">
-    {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'anilist', label: 'AniList'}, {id: 'about', label: 'About'}] as tab}
+    {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'anilist', label: 'AniList'}, {id: 'sonarr', label: 'Sonarr'}, {id: 'about', label: 'About'}] as tab}
       <button
         type="button"
         role="tab"
@@ -204,6 +292,139 @@
           <AniListConnect />
           <SyncStatus />
         </div>
+      </div>
+    {/if}
+
+    {#if activeTab === 'sonarr'}
+      <div class="panel" role="tabpanel" id="panel-sonarr" aria-labelledby="tab-sonarr">
+
+        {#if sonarrStatusLoading && !sonarrStatus}
+          <section class="card">
+            <p class="muted">Loading…</p>
+          </section>
+        {:else if sonarrStatusError && !sonarrStatus}
+          <section class="card">
+            <div class="error-row">
+              <p class="error">{sonarrStatusError}</p>
+              <button type="button" class="btn-retry" on:click={loadSonarrStatus}>Retry</button>
+            </div>
+          </section>
+        {:else if sonarrStatus?.connected}
+          <!-- Connected state -->
+          <section class="card">
+            <div class="section-header">
+              <h3>Sonarr Connection</h3>
+              <span class="connected-badge">Connected ✓</span>
+            </div>
+
+            <div class="sonarr-meta">
+              <div class="sonarr-stat">
+                <span class="sonarr-stat-value">{sonarrStatus.series_count}</span>
+                <span class="sonarr-stat-label">series imported</span>
+              </div>
+              <div class="sonarr-stat">
+                <span class="sonarr-stat-value">{sonarrStatus.mapped_count}</span>
+                <span class="sonarr-stat-label">mapped to anime</span>
+              </div>
+              {#if sonarrStatus.last_sync_at}
+                <div class="sonarr-stat">
+                  <span class="sonarr-stat-label">Last synced</span>
+                  <span class="sonarr-stat-value muted">{new Date(sonarrStatus.last_sync_at * 1000).toLocaleString()}</span>
+                </div>
+              {/if}
+            </div>
+
+            {#if sonarrConnectionError}
+              <p class="error">{sonarrConnectionError}</p>
+            {/if}
+
+            <div class="sonarr-actions">
+              <button
+                type="button"
+                class="action-btn"
+                on:click={handleImportSonarr}
+                disabled={sonarrImporting}
+              >
+                {sonarrImporting ? 'Importing…' : 'Import Series'}
+              </button>
+              <button
+                type="button"
+                class="action-btn danger"
+                on:click={handleDisconnectSonarr}
+                disabled={sonarrConnecting}
+              >
+                Disconnect
+              </button>
+            </div>
+
+            {#if sonarrImportReport}
+              <div class="import-report">
+                <p>Imported {sonarrImportReport.imported} series: {sonarrImportReport.auto_mapped} auto-mapped, {sonarrImportReport.unmapped} need manual mapping.</p>
+              </div>
+            {/if}
+            {#if sonarrImportError}
+              <p class="error">{sonarrImportError}</p>
+            {/if}
+          </section>
+        {:else}
+          <!-- Disconnected state -->
+          <section class="card">
+            <h3>Sonarr Connection</h3>
+
+            {#if sonarrConnectionError}
+              <p class="error">{sonarrConnectionError}</p>
+            {/if}
+
+            <div class="form-group">
+              <label class="form-label" for="sonarr-url">URL</label>
+              <input
+                id="sonarr-url"
+                class="form-input"
+                type="text"
+                bind:value={sonarrUrl}
+                placeholder="http://localhost:8989"
+                disabled={sonarrConnecting}
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="sonarr-apikey">API Key</label>
+              <input
+                id="sonarr-apikey"
+                class="form-input"
+                type="password"
+                bind:value={sonarrApiKey}
+                placeholder="Your Sonarr API key"
+                disabled={sonarrConnecting}
+              />
+            </div>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="action-btn outline"
+                on:click={handleTestConnection}
+                disabled={sonarrConnecting || sonarrTesting || !sonarrUrl || !sonarrApiKey}
+              >
+                {sonarrTesting ? 'Testing…' : 'Test Connection'}
+              </button>
+              <button
+                type="button"
+                class="action-btn"
+                on:click={handleConnectSonarr}
+                disabled={sonarrConnecting || sonarrTesting || !sonarrUrl || !sonarrApiKey}
+              >
+                {sonarrConnecting ? 'Connecting…' : 'Connect'}
+              </button>
+            </div>
+
+            {#if sonarrTestResult === 'success'}
+              <p class="success-msg">Connection successful!</p>
+            {:else if sonarrTestResult === 'failure'}
+              <p class="error">Connection failed. Check URL and API key.</p>
+            {/if}
+          </section>
+        {/if}
       </div>
     {/if}
 
@@ -455,5 +676,116 @@
     font-size: 0.9rem;
     word-break: break-all;
     text-align: right;
+  }
+
+  .connected-badge {
+    font-size: 0.78rem;
+    color: #7ee87e;
+    font-weight: 600;
+  }
+
+  .sonarr-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .sonarr-stat {
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid rgba(143, 183, 255, 0.15);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .sonarr-stat-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
+  .sonarr-stat-value.muted {
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--color-muted);
+  }
+
+  .sonarr-stat-label {
+    font-size: 0.72rem;
+    color: var(--color-muted);
+  }
+
+  .sonarr-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .action-btn.danger {
+    border-color: rgba(255, 130, 130, 0.4);
+    background: rgba(255, 130, 130, 0.1);
+    color: #ffb0b0;
+  }
+
+  .action-btn.danger:hover {
+    background: rgba(255, 130, 130, 0.2);
+  }
+
+  .action-btn.outline {
+    background: transparent;
+    border-color: rgba(143, 183, 255, 0.35);
+  }
+
+  .action-btn.outline:hover {
+    background: rgba(143, 183, 255, 0.12);
+  }
+
+  .form-group {
+    display: grid;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .form-label {
+    font-size: 0.82rem;
+    color: var(--color-muted);
+  }
+
+  .form-input {
+    border: 1px solid rgba(143, 183, 255, 0.25);
+    border-radius: 8px;
+    padding: 0.55rem 0.7rem;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text);
+    font-size: 0.9rem;
+  }
+
+  .form-input:focus {
+    outline: 2px solid rgba(143, 183, 255, 0.4);
+    outline-offset: 1px;
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .import-report {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid rgba(143, 183, 255, 0.2);
+    border-radius: 10px;
+    background: rgba(143, 183, 255, 0.06);
+    font-size: 0.82rem;
+    color: #c8d2e0;
+  }
+
+  .success-msg {
+    margin-top: 0.5rem;
+    color: #7ee87e;
+    font-size: 0.82rem;
   }
 </style>
