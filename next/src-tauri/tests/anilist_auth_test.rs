@@ -1,5 +1,5 @@
-use taiga_next::engine::anilist::auth::{delete_token, load_token, store_token};
-use taiga_next::engine::storage::Storage;
+use anivault_core::engine::anilist::auth::{delete_token, load_token, store_token};
+use anivault_core::engine::storage::Storage;
 
 async fn new_storage() -> Storage {
     let storage = Storage::connect("sqlite::memory:").await.unwrap();

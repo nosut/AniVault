@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use taiga_next::engine::events::EngineEvent;
-use taiga_next::engine::runtime::{initialize_engine_at, sqlite_url_for_path};
+use anivault_core::engine::events::EngineEvent;
+use anivault_core::engine::runtime::{initialize_engine_at, sqlite_url_for_path};
 
 fn remove_dir_all_retry(path: PathBuf) {
     let mut last_err = None;

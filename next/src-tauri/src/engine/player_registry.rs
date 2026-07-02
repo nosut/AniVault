@@ -7,6 +7,10 @@ pub fn builtin_player_registry() -> Vec<PlayerDef> {
             window_title_hint: Some("mpv".to_string()),
         },
         PlayerDef {
+            process_name: "mpc-be64.exe".to_string(),
+            window_title_hint: Some("Media Player Classic".to_string()),
+        },
+        PlayerDef {
             process_name: "mpc-hc64.exe".to_string(),
             window_title_hint: Some("Media Player Classic".to_string()),
         },

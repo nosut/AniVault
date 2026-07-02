@@ -5,6 +5,7 @@
   import LibraryView from './lib/LibraryView.svelte';
   import DetailView from './lib/DetailView.svelte';
   import SettingsView from './lib/SettingsView.svelte';
+  import bannerUrl from './assets/banner.png';
 
   type View = 'dashboard' | 'library' | 'detail' | 'settings';
 
@@ -61,7 +62,10 @@
 
 <main class="shell">
   <aside class="rail" aria-label="Main navigation">
-    <div class="brand">Taiga Next</div>
+    <div class="brand-block">
+      <img class="brand-banner" src={bannerUrl} alt="AniVault" />
+      <div class="brand-label">AniVault</div>
+    </div>
     <nav class="nav-list">
       {#each navItems as item}
         <button
@@ -111,6 +115,28 @@
     font-weight: 800;
     letter-spacing: -0.04em;
     font-size: 1.1rem;
+  }
+
+  .brand-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .brand-banner {
+    display: block;
+    width: 100%;
+    max-width: 10rem;
+    height: auto;
+    border-radius: 12px;
+  }
+
+  .brand-label {
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    font-size: 1.1rem;
+    color: var(--color-text);
   }
 
   .nav-list {

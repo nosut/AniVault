@@ -1,7 +1,7 @@
-use taiga_next::engine::events::EngineEvent;
-use taiga_next::engine::runtime::{fresh_test_state, EngineState};
-use taiga_next::engine::scanner::ScanResult;
-use taiga_next::engine::session::process_scan_result;
+use anivault_core::engine::events::EngineEvent;
+use anivault_core::engine::runtime::{fresh_test_state, EngineState};
+use anivault_core::engine::scanner::ScanResult;
+use anivault_core::engine::session::process_scan_result;
 
 fn make_scan_result(player: &str, file: &str, title: &str) -> ScanResult {
     ScanResult {
@@ -27,7 +27,7 @@ async fn process_scan_result_emits_playback_detected_event() {
     assert_eq!(events.len(), 1);
     assert!(matches!(
         events[0],
-        taiga_next::engine::events::EngineEvent::PlaybackDetected { .. }
+        anivault_core::engine::events::EngineEvent::PlaybackDetected { .. }
     ));
 }
 

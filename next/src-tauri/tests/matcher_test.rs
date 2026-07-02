@@ -1,5 +1,5 @@
-use taiga_next::engine::matcher::{recognize_file, confirm_identification};
-use taiga_next::engine::runtime::{fresh_test_state, EngineState};
+use anivault_core::engine::matcher::{recognize_file, confirm_identification};
+use anivault_core::engine::runtime::{fresh_test_state, EngineState};
 
 async fn test_state() -> EngineState {
     fresh_test_state().await
@@ -87,7 +87,7 @@ async fn confirm_identification_upserts_file_index() {
     let events = state.events.drain();
     assert!(events.iter().any(|e| matches!(
         e,
-        taiga_next::engine::events::EngineEvent::AnimeIdentified(ev)
+        anivault_core::engine::events::EngineEvent::AnimeIdentified(ev)
             if ev.anime_id == 42 && ev.episode == 3
     )));
 }

@@ -1,8 +1,8 @@
-use taiga_next::commands::{
+use anivault_core::commands::{
     get_tracking_status_inner, list_recent_history_inner, mark_episode_watched_inner,
     start_tracking_inner, stop_tracking_inner,
 };
-use taiga_next::engine::runtime::fresh_test_state;
+use anivault_core::engine::runtime::fresh_test_state;
 
 #[tokio::test]
 async fn tracking_starts_and_stops() {

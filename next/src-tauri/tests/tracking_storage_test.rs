@@ -1,4 +1,4 @@
-use taiga_next::engine::storage::Storage;
+use anivault_core::engine::storage::Storage;
 
 #[tokio::test]
 async fn fetch_anime_returns_none_for_missing_id() {

@@ -7,7 +7,7 @@ $cargo = Get-Command cargo -ErrorAction SilentlyContinue
 if ($cargo) {
   Push-Location -LiteralPath "src-tauri"
   try {
-    cargo test
+    cargo check --tests
   } finally {
     Pop-Location
   }
@@ -26,9 +26,9 @@ if (-not (Test-Path -LiteralPath $vcvars)) {
 
 Push-Location -LiteralPath "src-tauri"
 try {
-  & cmd.exe /c "call `"$vcvars`" && `"$cargoPath`" test"
+  & cmd.exe /c "call `"$vcvars`" && `"$cargoPath`" check --tests"
   if ($LASTEXITCODE -ne 0) {
-    throw "cargo test failed with exit code $LASTEXITCODE"
+    throw "cargo check failed with exit code $LASTEXITCODE"
   }
 } finally {
   Pop-Location

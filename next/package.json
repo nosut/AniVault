@@ -1,5 +1,5 @@
 {
-  "name": "taiga-next",
+  "name": "anivault",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1"
+    "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1",
+    "bundle": "npm run build && pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/bundle.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

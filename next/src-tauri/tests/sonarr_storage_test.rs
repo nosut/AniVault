@@ -1,4 +1,4 @@
-use taiga_next::engine::storage::{SonarrSeriesDb, SonarrMappingDb, Tests};
+use anivault_core::engine::storage::{SonarrSeriesDb, SonarrMappingDb, Tests};
 
 #[tokio::test]
 async fn sonarr_series_upsert_and_list() {

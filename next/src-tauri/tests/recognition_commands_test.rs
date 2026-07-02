@@ -1,9 +1,9 @@
-use taiga_next::commands::{
+use anivault_core::commands::{
     confirm_identification_inner, identify_file_inner, list_known_files_inner,
 };
-use taiga_next::engine::runtime::fresh_test_state;
+use anivault_core::engine::runtime::fresh_test_state;
 
-async fn test_state() -> taiga_next::engine::runtime::EngineState {
+async fn test_state() -> anivault_core::engine::runtime::EngineState {
     fresh_test_state().await
 }
 

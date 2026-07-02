@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Taiga Next",
+  "productName": "AniVault",
   "version": "0.1.0",
-  "identifier": "app.taiga.next",
+  "identifier": "app.anivault.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Taiga Next",
+        "title": "AniVault",
         "width": 1280,
         "height": 820,
         "minWidth": 960,
@@ -20,11 +20,12 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' asset: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' ipc: http://localhost:*; script-src 'self'"
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all"
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico", "icons/icon.png"]
   }
 }

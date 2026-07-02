@@ -1,11 +1,11 @@
-use taiga_next::commands::{
+use anivault_core::commands::{
     delete_setting_inner, drain_engine_events_inner, get_engine_status_inner, get_setting_inner,
     set_setting_inner,
 };
-use taiga_next::engine::events::EngineEvent;
-use taiga_next::engine::runtime::initialize_engine_at;
+use anivault_core::engine::events::EngineEvent;
+use anivault_core::engine::runtime::initialize_engine_at;
 
-async fn test_state(name: &str) -> taiga_next::engine::runtime::EngineState {
+async fn test_state(name: &str) -> anivault_core::engine::runtime::EngineState {
     let root = std::env::temp_dir().join(format!("anivault-command-test-{}-{name}", std::process::id()));
     if root.exists() {
         std::fs::remove_dir_all(&root).unwrap();

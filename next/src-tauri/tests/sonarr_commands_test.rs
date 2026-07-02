@@ -1,7 +1,7 @@
-use taiga_next::commands::{
+use anivault_core::commands::{
     get_sonarr_status_inner, disconnect_sonarr_inner, remap_sonarr_inner,
 };
-use taiga_next::engine::runtime::fresh_test_state;
+use anivault_core::engine::runtime::fresh_test_state;
 
 #[tokio::test]
 async fn sonarr_status_not_connected_when_no_key() {
@@ -31,7 +31,7 @@ async fn remap_sonarr_updates_mapping() {
     let state = fresh_test_state().await;
 
     // Insert a series + unmapped mapping
-    let series = taiga_next::engine::storage::SonarrSeriesDb {
+    let series = anivault_core::engine::storage::SonarrSeriesDb {
         sonarr_id: 42,
         title: "Test Series".into(),
         season_count: 1,
@@ -49,7 +49,7 @@ async fn remap_sonarr_updates_mapping() {
     };
     state.storage.sonarr_series_upsert(&series).await.unwrap();
 
-    let mapping = taiga_next::engine::storage::SonarrMappingDb {
+    let mapping = anivault_core::engine::storage::SonarrMappingDb {
         id: None,
         sonarr_id: 42,
         anime_id: None,

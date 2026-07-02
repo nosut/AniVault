@@ -1,4 +1,4 @@
-use taiga_next::engine::parser::parse_filename;
+use anivault_core::engine::parser::parse_filename;
 
 fn assert_parse(input: &str, title: Option<&str>, expected_title: &str, episode: i32) {
     let result = parse_filename(input, title).unwrap();
@@ -94,4 +94,189 @@ fn parse_no_match() {
 #[test]
 fn parse_episode_zero_rejected() {
     assert!(parse_filename("Show E00.mkv", None).is_none());
+}
+
+// ============================================================
+// Edge case tests for AniVault filename parser expansion
+// ============================================================
+
+// 1. Batch/range patterns — first episode of a range
+#[test]
+fn parse_batch_range_jujutsu() {
+    let result = parse_filename("[SubsPlease] Jujutsu Kaisen - 01-12 [1080p]", None)
+        .expect("should parse batch range");
+    assert_eq!(result.episode_number, 1, "episode 1 from range '01-12'");
+    assert!(
+        result.cleaned_title.to_lowercase().contains("jujutsu kaisen"),
+        "title should contain 'Jujutsu Kaisen', got '{}'",
+        result.cleaned_title
+    );
+    assert_eq!(
+        result.release_group.as_deref(),
+        Some("SubsPlease"),
+        "release group"
+    );
+    assert!(result.quality.is_some(), "quality tag should be extracted");
+}
+
+#[test]
+fn parse_batch_range_steins_gate() {
+    let result = parse_filename("Steins;Gate - 01-24 [BD 1080p].mkv", None)
+        .expect("should parse batch range");
+    assert_eq!(result.episode_number, 1, "episode 1 from range '01-24'");
+    assert!(
+        result.cleaned_title.to_lowercase().contains("steins;gate"),
+        "title should contain 'Steins;Gate', got '{}'",
+        result.cleaned_title
+    );
+}
+
+// 2. Spelled-out season/episode words
+#[test]
+fn parse_season_episode_spelled() {
+    assert_parse(
+        "Attack on Titan Season 2 Episode 5 [1080p].mkv",
+        None,
+        "Attack on Titan",
+        5,
+    );
+}
+
+#[test]
+fn parse_second_season_episode_spelled() {
+    assert_parse(
+        "Mushoku Tensei 2nd Season Episode 12.mkv",
+        None,
+        "Mushoku Tensei",
+        12,
+    );
+}
+
+#[test]
+fn parse_s2_ep_prefix() {
+    assert_parse("Title - S2 EP05.mkv", None, "Title", 5);
+}
+
+// 3. Secondary brackets and fansub groups
+#[test]
+fn parse_double_brackets_fff() {
+    let result = parse_filename("[[FFF] Fate Zero] - 01 [1080p].mkv", None)
+        .expect("should parse double-bracket pattern");
+    assert_eq!(result.episode_number, 1, "episode 1");
+    assert!(
+        result.cleaned_title.to_lowercase().contains("fate zero"),
+        "title should contain 'Fate Zero', got '{}'",
+        result.cleaned_title
+    );
+    assert!(result.quality.is_some(), "quality should be present");
+}
+
+#[test]
+fn parse_tilde_range() {
+    let result =
+        parse_filename("[Erai-raws] Mushoku Tensei - 01 ~ 23 [1080p][Multiple Subtitle].mkv", None)
+            .expect("should parse tilde-range");
+    assert_eq!(result.episode_number, 1, "episode 1 from tilde range");
+    assert!(
+        result.cleaned_title.to_lowercase().contains("mushoku tensei"),
+        "title should contain 'Mushoku Tensei', got '{}'",
+        result.cleaned_title
+    );
+    assert_eq!(
+        result.release_group.as_deref(),
+        Some("Erai-raws"),
+        "release group"
+    );
+    assert!(result.quality.is_some(), "quality tag should be extracted");
+}
+
+// 4. Resolution / dimensions
+#[test]
+fn parse_resolution_1920x1080() {
+    assert_parse("Title - 01 [1920x1080].mkv", None, "Title", 1);
+}
+
+#[test]
+fn parse_resolution_1280x720() {
+    assert_parse("Title - 01 [1280x720 Hi10p].mkv", None, "Title", 1);
+}
+
+// 5. Decimal quality tags (e.g. 720p.10bit)
+#[test]
+fn parse_decimal_quality() {
+    assert_parse("Title [720p.10bit][SubGroup] - 01.mkv", None, "Title", 1);
+}
+
+// 6. Release group AFTER quality bracket
+#[test]
+fn parse_group_after_quality() {
+    assert_parse("Title - 01 [1080p][Kamikaze].mkv", None, "Title", 1);
+}
+
+// 7. BD/DVD volume notation — should not crash, gracefully returns None
+#[test]
+fn parse_vol1_bd() {
+    let result = parse_filename("Title - Vol.1 [BD 1080p].mkv", None);
+    assert!(
+        result.is_none(),
+        "expected None for 'Vol.1' pattern, got: {:?}",
+        result
+    );
+}
+
+#[test]
+fn parse_bd_vol2() {
+    let result = parse_filename("Title - BD Vol.2 [1080p].mkv", None);
+    assert!(
+        result.is_none(),
+        "expected None for 'BD Vol.2' pattern, got: {:?}",
+        result
+    );
+}
+
+// 8. Multi-digit episodes (up to 2000)
+#[test]
+fn parse_four_digit_episode() {
+    assert_parse("One Piece - 1000.mkv", None, "One Piece", 1000);
+}
+
+#[test]
+fn parse_four_digit_episode_brackets() {
+    assert_parse("Detective Conan - 1085 [1080p].mkv", None, "Detective Conan", 1085);
+}
+
+// 9. Titles that start with or contain numbers
+#[test]
+fn parse_title_starts_with_number() {
+    let result = parse_filename("86 Eighty Six - 01 [1080p].mkv", None)
+        .expect("should parse title starting with number");
+    assert_eq!(result.episode_number, 1, "episode 1, not 86");
+    assert!(
+        result.cleaned_title.to_lowercase().contains("86 eighty six"),
+        "title should contain '86 Eighty Six', got '{}'",
+        result.cleaned_title
+    );
+}
+
+#[test]
+fn parse_title_with_number_hyphen() {
+    let result = parse_filename("3-gatsu no Lion - 01.mkv", None)
+        .expect("should parse title with numeric prefix");
+    assert_eq!(result.episode_number, 1, "episode 1, not 3");
+    assert!(
+        result.cleaned_title.to_lowercase().contains("3-gatsu no lion"),
+        "title should contain '3-gatsu no Lion', got '{}'",
+        result.cleaned_title
+    );
+}
+
+// 10. No episode number (movie / special) — returns None gracefully
+#[test]
+fn parse_movie_no_episode() {
+    let result = parse_filename("[SubGroup] Your Name [1080p].mkv", None);
+    assert!(
+        result.is_none(),
+        "expected None for movie without episode, got: {:?}",
+        result
+    );
 }

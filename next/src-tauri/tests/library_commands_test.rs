@@ -1,4 +1,4 @@
-use taiga_next::engine::runtime::fresh_test_state;
+use anivault_core::engine::runtime::fresh_test_state;
 
 #[tokio::test]
 async fn search_library_returns_matches() {
@@ -14,7 +14,7 @@ async fn search_library_returns_matches() {
         .await
         .unwrap();
     let result =
-        taiga_next::commands::search_library_inner("bebop".into(), None, 10, 0, &state)
+        anivault_core::commands::search_library_inner("bebop".into(), None, 10, 0, &state)
             .await
             .unwrap();
     assert_eq!(result.len(), 1);
@@ -33,7 +33,7 @@ async fn get_library_stats_returns_counts() {
         .upsert_list_entry_full(1, "watching", 3, None, "", 0, 0)
         .await
         .unwrap();
-    let stats = taiga_next::commands::get_library_stats_inner(&state)
+    let stats = anivault_core::commands::get_library_stats_inner(&state)
         .await
         .unwrap();
     assert!(stats.watching >= 1);
@@ -52,7 +52,7 @@ async fn fetch_anime_detail_returns_data() {
         .upsert_list_entry_full(1, "completed", 12, Some(8), "", 0, 0)
         .await
         .unwrap();
-    let detail = taiga_next::commands::fetch_anime_detail_inner(1, &state)
+    let detail = anivault_core::commands::fetch_anime_detail_inner(1, &state)
         .await
         .unwrap();
     assert_eq!(detail.list_status, Some("completed".to_string()));
@@ -72,7 +72,7 @@ async fn update_list_entry_edits_progress() {
         .upsert_list_entry_full(1, "watching", 3, None, "", 0, 0)
         .await
         .unwrap();
-    taiga_next::commands::update_list_entry_inner(1, None, Some(7), None, &state)
+    anivault_core::commands::update_list_entry_inner(1, None, Some(7), None, &state)
         .await
         .unwrap();
     let entry = state.storage.get_list_entry(1).await.unwrap().unwrap();

@@ -7,7 +7,7 @@ use crate::engine::anilist::client::AniListClient;
 use crate::engine::anilist::import::{import_library, ImportReport};
 use crate::engine::events::EngineEvent;
 use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
-use crate::engine::migration::MigrationReport;
+use crate::engine::migration::{backup, discovery, importer, DuplicateStrategy, MigrationReport, V1DataPaths};
 use crate::engine::runtime::EngineState;
 use crate::engine::storage::{FileIndexRow, LibraryRow, LibraryStats, WatchHistoryRow};
 use crate::engine::sonarr::client::SonarrClient;
@@ -472,6 +472,7 @@ pub async fn connect_sonarr_inner(url: &str, api_key: &str, state: &EngineState)
 pub async fn disconnect_sonarr_inner(state: &EngineState) -> anyhow::Result<()> {
     state.storage.delete_setting("sonarr.url").await?;
     state.storage.delete_setting("sonarr.api_key").await?;
+    state.storage.delete_setting("sonarr.last_sync_at").await?;
     state.storage.sonarr_mapping_delete_all().await?;
     state.storage.sonarr_series_delete_all().await?;
     Ok(())
@@ -563,6 +564,64 @@ pub async fn remap_sonarr_inner(
     Ok(())
 }
 
+// ── Migration command inner functions ──────────────────────────────────────
+
+pub async fn discover_v1_data_inner() -> Result<V1DataPaths, String> {
+    Ok(discovery::discover_v1_data())
+}
+
+pub async fn preview_migration_inner(_state: &EngineState) -> Result<MigrationReport, String> {
+    let paths = discovery::discover_v1_data();
+    importer::dry_run_import(&paths).await.map_err(command_error)
+}
+
+pub async fn run_migration_inner(
+    state: &EngineState,
+    strategy: DuplicateStrategy,
+) -> Result<MigrationReport, String> {
+    let paths = discovery::discover_v1_data();
+    if !paths.found {
+        return Err("No v1 data found. Cannot run migration.".to_string());
+    }
+    // Backup first
+    if let Err(e) = backup::backup_database(&state.storage).await {
+        tracing::warn!("Backup failed (continuing): {}", e);
+    }
+    importer::live_import(&state.storage, &paths, strategy)
+        .await
+        .map_err(command_error)
+}
+
+pub async fn backup_database_inner(state: &EngineState) -> Result<String, String> {
+    backup::backup_database(&state.storage)
+        .await
+        .map_err(command_error)
+}
+
+pub async fn restore_database_inner(
+    state: &EngineState,
+    backup_path: String,
+) -> Result<String, String> {
+    backup::restore_database(&state.storage, &backup_path)
+        .await
+        .map_err(command_error)
+}
+
+pub async fn export_database_inner(state: &EngineState) -> Result<String, String> {
+    backup::export_database(&state.storage)
+        .await
+        .map_err(command_error)
+}
+
+pub async fn import_database_inner(
+    state: &EngineState,
+    json: String,
+) -> Result<MigrationReport, String> {
+    backup::import_database(&state.storage, &json)
+        .await
+        .map_err(command_error)
+}
+
 // Tauri command wrappers
 
 #[tauri::command]
@@ -572,9 +631,56 @@ pub async fn get_engine_status(
     get_engine_status_inner(&state).await
 }
 
+// ── Migration command wrappers ─────────────────────────────────────────────
+
 #[tauri::command]
-pub async fn preview_migration_report() -> Result<MigrationReport, String> {
-    Ok(MigrationReport::default())
+pub async fn backup_database(
+    state: tauri::State<'_, EngineState>,
+) -> Result<String, String> {
+    backup_database_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn discover_v1_data() -> Result<V1DataPaths, String> {
+    discover_v1_data_inner().await
+}
+
+#[tauri::command]
+pub async fn export_database(
+    state: tauri::State<'_, EngineState>,
+) -> Result<String, String> {
+    export_database_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn import_database(
+    json: String,
+    state: tauri::State<'_, EngineState>,
+) -> Result<MigrationReport, String> {
+    import_database_inner(&state, json).await
+}
+
+#[tauri::command]
+pub async fn preview_migration(
+    state: tauri::State<'_, EngineState>,
+) -> Result<MigrationReport, String> {
+    preview_migration_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn restore_database(
+    backup_path: String,
+    state: tauri::State<'_, EngineState>,
+) -> Result<String, String> {
+    restore_database_inner(&state, backup_path).await
+}
+
+#[tauri::command]
+pub async fn run_migration(
+    strategy: DuplicateStrategy,
+    state: tauri::State<'_, EngineState>,
+) -> Result<MigrationReport, String> {
+    run_migration_inner(&state, strategy).await
 }
 
 #[tauri::command]

@@ -1,3 +1,3 @@
 fn main() {
-    taiga_next::run();
+    anivault_core::run();
 }

@@ -29,11 +29,18 @@ pub fn run() {
                 .join("anivault.db");
 
             let state = tauri::async_runtime::block_on(
-                initialize_engine_at(database_path, Some(app.handle().clone())),
+                initialize_engine_at(database_path.clone(), Some(app.handle().clone())),
             )
             .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             sync_worker::spawn_sync_worker(&state);
             app.manage(state);
+
+            // Initialize file logging
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                crate::engine::log::init_logging(&log_dir);
+            }
+
+            tracing::info!("AniVault engine initialized at {}", database_path.display());
 
             // Build tray menu
             let show_item = MenuItemBuilder::with_id("show", "Show AniVault").build(app)?;
@@ -50,6 +57,7 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
+            let pause_handle = pause_item.clone();
             let _tray = TrayIconBuilder::new()
                 .icon(tauri::image::Image::from_bytes(include_bytes!("../../../Icon.png")).unwrap())
                 .menu(&menu)
@@ -71,6 +79,12 @@ pub fn run() {
                             state
                                 .tracking_paused
                                 .store(!current, std::sync::atomic::Ordering::Relaxed);
+                            let label = if current {
+                                "Resume Tracking"
+                            } else {
+                                "Pause Tracking"
+                            };
+                            let _ = pause_handle.set_text(label);
                         }
                         "quit" => {
                             let confirmed = app
@@ -108,12 +122,15 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::backup_database,
             commands::confirm_identification,
             commands::connect_sonarr,
             commands::delete_setting,
             commands::disconnect_anilist,
             commands::disconnect_sonarr,
+            commands::discover_v1_data,
             commands::drain_engine_events,
+            commands::export_database,
             commands::fetch_anime_detail,
             commands::get_engine_status,
             commands::get_launch_on_startup,
@@ -127,11 +144,14 @@ pub fn run() {
             commands::identify_file,
             commands::import_sonarr_series,
             commands::import_anilist_library,
+            commands::import_database,
             commands::list_known_files,
             commands::list_recent_history,
             commands::mark_episode_watched,
-            commands::preview_migration_report,
+            commands::preview_migration,
             commands::remap_sonarr,
+            commands::restore_database,
+            commands::run_migration,
             commands::search_library,
             commands::set_launch_on_startup,
             commands::set_setting,
@@ -143,5 +163,5 @@ pub fn run() {
             commands::update_list_entry,
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run Taiga Next");
+        .expect("failed to run AniVault");
 }

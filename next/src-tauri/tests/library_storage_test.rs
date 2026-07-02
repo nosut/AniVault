@@ -1,4 +1,4 @@
-use taiga_next::engine::storage::Tests;
+use anivault_core::engine::storage::Tests;
 
 #[tokio::test]
 async fn search_library_finds_by_title() {

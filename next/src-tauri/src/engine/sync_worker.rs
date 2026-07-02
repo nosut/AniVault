@@ -93,6 +93,7 @@ async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
 pub fn spawn_sync_worker(state: &EngineState) -> tokio::task::JoinHandle<()> {
     let state = state.clone();
     tokio::spawn(async move {
+        tracing::debug!("Sync worker started for service: anilist");
         loop {
             let _ = drain_queue(&state).await;
             tokio::time::sleep(Duration::from_secs(30)).await;

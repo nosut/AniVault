@@ -1,10 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getEngineStatus, getLaunchOnStartup, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport } from './api';
+  import {
+    discoverV1Data, previewMigration, runMigration,
+    backupDatabase, restoreDatabase, exportDatabase, importDatabase,
+    type V1DataPaths, type MigrationReport,
+  } from './api';
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
 
-  type Tab = 'general' | 'tracking' | 'anilist' | 'sonarr' | 'about';
+  type Tab = 'general' | 'tracking' | 'anilist' | 'sonarr' | 'migration' | 'about';
   let activeTab: Tab = 'general';
 
   let startupEnabled = false;
@@ -40,6 +45,38 @@
   let sonarrImporting = false;
   let sonarrImportReport: SonarrImportReport | null = null;
   let sonarrImportError: string | null = null;
+
+  // Migration state
+  let migrationDiscovering = false;
+  let migrationDataPaths: V1DataPaths | null = null;
+  let migrationDiscoverError: string | null = null;
+
+  let migrationPreviewing = false;
+  let migrationPreviewReport: MigrationReport | null = null;
+  let migrationPreviewError: string | null = null;
+
+  let migrationRunning = false;
+  let migrationStrategy: string = 'Skip';
+  let migrationRunReport: MigrationReport | null = null;
+  let migrationRunError: string | null = null;
+
+  let migrationBackingUp = false;
+  let migrationBackupPath: string | null = null;
+  let migrationBackupError: string | null = null;
+
+  let migrationRestorePath: string = '';
+  let migrationRestoring = false;
+  let migrationRestoreResult: string | null = null;
+  let migrationRestoreError: string | null = null;
+
+  let migrationExporting = false;
+  let migrationExportedJson: string | null = null;
+  let migrationExportError: string | null = null;
+
+  let migrationImportJson: string = '';
+  let migrationImporting = false;
+  let migrationImportReport: MigrationReport | null = null;
+  let migrationImportError: string | null = null;
 
   async function loadStartup() {
     startupLoading = true;
@@ -177,6 +214,57 @@
     }
   }
 
+  async function handleDiscover() {
+    migrationDiscovering = true; migrationDiscoverError = null;
+    try { migrationDataPaths = await discoverV1Data(); }
+    catch (e) { migrationDiscoverError = e instanceof Error ? e.message : String(e); }
+    finally { migrationDiscovering = false; }
+  }
+
+  async function handlePreview() {
+    migrationPreviewing = true; migrationPreviewError = null; migrationPreviewReport = null;
+    try { migrationPreviewReport = await previewMigration(); }
+    catch (e) { migrationPreviewError = e instanceof Error ? e.message : String(e); }
+    finally { migrationPreviewing = false; }
+  }
+
+  async function handleRunMigration() {
+    migrationRunning = true; migrationRunError = null; migrationRunReport = null;
+    try { migrationRunReport = await runMigration(migrationStrategy); }
+    catch (e) { migrationRunError = e instanceof Error ? e.message : String(e); }
+    finally { migrationRunning = false; }
+  }
+
+  async function handleBackup() {
+    migrationBackingUp = true; migrationBackupError = null;
+    try { migrationBackupPath = await backupDatabase(); }
+    catch (e) { migrationBackupError = e instanceof Error ? e.message : String(e); }
+    finally { migrationBackingUp = false; }
+  }
+
+  async function handleRestore() {
+    if (!migrationRestorePath.trim()) return;
+    migrationRestoring = true; migrationRestoreError = null; migrationRestoreResult = null;
+    try { migrationRestoreResult = await restoreDatabase(migrationRestorePath); }
+    catch (e) { migrationRestoreError = e instanceof Error ? e.message : String(e); }
+    finally { migrationRestoring = false; }
+  }
+
+  async function handleExport() {
+    migrationExporting = true; migrationExportError = null;
+    try { migrationExportedJson = await exportDatabase(); }
+    catch (e) { migrationExportError = e instanceof Error ? e.message : String(e); }
+    finally { migrationExporting = false; }
+  }
+
+  async function handleImport() {
+    if (!migrationImportJson.trim()) return;
+    migrationImporting = true; migrationImportError = null; migrationImportReport = null;
+    try { migrationImportReport = await importDatabase(migrationImportJson); }
+    catch (e) { migrationImportError = e instanceof Error ? e.message : String(e); }
+    finally { migrationImporting = false; }
+  }
+
   onMount(() => {
     loadStartup();
     loadTracking();
@@ -192,7 +280,7 @@
 
 <div class="settings-view">
   <nav class="tab-bar" role="tablist" aria-label="Settings sections">
-    {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'anilist', label: 'AniList'}, {id: 'sonarr', label: 'Sonarr'}, {id: 'about', label: 'About'}] as tab}
+    {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'anilist', label: 'AniList'}, {id: 'sonarr', label: 'Sonarr'}, {id: 'migration', label: 'Migration'}, {id: 'about', label: 'About'}] as tab}
       <button
         type="button"
         role="tab"
@@ -423,6 +511,174 @@
             {/if}
           </section>
         {/if}
+      </div>
+    {/if}
+
+    {#if activeTab === 'migration'}
+      <div class="panel" role="tabpanel" id="panel-migration" aria-labelledby="tab-migration">
+
+        <!-- 1. Discover Section -->
+        <section class="card">
+          <div class="section-header">
+            <h3>Find Taiga v1 Data</h3>
+          </div>
+          <p class="hint">Scan common locations for old Taiga v1 data files.</p>
+          <div class="form-actions">
+            <button class="action-btn" on:click={handleDiscover} disabled={migrationDiscovering}>
+              {migrationDiscovering ? 'Scanning…' : 'Discover v1 Data'}
+            </button>
+          </div>
+          {#if migrationDiscoverError}
+            <p class="error">{migrationDiscoverError}</p>
+          {/if}
+          {#if migrationDataPaths}
+            <div class="migration-path-list">
+              <p class="path-item"><span class="path-label">SQLite DB:</span> {migrationDataPaths.sqlite_path ?? 'not found'}</p>
+              <p class="path-item"><span class="path-label">History XML:</span> {migrationDataPaths.history_xml_path ?? 'not found'}</p>
+              <p class="path-item"><span class="path-label">Data Dir:</span> {migrationDataPaths.data_dir ?? 'unknown'}</p>
+              {#if !migrationDataPaths.found}
+                <p class="muted">No v1 data detected at known locations.</p>
+              {/if}
+            </div>
+          {/if}
+        </section>
+
+        <!-- 2. Dry Run Preview -->
+        <section class="card">
+          <div class="section-header">
+            <h3>Preview Import</h3>
+          </div>
+          <p class="hint">See what will be imported before applying changes.</p>
+          <div class="form-actions">
+            <button class="action-btn" on:click={handlePreview} disabled={migrationPreviewing || !migrationDataPaths?.found}>
+              {migrationPreviewing ? 'Analyzing…' : 'Dry Run'}
+            </button>
+          </div>
+          {#if migrationPreviewError}
+            <p class="error">{migrationPreviewError}</p>
+          {/if}
+          {#if migrationPreviewReport}
+            <div class="import-report">
+              <p><strong>Anime:</strong> {migrationPreviewReport.imported_anime} to import, {migrationPreviewReport.skipped_anime} skipped</p>
+              <p><strong>Entries:</strong> {migrationPreviewReport.imported_entries} to import, {migrationPreviewReport.skipped_entries} skipped</p>
+              <p><strong>History:</strong> {migrationPreviewReport.imported_history} entries</p>
+              {#if migrationPreviewReport.warnings.length > 0}
+                <p class="warnings-title">Warnings ({migrationPreviewReport.warnings.length})</p>
+                <ul class="warning-list">
+                  {#each migrationPreviewReport.warnings as w}
+                    <li>[{w.source}] {w.message}</li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
+        </section>
+
+        <!-- 3. Run Migration -->
+        <section class="card">
+          <div class="section-header">
+            <h3>Run Migration</h3>
+          </div>
+          <p class="hint">Import v1 data into AniVault. A backup is created automatically.</p>
+          <div class="form-group">
+            <label class="form-label">Duplicate strategy</label>
+            <select class="form-input" bind:value={migrationStrategy}>
+              <option value="Skip">Skip existing</option>
+              <option value="Merge">Merge (update metadata)</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button class="action-btn" on:click={handleRunMigration} disabled={migrationRunning || !migrationDataPaths?.found}>
+              {migrationRunning ? 'Importing…' : 'Import v1 Data'}
+            </button>
+          </div>
+          {#if migrationRunError}
+            <p class="error">{migrationRunError}</p>
+          {/if}
+          {#if migrationRunReport}
+            <div class="import-report">
+              <p>Imported: {migrationRunReport.imported_anime} anime, {migrationRunReport.imported_entries} entries, {migrationRunReport.imported_history} history</p>
+              {#if migrationRunReport.skipped_anime > 0 || migrationRunReport.skipped_entries > 0}
+                <p>Skipped: {migrationRunReport.skipped_anime} anime, {migrationRunReport.skipped_entries} entries</p>
+              {/if}
+            </div>
+          {/if}
+        </section>
+
+        <!-- 4. Backup / Restore -->
+        <section class="card">
+          <div class="section-header">
+            <h3>Backup & Restore</h3>
+          </div>
+          <p class="hint">Create a timestamped backup of your current database.</p>
+          <div class="form-actions">
+            <button class="action-btn outline" on:click={handleBackup} disabled={migrationBackingUp}>
+              {migrationBackingUp ? 'Backing up…' : 'Backup Now'}
+            </button>
+          </div>
+          {#if migrationBackupError}
+            <p class="error">{migrationBackupError}</p>
+          {/if}
+          {#if migrationBackupPath}
+            <p class="success-msg">Backup created: {migrationBackupPath}</p>
+          {/if}
+
+          <div class="form-group" style="margin-top: 1rem;">
+            <label class="form-label">Restore from backup path</label>
+            <input class="form-input" type="text" bind:value={migrationRestorePath} placeholder="Path to backup file" />
+          </div>
+          <div class="form-actions">
+            <button class="action-btn danger" on:click={handleRestore} disabled={migrationRestoring || !migrationRestorePath.trim()}>
+              {migrationRestoring ? 'Restoring…' : 'Restore (requires restart)'}
+            </button>
+          </div>
+          {#if migrationRestoreError}
+            <p class="error">{migrationRestoreError}</p>
+          {/if}
+          {#if migrationRestoreResult}
+            <p class="success-msg">{migrationRestoreResult}</p>
+          {/if}
+        </section>
+
+        <!-- 5. Export / Import -->
+        <section class="card">
+          <div class="section-header">
+            <h3>Export & Import</h3>
+          </div>
+          <p class="hint">Export your library as JSON, or import from a previous export.</p>
+          <div class="form-actions">
+            <button class="action-btn outline" on:click={handleExport} disabled={migrationExporting}>
+              {migrationExporting ? 'Exporting…' : 'Export as JSON'}
+            </button>
+          </div>
+          {#if migrationExportError}
+            <p class="error">{migrationExportError}</p>
+          {/if}
+          {#if migrationExportedJson}
+            <details class="export-details">
+              <summary>Exported JSON ({migrationExportedJson.length} chars)</summary>
+              <pre class="export-pre">{migrationExportedJson.slice(0, 2000)}{migrationExportedJson.length > 2000 ? '...' : ''}</pre>
+            </details>
+          {/if}
+
+          <div class="form-group" style="margin-top: 1rem;">
+            <label class="form-label">Import from JSON</label>
+            <textarea class="form-input" bind:value={migrationImportJson} placeholder="Paste exported JSON here" rows={3}></textarea>
+          </div>
+          <div class="form-actions">
+            <button class="action-btn" on:click={handleImport} disabled={migrationImporting || !migrationImportJson.trim()}>
+              {migrationImporting ? 'Importing…' : 'Import JSON'}
+            </button>
+          </div>
+          {#if migrationImportError}
+            <p class="error">{migrationImportError}</p>
+          {/if}
+          {#if migrationImportReport}
+            <div class="import-report">
+              <p>Imported: {migrationImportReport.imported_anime} anime, {migrationImportReport.imported_entries} entries</p>
+            </div>
+          {/if}
+        </section>
       </div>
     {/if}
 
@@ -805,5 +1061,73 @@
     margin-top: 0.5rem;
     color: #7ee87e;
     font-size: 0.82rem;
+  }
+
+  .migration-path-list {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid rgba(143, 183, 255, 0.2);
+    border-radius: 10px;
+    background: rgba(143, 183, 255, 0.06);
+    font-size: 0.82rem;
+  }
+
+  .path-item {
+    color: #c8d2e0;
+    margin-bottom: 0.25rem;
+  }
+
+  .path-label {
+    color: var(--color-muted);
+    width: 7rem;
+    display: inline-block;
+  }
+
+  .warnings-title {
+    margin-top: 0.5rem;
+    color: var(--color-warning, #f0c040);
+    font-weight: 600;
+  }
+
+  .warning-list {
+    margin: 0.25rem 0 0 1.2rem;
+    font-size: 0.78rem;
+    color: var(--color-warning, #f0c040);
+  }
+
+  .warning-list li {
+    margin-bottom: 0.15rem;
+  }
+
+  .export-details {
+    margin-top: 0.75rem;
+    font-size: 0.82rem;
+    color: var(--color-muted);
+  }
+
+  .export-details summary {
+    cursor: pointer;
+  }
+
+  .export-pre {
+    margin-top: 0.5rem;
+    padding: 0.6rem;
+    border: 1px solid rgba(143, 183, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: var(--color-muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 16rem;
+    overflow-y: auto;
+  }
+
+  textarea.form-input {
+    resize: vertical;
+    min-height: 3.5rem;
+    font-family: monospace;
+    font-size: 0.78rem;
   }
 </style>

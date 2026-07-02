@@ -1,4 +1,4 @@
-use taiga_next::engine::anilist::client::AniListClient;
+use anivault_core::engine::anilist::client::AniListClient;
 
 #[tokio::test]
 async fn client_constructs_with_token() {

@@ -1,4 +1,4 @@
-use taiga_next::engine::sonarr::client::SonarrClient;
+use anivault_core::engine::sonarr::client::SonarrClient;
 
 #[test]
 fn client_constructs_with_url_and_key() {

@@ -78,6 +78,35 @@ pub async fn process_scan_result(state: &EngineState, result: ScanResult) -> any
                             evidence: format!("auto match: {fp}"),
                         },
                     ));
+
+                    // Auto-advance progress if detected episode is ahead of stored
+                    let old_episode = state
+                        .storage
+                        .get_list_entry(top.anime_id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|e| e.watched_episodes)
+                        .unwrap_or(0);
+
+                    if parsed.episode_number > old_episode {
+                        let _ = state
+                            .storage
+                            .upsert_list_entry_progress(
+                                top.anime_id,
+                                "Watching",
+                                parsed.episode_number,
+                                now,
+                            )
+                            .await;
+
+                        state.events.publish(EngineEvent::ProgressAdvanced {
+                            anime_id: top.anime_id,
+                            old_episode,
+                            new_episode: parsed.episode_number,
+                            source: "auto-detect".to_string(),
+                        });
+                    }
                 }
             }
         }

@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  backupDatabase,
   confirmIdentification,
   connectSonarr,
   deleteSetting,
   disconnectAniList,
   disconnectSonarr,
+  discoverV1Data,
   drainEngineEvents,
+  exportDatabase,
   fetchAnimeDetail,
   getEngineStatus,
   getLaunchOnStartup,
@@ -18,12 +21,15 @@ import {
   getTrackingStatus,
   identifyFile,
   importAniListLibrary,
+  importDatabase,
   importSonarrSeries,
   listKnownFiles,
   listRecentHistory,
   markEpisodeWatched,
-  previewMigrationReport,
+  previewMigration,
   remapSonarr,
+  restoreDatabase,
+  runMigration,
   searchLibrary,
   setLaunchOnStartup,
   setSetting,
@@ -33,6 +39,8 @@ import {
   testSonarrConnection,
   togglePauseTracking,
   updateListEntry,
+  type MigrationReport,
+  type V1DataPaths,
 } from './api';
 
 describe('api wrappers', () => {
@@ -49,10 +57,50 @@ describe('api wrappers', () => {
     expect(invoke).toHaveBeenCalledWith('get_engine_status');
   });
 
-  it('previews migration report through invoke', async () => {
-    const invoke = vi.fn().mockResolvedValue({ imported_anime: 0, skipped_records: 0, warnings: [] });
-    await expect(previewMigrationReport(invoke)).resolves.toEqual({ imported_anime: 0, skipped_records: 0, warnings: [] });
-    expect(invoke).toHaveBeenCalledWith('preview_migration_report');
+  it('discovers v1 data through invoke', async () => {
+    const paths: V1DataPaths = { sqlite_path: null, history_xml_path: null, anime_xml_path: null, list_xml_path: null, data_dir: null, found: false };
+    const invoke = vi.fn().mockResolvedValue(paths);
+    await expect(discoverV1Data(invoke)).resolves.toEqual(paths);
+    expect(invoke).toHaveBeenCalledWith('discover_v1_data');
+  });
+
+  it('previews migration through invoke', async () => {
+    const report: MigrationReport = { imported_anime: 5, imported_entries: 3, imported_history: 10, skipped_anime: 1, skipped_entries: 0, warnings: [] };
+    const invoke = vi.fn().mockResolvedValue(report);
+    await expect(previewMigration(invoke)).resolves.toEqual(report);
+    expect(invoke).toHaveBeenCalledWith('preview_migration');
+  });
+
+  it('runs migration through invoke', async () => {
+    const report: MigrationReport = { imported_anime: 5, imported_entries: 3, imported_history: 10, skipped_anime: 1, skipped_entries: 0, warnings: [] };
+    const invoke = vi.fn().mockResolvedValue(report);
+    await expect(runMigration('Skip', invoke)).resolves.toEqual(report);
+    expect(invoke).toHaveBeenCalledWith('run_migration', { strategy: 'Skip' });
+  });
+
+  it('backs up database through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue('/path/to/backup.db');
+    await expect(backupDatabase(invoke)).resolves.toBe('/path/to/backup.db');
+    expect(invoke).toHaveBeenCalledWith('backup_database');
+  });
+
+  it('restores database through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue('Restored successfully');
+    await expect(restoreDatabase('/path/to/backup.db', invoke)).resolves.toBe('Restored successfully');
+    expect(invoke).toHaveBeenCalledWith('restore_database', { backupPath: '/path/to/backup.db' });
+  });
+
+  it('exports database through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue('{"anime":[]}');
+    await expect(exportDatabase(invoke)).resolves.toBe('{"anime":[]}');
+    expect(invoke).toHaveBeenCalledWith('export_database');
+  });
+
+  it('imports database through invoke', async () => {
+    const report: MigrationReport = { imported_anime: 5, imported_entries: 3, imported_history: 10, skipped_anime: 0, skipped_entries: 0, warnings: [] };
+    const invoke = vi.fn().mockResolvedValue(report);
+    await expect(importDatabase('{"anime":[]}', invoke)).resolves.toEqual(report);
+    expect(invoke).toHaveBeenCalledWith('import_database', { json: '{"anime":[]}' });
   });
 
   it('gets setting through invoke', async () => {

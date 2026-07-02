@@ -1,4 +1,4 @@
-use taiga_next::engine::scanner::{scan_active_players, PlayerDef, ScannerConfig};
+use anivault_core::engine::scanner::{scan_active_players, PlayerDef, ScannerConfig};
 
 #[test]
 fn empty_config_returns_empty_vec() {

@@ -1,4 +1,4 @@
-use taiga_next::engine::storage::Storage;
+use anivault_core::engine::storage::Storage;
 
 #[tokio::test]
 async fn search_anime_by_title_exact() {

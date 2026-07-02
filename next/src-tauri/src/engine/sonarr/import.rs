@@ -11,6 +11,37 @@ pub struct ImportReport {
     pub unmapped: i64,
 }
 
+/// Simple Levenshtein distance between two strings.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let len_a = a_chars.len();
+    let len_b = b_chars.len();
+    if len_a == 0 {
+        return len_b;
+    }
+    if len_b == 0 {
+        return len_a;
+    }
+    let mut prev: Vec<usize> = (0..=len_b).collect();
+    let mut curr = vec![0usize; len_b + 1];
+    for i in 1..=len_a {
+        curr[0] = i;
+        for j in 1..=len_b {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            curr[j] = (prev[j] + 1)
+                .min(curr[j - 1] + 1)
+                .min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[len_b]
+}
+
 /// Score a Sonarr series title against an anime library title.
 /// `anime_titles_json` is a JSON object string with fields: romaji, english, japanese, synonyms[].
 /// Returns 0-100+ (bonus points can push over 100).
@@ -60,6 +91,11 @@ pub fn score_match_series(
                 let ratio = (shared as f64 / sonarr_words.len().max(1) as f64 * 40.0) as i32;
                 best = best.max(ratio);
             }
+        }
+
+        // Bonus: Levenshtein distance < 3 adds +40
+        if levenshtein(&sonarr_lower, &cand_lower) < 3 {
+            best = best.max(40);
         }
     }
 
@@ -222,4 +258,26 @@ pub async fn import_sonarr_series(
         auto_mapped,
         unmapped,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn levenshtein_close_match_adds_bonus() {
+        // "Attack on Titan" vs "Attack on Titans" — one char diff, dist = 1
+        let score = score_match_series("Attack on Titan", r#"{"romaji":"Attack on Titans","english":"","japanese":"","synonyms":[]}"#, 25, Some(25));
+        assert!(score >= 40, "expected >= 40, got {}", score);
+    }
+
+    #[test]
+    fn levenshtein_distance_works() {
+        assert_eq!(levenshtein("", ""), 0);
+        assert_eq!(levenshtein("abc", ""), 3);
+        assert_eq!(levenshtein("", "abc"), 3);
+        assert_eq!(levenshtein("kitten", "sitting"), 3);
+        assert_eq!(levenshtein("attack on titan", "attack on titans"), 1);
+        assert_eq!(levenshtein("hello", "hello"), 0);
+    }
 }

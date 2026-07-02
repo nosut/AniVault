@@ -1,9 +1,9 @@
-use taiga_next::engine::runtime::fresh_test_state;
+use anivault_core::engine::runtime::fresh_test_state;
 
 #[tokio::test]
 async fn session_state_starts_unpaused() {
     let state = fresh_test_state().await;
-    let paused = taiga_next::commands::get_session_state_inner(&state)
+    let paused = anivault_core::commands::get_session_state_inner(&state)
         .await
         .unwrap()
         .paused;
@@ -13,11 +13,11 @@ async fn session_state_starts_unpaused() {
 #[tokio::test]
 async fn toggle_pause_flips_state() {
     let state = fresh_test_state().await;
-    let after = taiga_next::commands::toggle_pause_tracking_inner(&state)
+    let after = anivault_core::commands::toggle_pause_tracking_inner(&state)
         .await
         .unwrap();
     assert!(after.paused);
-    let after2 = taiga_next::commands::toggle_pause_tracking_inner(&state)
+    let after2 = anivault_core::commands::toggle_pause_tracking_inner(&state)
         .await
         .unwrap();
     assert!(!after2.paused);
@@ -26,17 +26,17 @@ async fn toggle_pause_flips_state() {
 #[tokio::test]
 async fn launch_on_startup_setting_roundtrip() {
     let state = fresh_test_state().await;
-    taiga_next::commands::set_launch_on_startup_inner(true, &state)
+    anivault_core::commands::set_launch_on_startup_inner(true, &state)
         .await
         .unwrap();
-    let enabled = taiga_next::commands::get_launch_on_startup_inner(&state)
+    let enabled = anivault_core::commands::get_launch_on_startup_inner(&state)
         .await
         .unwrap();
     assert!(enabled);
-    taiga_next::commands::set_launch_on_startup_inner(false, &state)
+    anivault_core::commands::set_launch_on_startup_inner(false, &state)
         .await
         .unwrap();
-    let disabled = taiga_next::commands::get_launch_on_startup_inner(&state)
+    let disabled = anivault_core::commands::get_launch_on_startup_inner(&state)
         .await
         .unwrap();
     assert!(!disabled);

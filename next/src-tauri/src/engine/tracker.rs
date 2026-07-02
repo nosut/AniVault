@@ -48,7 +48,7 @@ pub async fn run_tracking_loop(
             } // lock dropped here
 
             if let Err(e) = process_scan_result(&state, result.clone()).await {
-                eprintln!("session error: {e}");
+                tracing::warn!("session error: {e}");
             }
         } else {
             let mut ctrl = state.tracking.lock().unwrap();

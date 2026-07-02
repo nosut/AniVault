@@ -1,4 +1,4 @@
-use taiga_next::engine::sonarr::import::score_match_series;
+use anivault_core::engine::sonarr::import::score_match_series;
 
 #[tokio::test]
 async fn import_with_no_series_reports_zero() {

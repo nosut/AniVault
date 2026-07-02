@@ -142,6 +142,7 @@ pub struct SonarrAvailabilityDb {
 #[derive(Clone)]
 pub struct Storage {
     pool: SqlitePool,
+    database_path: String,
 }
 
 impl Storage {
@@ -152,11 +153,13 @@ impl Storage {
             .max_connections(5)
             .connect_with(opts)
             .await?;
-        Ok(Self { pool })
+        let db_path = database_url.strip_prefix("sqlite:").unwrap_or(database_url).to_string();
+        Ok(Self { pool, database_path: db_path })
     }
 
     pub async fn migrate(&self) -> anyhow::Result<()> {
         sqlx::query("PRAGMA journal_mode = WAL").execute(&self.pool).await?;
+        sqlx::query("PRAGMA wal_autocheckpoint = 1000").execute(&self.pool).await?;
         sqlx::migrate!("./migrations").run(&self.pool).await?;
         Ok(())
     }
@@ -166,7 +169,7 @@ impl Storage {
         Ok(row.get::<String, _>(0))
     }
 
-    pub async fn close(self) {
+    pub async fn close(&self) {
         self.pool.close().await;
     }
 
@@ -987,6 +990,89 @@ impl Storage {
             season_count: r.get("season_count"),
             sonarr_status: r.get("sonarr_status"),
         }))
+    }
+
+    pub fn database_path(&self) -> String {
+        self.database_path.clone()
+    }
+
+    pub async fn wal_checkpoint(&self) -> anyhow::Result<()> {
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn log_migration(&self, source: &str, source_id: &str, status: &str, message: &str) -> anyhow::Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        sqlx::query(
+            "INSERT INTO migration_log (source, source_id, status, message, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .bind(source)
+        .bind(source_id)
+        .bind(status)
+        .bind(message)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn export_all_anime(&self) -> anyhow::Result<Vec<crate::engine::migration::backup::AnimeExport>> {
+        use crate::engine::migration::backup::AnimeExport;
+        let rows = sqlx::query(
+            "SELECT id, titles_json, type, status, episode_count, image_url, synopsis, last_modified FROM anime ORDER BY id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| AnimeExport {
+            id: r.get("id"),
+            titles_json: r.get("titles_json"),
+            anime_type: r.get("type"),
+            status: r.get("status"),
+            episode_count: r.get("episode_count"),
+            image_url: r.get("image_url"),
+            synopsis: r.get("synopsis"),
+            last_modified: r.get("last_modified"),
+        }).collect())
+    }
+
+    pub async fn export_all_list_entries(&self) -> anyhow::Result<Vec<crate::engine::migration::backup::ListEntryExport>> {
+        use crate::engine::migration::backup::ListEntryExport;
+        let rows = sqlx::query(
+            "SELECT anime_id, status, watched_episodes, score, notes, date_started, date_completed, local_updated, remote_updated FROM list_entry ORDER BY anime_id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| ListEntryExport {
+            anime_id: r.get("anime_id"),
+            status: r.get("status"),
+            watched_episodes: r.get("watched_episodes"),
+            score: r.get("score"),
+            notes: r.get("notes"),
+            date_started: r.get("date_started"),
+            date_completed: r.get("date_completed"),
+            local_updated: r.get("local_updated"),
+            remote_updated: r.get("remote_updated"),
+        }).collect())
+    }
+
+    pub async fn export_all_watch_history(&self) -> anyhow::Result<Vec<crate::engine::migration::backup::WatchHistoryExport>> {
+        use crate::engine::migration::backup::WatchHistoryExport;
+        let rows = sqlx::query(
+            "SELECT anime_id, episode, file_path, player, watched_at, source FROM watch_history ORDER BY watched_at",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| WatchHistoryExport {
+            anime_id: r.get("anime_id"),
+            episode: r.get("episode"),
+            file_path: r.get("file_path"),
+            player: r.get("player"),
+            watched_at: r.get("watched_at"),
+            source: r.get::<String, _>("source"),
+        }).collect())
     }
 }
 

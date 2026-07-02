@@ -1,5 +1,5 @@
-use taiga_next::engine::anilist::import::merge_entry;
-use taiga_next::engine::storage::Tests;
+use anivault_core::engine::anilist::import::merge_entry;
+use anivault_core::engine::storage::Tests;
 
 #[tokio::test]
 async fn merge_anilist_wins_when_newer() {

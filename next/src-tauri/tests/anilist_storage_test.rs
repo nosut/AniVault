@@ -1,4 +1,4 @@
-use taiga_next::engine::storage::Storage;
+use anivault_core::engine::storage::Storage;
 
 async fn new_storage() -> Storage {
     let storage = Storage::connect("sqlite::memory:").await.unwrap();

@@ -9,6 +9,15 @@ export interface EngineStatus {
   migration_count: number;
 }
 
+export interface V1DataPaths {
+  sqlite_path: string | null;
+  history_xml_path: string | null;
+  anime_xml_path: string | null;
+  list_xml_path: string | null;
+  data_dir: string | null;
+  found: boolean;
+}
+
 export interface MigrationWarning {
   source: string;
   source_id: string;
@@ -17,7 +26,10 @@ export interface MigrationWarning {
 
 export interface MigrationReport {
   imported_anime: number;
-  skipped_records: number;
+  imported_entries: number;
+  imported_history: number;
+  skipped_anime: number;
+  skipped_entries: number;
   warnings: MigrationWarning[];
 }
 
@@ -194,8 +206,32 @@ export function getEngineStatus(invokeFn: InvokeFn = tauriInvoke): Promise<Engin
   return invokeFn<EngineStatus>('get_engine_status');
 }
 
-export function previewMigrationReport(invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport> {
-  return invokeFn<MigrationReport>('preview_migration_report');
+export function previewMigration(invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport> {
+  return invokeFn<MigrationReport>('preview_migration');
+}
+
+export function discoverV1Data(invokeFn: InvokeFn = tauriInvoke): Promise<V1DataPaths> {
+  return invokeFn<V1DataPaths>('discover_v1_data');
+}
+
+export function runMigration(strategy: string, invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport> {
+  return invokeFn<MigrationReport>('run_migration', { strategy });
+}
+
+export function backupDatabase(invokeFn: InvokeFn = tauriInvoke): Promise<string> {
+  return invokeFn<string>('backup_database');
+}
+
+export function restoreDatabase(backupPath: string, invokeFn: InvokeFn = tauriInvoke): Promise<string> {
+  return invokeFn<string>('restore_database', { backupPath });
+}
+
+export function exportDatabase(invokeFn: InvokeFn = tauriInvoke): Promise<string> {
+  return invokeFn<string>('export_database');
+}
+
+export function importDatabase(json: string, invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport> {
+  return invokeFn<MigrationReport>('import_database', { json });
 }
 
 export function getSetting<T>(key: string, invokeFn: InvokeFn = tauriInvoke): Promise<T | null> {
