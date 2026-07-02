@@ -60,8 +60,9 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
                 continue;
             }
 
-            // Parse filename to find episode info
-            let parsed = parse_filename(&file_path_str, None);
+            // Parse filename to find episode info — use just the filename, not the full path
+            let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or(&file_path_str);
+            let parsed = parse_filename(file_name, None);
             let episode = parsed.as_ref().and_then(|p| {
                 if p.episode_number > 0 {
                     Some(p.episode_number)
@@ -80,13 +81,20 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
 
             // If no match from filename, try parent directory names
             if anime_id.is_none() {
-                let parent = file_path.parent().map(|p| p.to_string_lossy().to_string());
-                if let Some(ref parent_dir) = parent {
-                    let parsed_dir = parse_filename(parent_dir, None);
+                // Try immediate parent (e.g., "Season 1")
+                let parent = file_path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).map(|s| s.to_string());
+                // Try grandparent (e.g., the show folder like "2.5 Dimensional Seduction")
+                let grandparent = file_path.parent().and_then(|p| p.parent()).and_then(|p| p.file_name()).and_then(|n| n.to_str()).map(|s| s.to_string());
+                
+                for dir_name in [parent.as_deref(), grandparent.as_deref()].into_iter().flatten() {
+                    let parsed_dir = parse_filename(dir_name, None);
                     if let Some(ref p) = parsed_dir {
                         if !p.cleaned_title.is_empty() {
                             let candidates = storage.search_anime_by_title(&p.cleaned_title, 3).await?;
-                            anime_id = candidates.first().map(|c| c.id);
+                            if let Some(c) = candidates.first() {
+                                anime_id = Some(c.id);
+                                break;
+                            }
                         }
                     }
                 }

@@ -256,7 +256,7 @@ mutation ($mediaId: Int, $progress: Int) {
             .to_string();
 
         let query_str = format!(
-            "query {{ MediaListCollection(userName: \"{}\", status: CURRENT, type: ANIME) {{ lists {{ entries {{ \
+            "query {{ MediaListCollection(userName: \"{}\", type: ANIME) {{ lists {{ entries {{ \
              media {{ id title {{ romaji english native }} coverImage {{ large }} episodes \
              nextAiringEpisode {{ airingAt timeUntilAiring episode }} }} \
              progress }} }} }} }}",

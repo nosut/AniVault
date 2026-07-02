@@ -855,6 +855,8 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
 
     Ok(entries.into_iter().filter_map(|e| {
         let media = e.media?;
+        // Only include entries with known airing data
+        if media.next_airing_episode.is_none() { return None; }
         let title = media.title.as_ref()?
             .romaji.clone()
             .or_else(|| media.title.as_ref()?.english.clone())
