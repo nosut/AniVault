@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import { remapSonarr, searchLibrary, type LibraryEntry } from './api';
+
+  const dispatch = createEventDispatcher<{ changed: void }>();
 
   export let sonarrId: number;
   export let currentAnimeId: number | null;
@@ -38,8 +41,7 @@
     try {
       await remapSonarr(sonarrId, selectedId);
       open = false;
-      // Parent component will re-fetch on next render
-      window.location.reload();
+      dispatch('changed');
     } finally {
       saving = false;
     }
@@ -50,7 +52,7 @@
     try {
       await remapSonarr(sonarrId, null);
       open = false;
-      window.location.reload();
+      dispatch('changed');
     } finally {
       saving = false;
     }

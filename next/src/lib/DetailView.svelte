@@ -385,7 +385,7 @@
           <div class="sonarr-section">
             <div class="section-header-row">
               <h2 class="section-heading">Sonarr</h2>
-              <SonarrRemap sonarrId={sonarrAvail.sonarr_id} currentAnimeId={animeId} />
+              <SonarrRemap sonarrId={sonarrAvail.sonarr_id} currentAnimeId={animeId} on:changed={loadSonarr} />
             </div>
             <div class="sonarr-detail">
               <div class="sonarr-field">
