@@ -85,7 +85,9 @@
       <h4 class="oauth-heading">Connect with AniList</h4>
       <p class="help-text">
         Enter your app's Client ID and Client Secret from <a href="https://anilist.co/settings/developer" target="_blank" rel="noopener">AniList Developer Settings</a>.
-        A browser window will open for authorization.
+      </p>
+      <p class="help-text redirect-note">
+        <strong>Required:</strong> In your AniList app settings, set <strong>Redirect URI</strong> to exactly: <code>http://127.0.0.1:35789</code>
       </p>
 
       <div class="form-group">
