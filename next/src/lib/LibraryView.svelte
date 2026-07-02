@@ -317,6 +317,11 @@
     min-width: 10rem;
   }
 
+  .filter option {
+    background: #141820;
+    color: var(--color-text);
+  }
+
   .search:focus,
   .filter:focus {
     border-color: var(--color-accent);

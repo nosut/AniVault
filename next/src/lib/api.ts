@@ -303,6 +303,10 @@ export function listKnownFiles(limit: number, invokeFn: InvokeFn = tauriInvoke):
   return invokeFn<FileIndexEntry[]>('list_known_files', { limit });
 }
 
+export function connectAniListOauth(clientId: string, clientSecret: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('connect_anilist_oauth', { clientId, clientSecret });
+}
+
 export function storeAniListToken(token: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('store_anilist_token', { token });
 }

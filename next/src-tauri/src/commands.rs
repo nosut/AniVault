@@ -5,6 +5,7 @@ use tokio::sync::watch;
 use crate::engine::anilist::auth;
 use crate::engine::anilist::client::AniListClient;
 use crate::engine::anilist::import::{import_library, ImportReport};
+use crate::engine::anilist::oauth;
 use crate::engine::events::EngineEvent;
 use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
 use crate::engine::migration::{backup, discovery, importer, DuplicateStrategy, MigrationReport, V1DataPaths};
@@ -101,6 +102,21 @@ pub async fn store_anilist_token_inner(token: &str, state: &EngineState) -> anyh
     })?;
 
     auth::store_token(&state.storage, token).await?;
+    Ok(())
+}
+
+pub async fn connect_anilist_oauth_inner(
+    client_id: String,
+    client_secret: String,
+    state: &EngineState,
+) -> anyhow::Result<()> {
+    // Start OAuth flow
+    let token = oauth::start_oauth_flow(&client_id, &client_secret).await?;
+
+    // Store credentials and token
+    auth::store_client_credentials(&state.storage, &client_id, &client_secret).await?;
+    auth::store_token(&state.storage, &token).await?;
+
     Ok(())
 }
 
@@ -790,6 +806,17 @@ pub async fn list_known_files(
 }
 
 // ── AniList command wrappers ────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn connect_anilist_oauth(
+    client_id: String,
+    client_secret: String,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    connect_anilist_oauth_inner(client_id, client_secret, &state)
+        .await
+        .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 pub async fn store_anilist_token(

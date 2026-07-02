@@ -124,6 +124,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::backup_database,
             commands::confirm_identification,
+            commands::connect_anilist_oauth,
             commands::connect_sonarr,
             commands::delete_setting,
             commands::disconnect_anilist,
