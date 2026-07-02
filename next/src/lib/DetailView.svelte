@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, updateListEntry, type AnimeDetail } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, type AnimeDetail, type SonarrAvailability } from './api';
+  import SonarrRemap from './SonarrRemap.svelte';
 
   export let animeId: number;
 
@@ -12,6 +13,9 @@
   let error: string | null = null;
   let savingField: 'progress' | 'status' | 'score' | null = null;
   let saveOk: string | null = null;
+
+  let sonarrAvail: SonarrAvailability | null = null;
+  let sonarrLoading = false;
 
   let draftProgress = 0;
   let draftStatus = '';
@@ -79,10 +83,22 @@
       const d = await fetchAnimeDetail(animeId);
       detail = d;
       setDraftsFromDetail(d);
+      loadSonarr();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadSonarr() {
+    sonarrLoading = true;
+    try {
+      sonarrAvail = await getSonarrAvailability(animeId);
+    } catch {
+      sonarrAvail = null;
+    } finally {
+      sonarrLoading = false;
     }
   }
 
@@ -362,6 +378,41 @@
                 </li>
               {/each}
             </ul>
+          </div>
+        {/if}
+
+        {#if sonarrAvail}
+          <div class="sonarr-section">
+            <div class="section-header-row">
+              <h2 class="section-heading">Sonarr</h2>
+              <SonarrRemap sonarrId={sonarrAvail.sonarr_id} currentAnimeId={animeId} />
+            </div>
+            <div class="sonarr-detail">
+              <div class="sonarr-field">
+                <span class="field-label">Series</span>
+                <span class="field-value">{sonarrAvail.sonarr_title}</span>
+              </div>
+              <div class="sonarr-field">
+                <span class="field-label">Episodes</span>
+                <span class="field-value">
+                  {sonarrAvail.episode_file_count} / {sonarrAvail.episode_count} files on disk
+                </span>
+              </div>
+              <div class="sonarr-field">
+                <span class="field-label">Status</span>
+                <span class="field-value">
+                  {sonarrAvail.sonarr_status ? sonarrAvail.sonarr_status : 'Unknown'}
+                  {#if sonarrAvail.monitored} · Monitored ✓{/if}
+                  {#if sonarrAvail.next_airing} · Next airing: {new Date(sonarrAvail.next_airing * 1000).toLocaleDateString()}{/if}
+                </span>
+              </div>
+              {#if sonarrAvail.path}
+                <div class="sonarr-field">
+                  <span class="field-label">Path</span>
+                  <span class="field-value path">{sonarrAvail.path}</span>
+                </div>
+              {/if}
+            </div>
           </div>
         {/if}
       </div>
@@ -731,5 +782,48 @@
   @keyframes shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
+  }
+
+  .sonarr-section {
+    border: 1px solid rgba(143, 183, 255, 0.15);
+    border-radius: 14px;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .section-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .sonarr-detail {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .sonarr-field {
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .field-label {
+    font-size: 0.72rem;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .field-value {
+    font-size: 0.85rem;
+    color: #c8d2e0;
+  }
+
+  .field-value.path {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    overflow-wrap: anywhere;
   }
 </style>
