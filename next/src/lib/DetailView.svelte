@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, getEpisodeFiles, openEpisodeFile, getAnimeRelations, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type RelationEntry } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, getEpisodeFiles, openEpisodeFile, getAnimeRelations, scanLibraryFolders, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type RelationEntry } from './api';
   import SonarrRemap from './SonarrRemap.svelte';
 
   export let animeId: number;
@@ -19,6 +19,7 @@
 
   let episodeFiles: FileIndexEntry[] = [];
   let episodeFilesLoading = false;
+  let rescanning = false;
 
   let relations: RelationEntry[] = [];
   let relationsLoading = false;
@@ -35,15 +36,28 @@
     { value: 'plan_to_watch', label: 'Plan to Watch' },
   ];
 
-  function parseTitles(titlesJson: string | null | undefined): { romaji?: string; english?: string; native?: string } {
+  function parseTitles(titlesJson: string | null | undefined): { romaji?: string; english?: string; native?: string; synonyms?: string[] } {
     if (!titlesJson) return {};
     try {
       const parsed = JSON.parse(titlesJson);
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') {
+        return {
+          romaji: parsed.romaji || undefined,
+          english: parsed.english || undefined,
+          native: parsed.japanese || parsed.native || undefined,
+          synonyms: parsed.synonyms || [],
+        };
+      }
     } catch {
       // ignore
     }
     return {};
+  }
+
+  let titles: { romaji?: string; english?: string; native?: string; synonyms?: string[] } = {};
+
+  $: if (detail) {
+    titles = parseTitles(detail.titles_json);
   }
 
   function pickTitle(d: AnimeDetail): string {
@@ -122,6 +136,18 @@
     try { relations = await getAnimeRelations(animeId); }
     catch { relations = []; }
     finally { relationsLoading = false; }
+  }
+
+  async function handleRescanFiles() {
+    rescanning = true;
+    try {
+      await scanLibraryFolders();
+      await loadEpisodeFiles();
+    } catch {
+      // silent
+    } finally {
+      rescanning = false;
+    }
   }
 
   function handlePlayFile(path: string) {
@@ -272,7 +298,18 @@
       </div>
 
       <div class="info-col">
-        <h1 class="title">{pickTitle(detail)}</h1>
+        <div class="detail-header">
+          <h1 class="title">{pickTitle(detail)}</h1>
+          {#if titles.english && titles.english !== (titles.romaji ?? '')}
+            <p class="alt-title">English: {titles.english}</p>
+          {/if}
+          {#if titles.native && titles.native !== (titles.romaji ?? '')}
+            <p class="alt-title">Japanese: {titles.native}</p>
+          {/if}
+          {#if titles.synonyms && titles.synonyms.length > 0}
+            <p class="alt-title">Also known as: {titles.synonyms.filter(s => s !== titles.romaji).join(', ')}</p>
+          {/if}
+        </div>
 
         {#if detail.synopsis}
           <p class="synopsis">{detail.synopsis}</p>
@@ -446,7 +483,12 @@
           <section class="card">
             <div class="section-header">
               <h3>Episode Files</h3>
-              <span class="file-count">{episodeFiles.length} files</span>
+              <div class="section-actions">
+                <span class="file-count">{episodeFiles.length} files</span>
+                <button class="action-btn small" on:click={handleRescanFiles} disabled={rescanning}>
+                  {rescanning ? 'Scanning…' : '↻ Rescan'}
+                </button>
+              </div>
             </div>
 
             {#if episodeFilesLoading}
@@ -599,12 +641,24 @@
     gap: 1rem;
   }
 
+  .detail-header {
+    display: grid;
+    gap: 0.15rem;
+  }
+
   .title {
     margin: 0;
     font-size: 1.6rem;
     font-weight: 700;
     line-height: 1.2;
     color: var(--color-text);
+  }
+
+  .alt-title {
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    margin-top: 0.15rem;
+    margin-bottom: 0;
   }
 
   .synopsis {
@@ -899,6 +953,8 @@
     overflow-wrap: anywhere;
   }
 
+  .section-header { display: flex; align-items: center; justify-content: space-between; }
+  .section-actions { display: flex; align-items: center; gap: 0.5rem; }
   .file-count { font-size: 0.78rem; color: var(--color-muted); }
   .episode-file-list { display: grid; gap: 0.35rem; margin-top: 0.5rem; }
   .episode-file-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 0.82rem; }

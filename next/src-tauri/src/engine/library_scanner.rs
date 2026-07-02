@@ -1,5 +1,6 @@
 use crate::engine::parser::parse_filename;
 use crate::engine::storage::Storage;
+use std::path::Path;
 
 const LIBRARY_FOLDERS_KEY: &str = "library.folders";
 
@@ -39,36 +40,20 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
         .as_secs() as i64;
 
     for folder in &folders {
-        let Ok(entries) = std::fs::read_dir(folder) else {
-            continue;
-        };
-        for entry in entries {
-            let Ok(entry) = entry else {
-                continue;
-            };
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if !VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-                continue;
-            }
+        let mut video_files = Vec::new();
+        find_video_files(Path::new(folder), &mut video_files);
 
+        for file_path in &video_files {
+            let file_path_str = file_path.to_string_lossy().to_string();
             found += 1;
-            let file_path = path.to_string_lossy().to_string();
 
             // Skip if already indexed
-            if storage.get_file_index(&file_path).await?.is_some() {
+            if storage.get_file_index(&file_path_str).await?.is_some() {
                 continue;
             }
 
             // Parse filename to find episode info
-            let parsed = parse_filename(&file_path, None);
+            let parsed = parse_filename(&file_path_str, None);
             let episode = parsed.as_ref().and_then(|p| {
                 if p.episode_number > 0 {
                     Some(p.episode_number)
@@ -78,16 +63,30 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
             });
 
             // Try to match to an anime via title search
-            let anime_id = if let Some(ref p) = parsed {
+            let mut anime_id = if let Some(ref p) = parsed {
                 let candidates = storage.search_anime_by_title(&p.cleaned_title, 3).await?;
                 candidates.first().map(|c| c.id)
             } else {
                 None
             };
 
+            // If no match from filename, try parent directory names
+            if anime_id.is_none() {
+                let parent = file_path.parent().map(|p| p.to_string_lossy().to_string());
+                if let Some(ref parent_dir) = parent {
+                    let parsed_dir = parse_filename(parent_dir, None);
+                    if let Some(ref p) = parsed_dir {
+                        if !p.cleaned_title.is_empty() {
+                            let candidates = storage.search_anime_by_title(&p.cleaned_title, 3).await?;
+                            anime_id = candidates.first().map(|c| c.id);
+                        }
+                    }
+                }
+            }
+
             storage
                 .upsert_file_index(
-                    &file_path,
+                    &file_path_str,
                     anime_id.unwrap_or(0),
                     episode.unwrap_or(0),
                     if anime_id.is_some() { 60 } else { 0 },
@@ -108,6 +107,27 @@ pub async fn get_episode_files(
     anime_id: i64,
 ) -> anyhow::Result<Vec<crate::engine::storage::FileIndexRow>> {
     storage.file_index_by_anime(anime_id).await
+}
+
+/// Recursively find video files under a directory.
+fn find_video_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                find_video_files(&path, files);
+            } else if path.is_file() {
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
+                    files.push(path);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
