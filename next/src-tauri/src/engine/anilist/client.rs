@@ -182,7 +182,7 @@ query ($userName: String) {
 "#;
         let variables = match user_name {
             Some(name) => serde_json::json!({ "userName": name }),
-            None => serde_json::json!({ "userName": null }),
+            None => serde_json::json!({}),
         };
         self.query(query_str, variables).await
     }
