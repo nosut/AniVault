@@ -389,8 +389,42 @@ export interface CalendarEntry {
   time_until_airing: number | null;
 }
 
+export interface WatchHistoryEntry {
+  id: number;
+  anime_id: number;
+  anime_title: string;
+  episode: number;
+  file_path: string | null;
+  player: string | null;
+  watched_at: number;
+  source: string;
+}
+
+export function getWatchHistory(query?: string, limit?: number, offset?: number, invokeFn: InvokeFn = tauriInvoke): Promise<WatchHistoryEntry[]> {
+  return invokeFn<WatchHistoryEntry[]>('get_watch_history', { query: query ?? null, limit: limit ?? 100, offset: offset ?? 0 });
+}
+
 export function getCalendar(invokeFn: InvokeFn = tauriInvoke): Promise<CalendarEntry[]> {
   return invokeFn<CalendarEntry[]>('get_calendar');
+}
+
+export interface ScoreBucket {
+  range: string;
+  count: number;
+}
+
+export interface AnimeStats {
+  score_distribution: ScoreBucket[];
+  total_anime: number;
+  total_episodes_watched: number;
+  total_rewatches: number;
+  avg_score: number;
+  episodes_today: number;
+  episodes_this_week: number;
+}
+
+export function getStatistics(invokeFn: InvokeFn = tauriInvoke): Promise<AnimeStats> {
+  return invokeFn<AnimeStats>('get_statistics');
 }
 
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {

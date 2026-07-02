@@ -7,14 +7,18 @@
   import DetailView from './lib/DetailView.svelte';
   import SettingsView from './lib/SettingsView.svelte';
   import CalendarView from './lib/CalendarView.svelte';
+  import StatsView from './lib/StatsView.svelte';
+  import HistoryView from './lib/HistoryView.svelte';
   import bannerUrl from './assets/banner.png';
 
-  type View = 'dashboard' | 'library' | 'calendar' | 'detail' | 'settings';
+  type View = 'dashboard' | 'library' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
 
   const navItems = [
     { id: 'dashboard' as View, label: 'Dashboard' },
     { id: 'library' as View, label: 'Library' },
     { id: 'calendar' as View, label: 'Calendar' },
+    { id: 'history' as View, label: 'History' },
+    { id: 'stats' as View, label: 'Stats' },
     { id: 'settings' as View, label: 'Settings' },
   ];
 
@@ -94,6 +98,10 @@
       <LibraryView on:select={handleLibrarySelect} />
     {:else if currentView === 'calendar'}
       <CalendarView />
+    {:else if currentView === 'history'}
+      <HistoryView />
+    {:else if currentView === 'stats'}
+      <StatsView />
     {:else if currentView === 'detail' && detailAnimeId !== null}
       <DetailView animeId={detailAnimeId} on:back={handleDetailBack} />
     {:else if currentView === 'settings'}

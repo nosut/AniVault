@@ -10,7 +10,7 @@ use crate::engine::events::EngineEvent;
 use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
 use crate::engine::migration::{backup, discovery, importer, DuplicateStrategy, MigrationReport, V1DataPaths};
 use crate::engine::runtime::EngineState;
-use crate::engine::storage::{FileIndexRow, LibraryRow, LibraryStats, WatchHistoryRow};
+use crate::engine::storage::{AnimeStats, FileIndexRow, LibraryRow, LibraryStats, WatchHistoryFullRow, WatchHistoryRow};
 use crate::engine::sonarr::client::SonarrClient;
 use crate::engine::tracker::run_tracking_loop;
 use tauri_plugin_notification::NotificationExt;
@@ -705,6 +705,15 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
     }).collect())
 }
 
+pub async fn get_statistics_inner(state: &EngineState) -> anyhow::Result<AnimeStats> {
+    state.storage.compute_stats().await
+}
+
+#[tauri::command]
+pub async fn get_statistics(state: tauri::State<'_, EngineState>) -> Result<AnimeStats, String> {
+    get_statistics_inner(&state).await.map_err(command_error)
+}
+
 // Tauri command wrappers
 
 #[tauri::command]
@@ -712,6 +721,30 @@ pub async fn get_calendar(
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<CalendarEntry>, String> {
     get_calendar_inner(&state).await.map_err(command_error)
+}
+
+pub async fn get_watch_history_inner(
+    state: &EngineState,
+    query: Option<String>,
+    limit: i64,
+    offset: i64,
+) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
+    match query.filter(|q| !q.is_empty()) {
+        Some(q) => state.storage.search_watch_history(&q, limit, offset).await,
+        None => state.storage.list_all_watch_history(limit, offset).await,
+    }
+}
+
+#[tauri::command]
+pub async fn get_watch_history(
+    query: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<WatchHistoryFullRow>, String> {
+    get_watch_history_inner(&state, query, limit.unwrap_or(100), offset.unwrap_or(0))
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]

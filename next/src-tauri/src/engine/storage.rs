@@ -26,6 +26,18 @@ pub struct WatchHistoryRow {
     pub watched_at: i64,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WatchHistoryFullRow {
+    pub id: i64,
+    pub anime_id: i64,
+    pub anime_title: String,
+    pub episode: i32,
+    pub file_path: Option<String>,
+    pub player: Option<String>,
+    pub watched_at: i64,
+    pub source: String,
+}
+
 #[derive(Debug, Clone, serde::Serialize, Deserialize)]
 pub struct FileIndexRow {
     pub file_path: String,
@@ -67,6 +79,23 @@ pub struct LibraryRow {
     pub episode_count: Option<i32>,
     pub score: Option<i32>,
     pub image_url: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AnimeStats {
+    pub score_distribution: Vec<ScoreBucket>,
+    pub total_anime: i64,
+    pub total_episodes_watched: i64,
+    pub total_rewatches: i64,
+    pub avg_score: f64,
+    pub episodes_today: i64,
+    pub episodes_this_week: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ScoreBucket {
+    pub range: String,
+    pub count: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -337,6 +366,81 @@ impl Storage {
             status: row.get("status"),
             watched_episodes: row.get("watched_episodes"),
         }))
+    }
+
+    pub async fn list_all_watch_history(&self, limit: i64, offset: i64) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
+        let rows = sqlx::query(
+            "SELECT wh.id, wh.anime_id, \
+             COALESCE(json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
+             FROM watch_history wh \
+             LEFT JOIN anime a ON wh.anime_id = a.id \
+             ORDER BY wh.watched_at DESC \
+             LIMIT ?1 OFFSET ?2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|r| WatchHistoryFullRow {
+                id: r.get("id"),
+                anime_id: r.get("anime_id"),
+                anime_title: r.get("anime_title"),
+                episode: r.get("episode"),
+                file_path: r.get("file_path"),
+                player: r.get("player"),
+                watched_at: r.get("watched_at"),
+                source: r.get("source"),
+            })
+            .collect())
+    }
+
+    pub async fn watch_history_total_count(&self) -> anyhow::Result<i64> {
+        let row = sqlx::query("SELECT COUNT(*) FROM watch_history")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.get::<i64, _>(0))
+    }
+
+    pub async fn search_watch_history(
+        &self,
+        query: &str,
+        limit: i64,
+        offset: i64,
+    ) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
+        let pattern = format!("%{}%", query);
+        let rows = sqlx::query(
+            "SELECT wh.id, wh.anime_id, \
+             COALESCE(json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
+             FROM watch_history wh \
+             LEFT JOIN anime a ON wh.anime_id = a.id \
+             WHERE a.titles_json LIKE ?1 \
+             ORDER BY wh.watched_at DESC \
+             LIMIT ?2 OFFSET ?3",
+        )
+        .bind(&pattern)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .iter()
+            .map(|r| WatchHistoryFullRow {
+                id: r.get("id"),
+                anime_id: r.get("anime_id"),
+                anime_title: r.get("anime_title"),
+                episode: r.get("episode"),
+                file_path: r.get("file_path"),
+                player: r.get("player"),
+                watched_at: r.get("watched_at"),
+                source: r.get("source"),
+            })
+            .collect())
     }
 
     pub async fn list_recent_watch_history(&self, limit: i64) -> anyhow::Result<Vec<WatchHistoryRow>> {
@@ -1056,6 +1160,48 @@ impl Storage {
             local_updated: r.get("local_updated"),
             remote_updated: r.get("remote_updated"),
         }).collect())
+    }
+
+    pub async fn compute_stats(&self) -> anyhow::Result<AnimeStats> {
+        let score_rows = sqlx::query(
+            "SELECT \
+               CASE WHEN score IS NULL THEN -1 \
+                    WHEN score < 10 THEN 0 \
+                    WHEN score < 30 THEN 1 \
+                    WHEN score < 50 THEN 2 \
+                    WHEN score < 70 THEN 3 \
+                    WHEN score < 90 THEN 4 \
+                    ELSE 5 END as bucket, \
+               COUNT(*) as cnt \
+             FROM list_entry \
+             WHERE score IS NOT NULL AND score > 0 \
+             GROUP BY bucket \
+             ORDER BY bucket"
+        ).fetch_all(&self.pool).await?;
+
+        let bucket_labels = ["0-9", "10-29", "30-49", "50-69", "70-89", "90-100"];
+        let mut score_distribution: Vec<ScoreBucket> = bucket_labels.iter().map(|r| ScoreBucket { range: r.to_string(), count: 0 }).collect();
+        for row in &score_rows {
+            let bucket: i32 = row.get("bucket");
+            let cnt: i64 = row.get("cnt");
+            if bucket >= 0 && (bucket as usize) < score_distribution.len() {
+                score_distribution[bucket as usize].count = cnt;
+            }
+        }
+
+        let total_anime: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM list_entry").fetch_one(&self.pool).await?;
+        let total_eps: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(watched_episodes), 0) FROM list_entry").fetch_one(&self.pool).await?;
+        let total_rewatches: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM watch_history WHERE source = 'manual' OR source = 'auto-detect'").fetch_one(&self.pool).await?;
+        let avg_score: f64 = sqlx::query_scalar("SELECT COALESCE(AVG(CAST(score AS REAL)), 0) FROM list_entry WHERE score IS NOT NULL AND score > 0").fetch_one(&self.pool).await?;
+
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+        let day_ago = now - 86400;
+        let week_ago = now - 604800;
+
+        let episodes_today: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM watch_history WHERE watched_at > ?1").bind(day_ago).fetch_one(&self.pool).await?;
+        let episodes_this_week: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM watch_history WHERE watched_at > ?1").bind(week_ago).fetch_one(&self.pool).await?;
+
+        Ok(AnimeStats { score_distribution, total_anime, total_episodes_watched: total_eps, total_rewatches, avg_score, episodes_today, episodes_this_week })
     }
 
     pub async fn export_all_watch_history(&self) -> anyhow::Result<Vec<crate::engine::migration::backup::WatchHistoryExport>> {
