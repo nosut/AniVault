@@ -315,6 +315,10 @@ export function importSonarrSeries(invokeFn: InvokeFn = tauriInvoke): Promise<So
   return invokeFn<SonarrImportReport>('import_sonarr_series');
 }
 
+export function testSonarrConnection(url: string, apiKey: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('test_sonarr_connection', { url, apiKey });
+}
+
 export function getSonarrAvailability(
   animeId: number,
   invokeFn: InvokeFn = tauriInvoke,

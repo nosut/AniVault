@@ -30,6 +30,7 @@ import {
   startTracking,
   stopTracking,
   storeAniListToken,
+  testSonarrConnection,
   togglePauseTracking,
   updateListEntry,
 } from './api';
@@ -288,5 +289,11 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     await expect(remapSonarr(5, 42, invoke)).resolves.toBeUndefined();
     expect(invoke).toHaveBeenCalledWith('remap_sonarr', { sonarr_id: 5, anime_id: 42 });
+  });
+
+  it('tests sonarr connection through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(testSonarrConnection('http://localhost:8989', 'key123', invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('test_sonarr_connection', { url: 'http://localhost:8989', apiKey: 'key123' });
   });
 });
