@@ -165,6 +165,31 @@ export interface AnimeDetail {
   recent_history: RecentHistoryEntry[];
 }
 
+export interface SonarrStatus {
+  connected: boolean;
+  series_count: number;
+  mapped_count: number;
+  last_sync_at: number | null;
+}
+
+export interface SonarrImportReport {
+  imported: number;
+  auto_mapped: number;
+  unmapped: number;
+}
+
+export interface SonarrAvailability {
+  sonarr_id: number;
+  sonarr_title: string;
+  monitored: boolean;
+  episode_count: number;
+  episode_file_count: number;
+  next_airing: number | null;
+  path: string | null;
+  season_count: number;
+  sonarr_status: string | null;
+}
+
 export function getEngineStatus(invokeFn: InvokeFn = tauriInvoke): Promise<EngineStatus> {
   return invokeFn<EngineStatus>('get_engine_status');
 }
@@ -268,6 +293,41 @@ export function getLaunchOnStartup(invokeFn: InvokeFn = tauriInvoke): Promise<bo
 
 export function setLaunchOnStartup(enabled: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('set_launch_on_startup', { enabled });
+}
+
+export function connectSonarr(
+  url: string,
+  apiKey: string,
+  invokeFn: InvokeFn = tauriInvoke,
+): Promise<void> {
+  return invokeFn<void>('connect_sonarr', { url, apiKey });
+}
+
+export function disconnectSonarr(invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('disconnect_sonarr');
+}
+
+export function getSonarrStatus(invokeFn: InvokeFn = tauriInvoke): Promise<SonarrStatus> {
+  return invokeFn<SonarrStatus>('get_sonarr_status');
+}
+
+export function importSonarrSeries(invokeFn: InvokeFn = tauriInvoke): Promise<SonarrImportReport> {
+  return invokeFn<SonarrImportReport>('import_sonarr_series');
+}
+
+export function getSonarrAvailability(
+  animeId: number,
+  invokeFn: InvokeFn = tauriInvoke,
+): Promise<SonarrAvailability | null> {
+  return invokeFn<SonarrAvailability | null>('get_sonarr_availability', { anime_id: animeId });
+}
+
+export function remapSonarr(
+  sonarrId: number,
+  animeId: number | null,
+  invokeFn: InvokeFn = tauriInvoke,
+): Promise<void> {
+  return invokeFn<void>('remap_sonarr', { sonarr_id: sonarrId, anime_id: animeId });
 }
 
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {

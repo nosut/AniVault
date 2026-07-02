@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   confirmIdentification,
+  connectSonarr,
   deleteSetting,
   disconnectAniList,
+  disconnectSonarr,
   drainEngineEvents,
   fetchAnimeDetail,
   getEngineStatus,
@@ -10,14 +12,18 @@ import {
   getLibraryStats,
   getSessionState,
   getSetting,
+  getSonarrAvailability,
+  getSonarrStatus,
   getSyncStatus,
   getTrackingStatus,
   identifyFile,
   importAniListLibrary,
+  importSonarrSeries,
   listKnownFiles,
   listRecentHistory,
   markEpisodeWatched,
   previewMigrationReport,
+  remapSonarr,
   searchLibrary,
   setLaunchOnStartup,
   setSetting,
@@ -239,5 +245,48 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     await expect(setLaunchOnStartup(true, invoke)).resolves.toBeUndefined();
     expect(invoke).toHaveBeenCalledWith('set_launch_on_startup', { enabled: true });
+  });
+
+  it('connects sonarr through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(connectSonarr('http://localhost:8989', 'key123', invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('connect_sonarr', { url: 'http://localhost:8989', apiKey: 'key123' });
+  });
+
+  it('disconnects sonarr through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(disconnectSonarr(invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('disconnect_sonarr');
+  });
+
+  it('gets sonarr status through invoke', async () => {
+    const status = { connected: true, series_count: 10, mapped_count: 8, last_sync_at: null };
+    const invoke = vi.fn().mockResolvedValue(status);
+    await expect(getSonarrStatus(invoke)).resolves.toEqual(status);
+    expect(invoke).toHaveBeenCalledWith('get_sonarr_status');
+  });
+
+  it('imports sonarr series through invoke', async () => {
+    const report = { imported: 10, auto_mapped: 8, unmapped: 2 };
+    const invoke = vi.fn().mockResolvedValue(report);
+    await expect(importSonarrSeries(invoke)).resolves.toEqual(report);
+    expect(invoke).toHaveBeenCalledWith('import_sonarr_series');
+  });
+
+  it('gets sonarr availability through invoke', async () => {
+    const avail = {
+      sonarr_id: 1, sonarr_title: 'Test', monitored: true,
+      episode_count: 12, episode_file_count: 8, next_airing: null,
+      path: '/media', season_count: 1, sonarr_status: 'continuing',
+    };
+    const invoke = vi.fn().mockResolvedValue(avail);
+    await expect(getSonarrAvailability(42, invoke)).resolves.toEqual(avail);
+    expect(invoke).toHaveBeenCalledWith('get_sonarr_availability', { anime_id: 42 });
+  });
+
+  it('remaps sonarr through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(remapSonarr(5, 42, invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('remap_sonarr', { sonarr_id: 5, anime_id: 42 });
   });
 });
