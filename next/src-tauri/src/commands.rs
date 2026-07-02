@@ -445,7 +445,56 @@ pub async fn fetch_anime_detail_inner(
     anime_id: i64,
     state: &EngineState,
 ) -> anyhow::Result<AnimeDetailResponse> {
-    let detail = state.storage.anime_detail(anime_id).await?;
+    let detail = match state.storage.anime_detail(anime_id).await {
+        Ok(d) => d,
+        Err(_) => {
+            // Auto-import from AniList if not found locally
+            if let Ok(token) = crate::engine::anilist::auth::load_token(&state.storage).await {
+                if let Some(token) = token {
+                    let client = crate::engine::anilist::client::AniListClient::new(token);
+                    let query_str = format!(
+                        "query {{ Media(id: {}, type: ANIME) {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description }} }}",
+                        anime_id
+                    );
+                    if let Ok(raw) = client.query::<serde_json::Value>(&query_str, serde_json::json!({})).await {
+                        let media = raw.get("data").and_then(|d| d.get("Media"));
+                        if let Some(media) = media {
+                            let title = media.get("title");
+                            let titles_json = serde_json::json!({
+                                "romaji": title.and_then(|t| t.get("romaji")).and_then(|r| r.as_str()).unwrap_or(""),
+                                "english": title.and_then(|t| t.get("english")).and_then(|e| e.as_str()),
+                                "japanese": title.and_then(|t| t.get("native")).and_then(|n| n.as_str()),
+                                "synonyms": [],
+                            }).to_string();
+                            let ep_count = media.get("episodes").and_then(|e| e.as_i64()).unwrap_or(0) as i32;
+                            let image_url = media.get("coverImage").and_then(|c| c.get("large")).and_then(|l| l.as_str());
+                            let synopsis = media.get("description").and_then(|d| d.as_str());
+                            let anime_type = media.get("type").and_then(|t| t.as_str());
+                            let anime_status = media.get("status").and_then(|s| s.as_str());
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs() as i64;
+
+                            let _ = state.storage.upsert_anime_full(
+                                anime_id,
+                                &titles_json,
+                                ep_count,
+                                image_url,
+                                synopsis,
+                                anime_type,
+                                anime_status,
+                                now,
+                            ).await;
+                        }
+                    }
+                }
+            }
+            // Retry — should succeed after insert above
+            state.storage.anime_detail(anime_id).await?
+        }
+    };
+
     let recent_history = state.storage.list_recent_watch_history(10).await?;
     Ok(AnimeDetailResponse {
         anime_id: detail.anime_id,

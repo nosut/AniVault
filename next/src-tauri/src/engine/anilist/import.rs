@@ -91,8 +91,11 @@ pub async fn import_library(
             let image_url = media.cover_image.as_ref().and_then(|c| c.large.clone());
             let updated_at = entry.updated_at.unwrap_or(0);
 
+            let synopsis = media.description.as_deref();
+            let anime_type = media.media_type.as_deref();
+            let anime_status = media.status.as_deref();
             storage
-                .upsert_anime(media.id, &titles_json, episode_count, image_url.as_deref(), updated_at)
+                .upsert_anime_full(media.id, &titles_json, episode_count, image_url.as_deref(), synopsis, anime_type, anime_status, updated_at)
                 .await?;
 
             let status = entry.status.unwrap_or_else(|| "PLANNING".to_string());

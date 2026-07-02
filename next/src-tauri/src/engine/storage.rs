@@ -598,6 +598,42 @@ impl Storage {
         Ok(())
     }
 
+    pub async fn upsert_anime_full(
+        &self,
+        id: i64,
+        titles_json: &str,
+        episode_count: i32,
+        image_url: Option<&str>,
+        synopsis: Option<&str>,
+        anime_type: Option<&str>,
+        anime_status: Option<&str>,
+        last_modified: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO anime (id, titles_json, type, status, episode_count, image_url, synopsis, last_modified)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+               titles_json = excluded.titles_json,
+               type = COALESCE(excluded.type, anime.type),
+               status = COALESCE(excluded.status, anime.status),
+               episode_count = excluded.episode_count,
+               image_url = COALESCE(excluded.image_url, anime.image_url),
+               synopsis = COALESCE(excluded.synopsis, anime.synopsis),
+               last_modified = excluded.last_modified",
+        )
+        .bind(id)
+        .bind(titles_json)
+        .bind(anime_type)
+        .bind(anime_status)
+        .bind(episode_count)
+        .bind(image_url)
+        .bind(synopsis)
+        .bind(last_modified)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn upsert_list_entry_full(
         &self,
         anime_id: i64,
