@@ -544,6 +544,7 @@
     padding: 1rem;
     max-width: 1100px;
     margin: 0 auto;
+    overflow-x: hidden;
   }
 
   .back-btn {
@@ -974,12 +975,12 @@
   .section-actions { display: flex; align-items: center; gap: 0.5rem; }
   .file-count { font-size: 0.78rem; color: var(--color-muted); }
   .episode-file-list { display: grid; gap: 0.35rem; margin-top: 0.5rem; }
-  .episode-file-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 0.82rem; }
+  .episode-file-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 0.82rem; min-width: 0; }
   .ep-num { font-weight: 600; color: var(--color-accent); min-width: 2.5rem; }
   .ep-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); font-family: monospace; font-size: 0.75rem; }
   .action-btn.small { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
   .relations-list { display: grid; gap: 0.4rem; margin-top: 0.5rem; }
-  .relation-row { display: flex; gap: 0.6rem; align-items: center; padding: 0.4rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); }
+  .relation-row { display: flex; gap: 0.6rem; align-items: center; padding: 0.4rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); min-width: 0; }
   .relation-thumb { width: 2rem; height: 2.8rem; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
   .relation-info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
   .relation-title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

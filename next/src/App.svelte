@@ -216,6 +216,8 @@
   .content {
     padding: 1.5rem;
     overflow-y: auto;
+    overflow-x: hidden;
+    max-width: 100%;
   }
 
   @media (max-width: 768px) {
@@ -250,6 +252,8 @@
 
   .content {
       padding: 1rem;
+      overflow-x: hidden;
+      max-width: 100%;
     }
   }
 </style>

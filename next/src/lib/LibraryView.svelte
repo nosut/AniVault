@@ -203,6 +203,19 @@
     }
   }
 
+  function hasNewEpisode(entry: LibraryEntry): boolean {
+    const files = episodeFilesMap.get(entry.anime_id);
+    if (!files) return false;
+    return files.some(f => (f.episode ?? 0) > entry.watched_episodes);
+  }
+
+  function playEpisode(animeId: number, episode: number) {
+    const files = episodeFilesMap.get(animeId);
+    if (!files) return;
+    const file = files.find(f => (f.episode ?? 0) === episode);
+    if (file) openEpisodeFile(file.file_path);
+  }
+
   $: sortedEntries = (() => {
     const list = [...entries];
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -288,7 +301,7 @@
             <div class="poster-thumb placeholder" />
           {/if}
           <div class="poster-info">
-            <p class="poster-title">{entry.title}</p>
+            <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
             <span class="badge">{formatStatus(entry.status)}</span>
             <div class="progress-wrap poster-progress">
               <div class="progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
@@ -296,6 +309,26 @@
                 <span class="progress-text">{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
               </div>
             </div>
+            {#if episodeFilesMap.has(entry.anime_id) && entry.episode_count && entry.episode_count > 0}
+              <div class="ep-download-bar">
+                {#each Array(Math.min(entry.episode_count, 50)) as _, i}
+                  {@const ep = i + 1}
+                  {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
+                  {@const watched = ep <= entry.watched_episodes}
+                  <div
+                    class="ep-segment"
+                    class:downloaded={hasFile}
+                    class:watched={watched}
+                    title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
+                    on:click|stopPropagation={() => hasFile && playEpisode(entry.anime_id, ep)}
+                    style="cursor: {hasFile ? 'pointer' : 'default'}"
+                  />
+                {/each}
+                {#if entry.episode_count > 50}
+                  <span class="ep-more">+{entry.episode_count - 50}</span>
+                {/if}
+              </div>
+            {/if}
           </div>
         </div>
       {/each}
@@ -415,7 +448,7 @@
                     <div class="thumb fallback" aria-hidden="true"></div>
                   {/if}
                 </td>
-                <td class="title-cell">{entry.title}</td>
+                <td class="title-cell" class:has-new={hasNewEpisode(entry)}>{entry.title}</td>
                 <td>
                   <span class="badge">{formatStatus(entry.status)}</span>
                 </td>
@@ -428,6 +461,26 @@
                       <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
                     </div>
                   </div>
+                  {#if episodeFilesMap.has(entry.anime_id) && entry.episode_count && entry.episode_count > 0}
+                    <div class="ep-download-bar">
+                      {#each Array(Math.min(entry.episode_count, 50)) as _, i}
+                        {@const ep = i + 1}
+                        {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
+                        {@const watched = ep <= entry.watched_episodes}
+                        <div
+                          class="ep-segment"
+                          class:downloaded={hasFile}
+                          class:watched={watched}
+                          title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
+                          on:click|stopPropagation={() => hasFile && playEpisode(entry.anime_id, ep)}
+                          style="cursor: {hasFile ? 'pointer' : 'default'}"
+                        />
+                      {/each}
+                      {#if entry.episode_count > 50}
+                        <span class="ep-more">+{entry.episode_count - 50}</span>
+                      {/if}
+                    </div>
+                  {/if}
                 </td>
                 <td class="col-files">
                   {#if episodeFilesMap.has(entry.anime_id)}
@@ -946,5 +999,54 @@
 
   .poster-check input {
     accent-color: var(--color-accent);
+  }
+
+  .ep-download-bar {
+    display: flex;
+    gap: 1px;
+    height: 0.45rem;
+    margin-top: 0.2rem;
+    align-items: center;
+  }
+
+  .ep-segment {
+    flex: 1;
+    min-width: 2px;
+    height: 100%;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    transition: background 0.15s;
+  }
+
+  .ep-segment.downloaded {
+    background: rgba(126, 232, 126, 0.4);
+  }
+
+  .ep-segment.watched.downloaded {
+    background: rgba(143, 183, 255, 0.5);
+  }
+
+  .ep-segment.watched:not(.downloaded) {
+    background: rgba(143, 183, 255, 0.25);
+  }
+
+  .ep-segment:hover {
+    transform: scaleY(1.8);
+  }
+
+  .ep-more {
+    font-size: 0.65rem;
+    color: var(--color-muted);
+    margin-left: 0.3rem;
+    white-space: nowrap;
+  }
+
+  .title-cell.has-new {
+    color: var(--color-accent, #8fb7ff);
+    font-weight: 600;
+  }
+
+  .poster-title.has-new {
+    color: var(--color-accent);
   }
 </style>
