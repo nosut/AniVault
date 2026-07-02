@@ -110,6 +110,62 @@
     }
   }
 
+  let selectedIds = new Set<number>();
+  let allSelected = false;
+  let batchUpdating = false;
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      selectedIds.clear();
+    } else {
+      sortedEntries.forEach(e => selectedIds.add(e.anime_id));
+    }
+    allSelected = !allSelected;
+    selectedIds = new Set(selectedIds);
+  }
+
+  function toggleSelect(animeId: number) {
+    if (selectedIds.has(animeId)) { selectedIds.delete(animeId); }
+    else { selectedIds.add(animeId); }
+    allSelected = sortedEntries.length > 0 && selectedIds.size === sortedEntries.length;
+    selectedIds = new Set(selectedIds);
+  }
+
+  function batchSetStatus(status: string) {
+    return async () => {
+      if (batchUpdating) return;
+      batchUpdating = true;
+      for (const id of selectedIds) {
+        try {
+          await updateListEntry(id, { status });
+          const entry = entries.find(e => e.anime_id === id);
+          if (entry) entry.status = status;
+        } catch { /* continue */ }
+      }
+      selectedIds.clear(); allSelected = false;
+      selectedIds = new Set(selectedIds);
+      batchUpdating = false;
+    };
+  }
+
+  async function batchIncrementProgress() {
+    if (batchUpdating) return;
+    batchUpdating = true;
+    for (const id of selectedIds) {
+      const entry = entries.find(e => e.anime_id === id);
+      if (!entry) continue;
+      const newEp = entry.watched_episodes + 1;
+      if (entry.episode_count && newEp > entry.episode_count) continue;
+      try {
+        await updateListEntry(id, { watched_episodes: newEp });
+        entry.watched_episodes = newEp;
+      } catch { /* continue */ }
+    }
+    selectedIds.clear(); allSelected = false;
+    selectedIds = new Set(selectedIds);
+    batchUpdating = false;
+  }
+
   function handleRowActivate(entry: LibraryEntry) {
     dispatch('select', { anime_id: entry.anime_id });
   }
@@ -203,6 +259,9 @@
           on:click={() => handleRowActivate(entry)}
           on:keydown={(e) => e.key === 'Enter' && handleRowActivate(entry)}
         >
+          <div class="poster-check">
+            <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation aria-label={`Select ${entry.title}`} />
+          </div>
           {#if entry.image_url}
             <img class="poster-thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
           {:else}
@@ -226,6 +285,9 @@
       <table>
         <thead>
           <tr>
+            <th class="col-check" scope="col">
+              <input type="checkbox" on:change={toggleSelectAll} checked={allSelected} aria-label="Select all" />
+            </th>
             <th class="col-thumb" scope="col">
               <span class="sr-only">Thumbnail</span>
             </th>
@@ -307,6 +369,7 @@
           {#if loading}
             {#each Array.from({ length: 5 }) as _, i (i)}
               <tr class="skeleton-row">
+                <td></td>
                 <td><div class="skeleton-thumb"></div></td>
                 <td><div class="skeleton-line"></div></td>
                 <td><div class="skeleton-badge"></div></td>
@@ -316,7 +379,7 @@
             {/each}
           {:else if sortedEntries.length === 0}
             <tr class="empty-row">
-              <td colspan="5">
+              <td colspan="6">
                 <p class="empty">No anime found.</p>
               </td>
             </tr>
@@ -331,6 +394,9 @@
                 on:dragstart={(e) => handleDragStart(e, entry)}
                 on:dragend={() => dragEntry = null}
               >
+                <td class="col-check">
+                  <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation />
+                </td>
                 <td>
                   {#if entry.image_url}
                     <img
@@ -368,6 +434,17 @@
         </tbody>
       </table>
     </div>
+    {#if selectedIds.size > 0}
+      <div class="batch-bar">
+        <span class="batch-count">{selectedIds.size} selected</span>
+        <button class="action-btn" on:click={batchSetStatus('watching')}>Watching</button>
+        <button class="action-btn" on:click={batchSetStatus('completed')}>Completed</button>
+        <button class="action-btn" on:click={batchSetStatus('on_hold')}>On Hold</button>
+        <button class="action-btn" on:click={batchSetStatus('dropped')}>Dropped</button>
+        <button class="action-btn" on:click={batchSetStatus('plan_to_watch')}>Plan to Watch</button>
+        <button class="action-btn" on:click={batchIncrementProgress}>+1 Ep</button>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -709,6 +786,7 @@
   }
 
   .poster-card {
+    position: relative;
     border: 1px solid rgba(143, 183, 255, 0.1);
     border-radius: 10px;
     overflow: hidden;
@@ -778,5 +856,63 @@
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border-width: 0;
+  }
+
+  .col-check {
+    width: 2rem;
+    text-align: center;
+  }
+
+  .col-check input {
+    accent-color: var(--color-accent);
+  }
+
+  .batch-bar {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    background: rgba(10,13,20,0.95);
+    border: 1px solid rgba(143,183,255,0.2);
+    border-radius: 10px;
+    margin-top: 0.5rem;
+    backdrop-filter: blur(8px);
+    z-index: 10;
+  }
+
+  .batch-count {
+    font-size: 0.82rem;
+    color: var(--color-muted);
+    margin-right: 0.5rem;
+  }
+
+  .action-btn {
+    border: 1px solid rgba(143, 183, 255, 0.2);
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    background: rgba(143, 183, 255, 0.08);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: 0.78rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s;
+  }
+
+  .action-btn:hover {
+    background: rgba(143, 183, 255, 0.2);
+  }
+
+  .poster-check {
+    position: absolute;
+    top: 0.35rem;
+    left: 0.35rem;
+    z-index: 2;
+  }
+
+  .poster-check input {
+    accent-color: var(--color-accent);
   }
 </style>

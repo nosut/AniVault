@@ -743,6 +743,43 @@ pub async fn get_season_anime(
     get_season_anime_inner(&state, season, year, genre).await.map_err(command_error)
 }
 
+// ── Anime Relations ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RelationEntry {
+    pub id: i64,
+    pub title: String,
+    pub relation_type: String,
+    pub format: Option<String>,
+    pub status: Option<String>,
+    pub image_url: Option<String>,
+}
+
+pub async fn get_anime_relations_inner(state: &EngineState, anime_id: i64) -> anyhow::Result<Vec<RelationEntry>> {
+    let token = crate::engine::anilist::auth::load_token(&state.storage).await?.ok_or_else(|| anyhow::anyhow!("not connected"))?;
+    let client = AniListClient::new(token);
+    let edges = client.fetch_anime_relations(anime_id).await?;
+    Ok(edges.into_iter().filter_map(|e| {
+        let node = e.node?;
+        let title = node.title.as_ref()
+            .and_then(|t| t.romaji.clone().or_else(|| t.english.clone()))
+            .unwrap_or_else(|| format!("#{}", node.id));
+        Some(RelationEntry {
+            id: node.id,
+            title,
+            relation_type: e.relation_type,
+            format: node.format,
+            status: node.status,
+            image_url: node.cover_image.and_then(|c| c.large),
+        })
+    }).collect())
+}
+
+#[tauri::command]
+pub async fn get_anime_relations(anime_id: i64, state: tauri::State<'_, EngineState>) -> Result<Vec<RelationEntry>, String> {
+    get_anime_relations_inner(&state, anime_id).await.map_err(command_error)
+}
+
 // ── Calendar ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]

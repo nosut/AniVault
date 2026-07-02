@@ -487,6 +487,19 @@ export function fetchAnimeDetail(animeId: number, invokeFn: InvokeFn = tauriInvo
   return invokeFn<AnimeDetail>('fetch_anime_detail', { animeId: animeId });
 }
 
+export interface RelationEntry {
+  id: number;
+  title: string;
+  relation_type: string;
+  format: string | null;
+  status: string | null;
+  image_url: string | null;
+}
+
+export function getAnimeRelations(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<RelationEntry[]> {
+  return invokeFn<RelationEntry[]>('get_anime_relations', { animeId });
+}
+
 export function updateListEntry(
   animeId: number,
   updates: { status?: string | null; watched_episodes?: number | null; score?: number | null },

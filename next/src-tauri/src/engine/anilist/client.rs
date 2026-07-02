@@ -307,6 +307,23 @@ mutation ($mediaId: Int, $progress: Int) {
         let entries: Vec<SeasonAnime> = media_list.into_iter().filter_map(|m| serde_json::from_value::<SeasonAnime>(m).ok()).collect();
         Ok(entries)
     }
+
+    /// Fetch related anime for a given anime ID (sequels, prequels, side stories, etc.).
+    pub async fn fetch_anime_relations(&self, anime_id: i64) -> anyhow::Result<Vec<RelationEdge>> {
+        let query_str = format!(
+            "query {{ Media(id: {}, type: ANIME) {{ relations {{ edges {{ relationType node {{ id title {{ romaji english }} type format status coverImage {{ large }} }} }} }} }} }}",
+            anime_id
+        );
+        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let edges: Vec<RelationEdge> = raw
+            .get("data").and_then(|d| d.get("Media"))
+            .and_then(|m| m.get("relations"))
+            .and_then(|r| r.get("edges"))
+            .and_then(|e| e.as_array())
+            .map(|arr| arr.iter().filter_map(|e| serde_json::from_value::<RelationEdge>(e.clone()).ok()).collect())
+            .unwrap_or_default();
+        Ok(edges)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -327,4 +344,23 @@ pub struct SeasonAnime {
     #[serde(rename = "averageScore")]
     pub average_score: Option<i32>,
     pub popularity: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AnimeRelation {
+    pub id: i64,
+    pub title: Option<MediaTitle>,
+    #[serde(rename = "type")]
+    pub media_type: Option<String>,
+    pub format: Option<String>,
+    pub status: Option<String>,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<CoverImage>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RelationEdge {
+    #[serde(rename = "relationType")]
+    pub relation_type: String,
+    pub node: Option<AnimeRelation>,
 }

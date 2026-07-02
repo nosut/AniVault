@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, getEpisodeFiles, openEpisodeFile, type AnimeDetail, type SonarrAvailability, type FileIndexEntry } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, getEpisodeFiles, openEpisodeFile, getAnimeRelations, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type RelationEntry } from './api';
   import SonarrRemap from './SonarrRemap.svelte';
 
   export let animeId: number;
@@ -19,6 +19,9 @@
 
   let episodeFiles: FileIndexEntry[] = [];
   let episodeFilesLoading = false;
+
+  let relations: RelationEntry[] = [];
+  let relationsLoading = false;
 
   let draftProgress = 0;
   let draftStatus = '';
@@ -88,6 +91,7 @@
       setDraftsFromDetail(d);
       loadSonarr();
       loadEpisodeFiles();
+      loadRelations();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -111,6 +115,13 @@
     try { episodeFiles = await getEpisodeFiles(animeId); }
     catch { episodeFiles = []; }
     finally { episodeFilesLoading = false; }
+  }
+
+  async function loadRelations() {
+    relationsLoading = true;
+    try { relations = await getAnimeRelations(animeId); }
+    catch { relations = []; }
+    finally { relationsLoading = false; }
   }
 
   function handlePlayFile(path: string) {
@@ -447,6 +458,29 @@
                     <span class="ep-num">Ep {file.episode ?? '?'}</span>
                     <span class="ep-path">{file.file_path}</span>
                     <button class="action-btn small" on:click={() => handlePlayFile(file.file_path)}>▶ Play</button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </section>
+        {/if}
+
+        {#if relations.length > 0 || relationsLoading}
+          <section class="card">
+            <div class="section-header">
+              <h3>Related Anime</h3>
+            </div>
+            {#if relationsLoading}
+              <p class="muted">Loading…</p>
+            {:else}
+              <div class="relations-list">
+                {#each relations as rel}
+                  <div class="relation-row">
+                    {#if rel.image_url}<img class="relation-thumb" src={rel.image_url} alt={rel.title} loading="lazy" />{/if}
+                    <div class="relation-info">
+                      <span class="relation-title">{rel.title}</span>
+                      <span class="relation-type">{rel.relation_type.replace('_', ' ')} {rel.format ? `· ${rel.format}` : ''}</span>
+                    </div>
                   </div>
                 {/each}
               </div>
@@ -871,4 +905,10 @@
   .ep-num { font-weight: 600; color: var(--color-accent); min-width: 2.5rem; }
   .ep-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); font-family: monospace; font-size: 0.75rem; }
   .action-btn.small { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
+  .relations-list { display: grid; gap: 0.4rem; margin-top: 0.5rem; }
+  .relation-row { display: flex; gap: 0.6rem; align-items: center; padding: 0.4rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); }
+  .relation-thumb { width: 2rem; height: 2.8rem; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+  .relation-info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+  .relation-title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .relation-type { font-size: 0.72rem; color: var(--color-muted); text-transform: capitalize; }
 </style>
