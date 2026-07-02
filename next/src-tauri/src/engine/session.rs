@@ -63,7 +63,7 @@ pub async fn process_scan_result(state: &EngineState, result: ScanResult) -> any
                         .storage
                         .upsert_file_index(
                             fp,
-                            top.anime_id,
+                            Some(top.anime_id),
                             parsed.episode_number,
                             top.confidence as i32,
                             now,

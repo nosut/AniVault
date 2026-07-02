@@ -488,7 +488,7 @@ impl Storage {
     pub async fn upsert_file_index(
         &self,
         file_path: &str,
-        anime_id: i64,
+        anime_id: Option<i64>,
         episode: i32,
         confidence: i32,
         indexed_at: i64,

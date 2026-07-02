@@ -95,7 +95,7 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
             storage
                 .upsert_file_index(
                     &file_path_str,
-                    anime_id.unwrap_or(0),
+                    anime_id,  // Already Option<i64>
                     episode.unwrap_or(0),
                     if anime_id.is_some() { 60 } else { 0 },
                     now,

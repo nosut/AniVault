@@ -157,7 +157,7 @@ pub async fn confirm_identification(
 
     state
         .storage
-        .upsert_file_index(file_path, anime_id, episode, 100, now)
+        .upsert_file_index(file_path, Some(anime_id), episode, 100, now)
         .await?;
 
     state.events.publish(EngineEvent::AnimeIdentified(

@@ -17,7 +17,7 @@ async fn recognize_known_file_skips_matching() {
         .storage
         .upsert_file_index(
             "D:/Anime/Cowboy Bebop - 01.mkv",
-            1,
+            Some(1),
             1,
             100,
             1_782_769_008,
