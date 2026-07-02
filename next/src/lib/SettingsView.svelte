@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getEngineStatus, getLaunchOnStartup, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport } from './api';
+  import { getEngineStatus, getLaunchOnStartup, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport } from './api';
   import {
     discoverV1Data, previewMigration, runMigration,
     backupDatabase, restoreDatabase, exportDatabase, importDatabase,
@@ -9,7 +9,7 @@
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
 
-  type Tab = 'general' | 'tracking' | 'anilist' | 'sonarr' | 'migration' | 'about';
+  type Tab = 'general' | 'tracking' | 'library' | 'anilist' | 'sonarr' | 'migration' | 'about';
   let activeTab: Tab = 'general';
 
   let startupEnabled = false;
@@ -45,6 +45,14 @@
   let sonarrImporting = false;
   let sonarrImportReport: SonarrImportReport | null = null;
   let sonarrImportError: string | null = null;
+
+  // Library state
+  let libraryFolders: string[] = [];
+  let libraryFoldersInput = '';
+  let libraryFoldersLoading = false;
+  let libraryFoldersError: string | null = null;
+  let libraryScanning = false;
+  let libraryScanReport: LibraryScanReport | null = null;
 
   // Migration state
   let migrationDiscovering = false;
@@ -214,6 +222,44 @@
     }
   }
 
+  async function loadLibraryFolders() {
+    libraryFoldersLoading = true;
+    libraryFoldersError = null;
+    try { libraryFolders = await getLibraryFolders(); }
+    catch(e) { libraryFoldersError = e instanceof Error ? e.message : String(e); }
+    finally { libraryFoldersLoading = false; }
+  }
+
+  async function handleAddFolder() {
+    if (!libraryFoldersInput.trim()) return;
+    const newFolders = [...libraryFolders, libraryFoldersInput.trim()];
+    try {
+      await setLibraryFolders(newFolders);
+      libraryFolders = newFolders;
+      libraryFoldersInput = '';
+    } catch(e) {
+      libraryFoldersError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async function handleRemoveFolder(index: number) {
+    const newFolders = libraryFolders.filter((_, i) => i !== index);
+    try {
+      await setLibraryFolders(newFolders);
+      libraryFolders = newFolders;
+    } catch(e) {
+      libraryFoldersError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async function handleScanFolders() {
+    libraryScanning = true;
+    libraryScanReport = null;
+    try { libraryScanReport = await scanLibraryFolders(); }
+    catch(e) { libraryFoldersError = e instanceof Error ? e.message : String(e); }
+    finally { libraryScanning = false; }
+  }
+
   async function handleDiscover() {
     migrationDiscovering = true; migrationDiscoverError = null;
     try { migrationDataPaths = await discoverV1Data(); }
@@ -268,6 +314,7 @@
   onMount(() => {
     loadStartup();
     loadTracking();
+    loadLibraryFolders();
     loadEngineStatus();
     loadSonarrStatus();
   });
@@ -280,7 +327,7 @@
 
 <div class="settings-view">
   <nav class="tab-bar" role="tablist" aria-label="Settings sections">
-    {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'anilist', label: 'AniList'}, {id: 'sonarr', label: 'Sonarr'}, {id: 'migration', label: 'Migration'}, {id: 'about', label: 'About'}] as tab}
+    {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'library', label: 'Library'}, {id: 'anilist', label: 'AniList'}, {id: 'sonarr', label: 'Sonarr'}, {id: 'migration', label: 'Migration'}, {id: 'about', label: 'About'}] as tab}
       <button
         type="button"
         role="tab"
@@ -367,6 +414,51 @@
               </button>
             </div>
             <p class="hint">Automatically detect and record playback progress.</p>
+          {/if}
+        </section>
+      </div>
+    {/if}
+
+    {#if activeTab === 'library'}
+      <div class="panel" role="tabpanel" id="panel-library">
+        <section class="card">
+          <div class="section-header"><h3>Library Folders</h3></div>
+          <p class="hint">Add folders containing your anime video files. AniVault will scan them and link episodes to your library.</p>
+
+          {#if libraryFoldersLoading && libraryFolders.length === 0}
+            <p class="muted">Loading…</p>
+          {:else if libraryFoldersError && libraryFolders.length === 0}
+            <div class="error-row"><p class="error">{libraryFoldersError}</p><button class="btn-retry" on:click={loadLibraryFolders}>Retry</button></div>
+          {:else}
+            {#if libraryFolders.length === 0}
+              <p class="muted">No folders configured. Add a folder below.</p>
+            {:else}
+              <ul class="folder-list">
+                {#each libraryFolders as folder, i}
+                  <li class="folder-item">
+                    <span class="folder-path">{folder}</span>
+                    <button class="btn-remove" on:click={() => handleRemoveFolder(i)} aria-label="Remove">✕</button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+
+            <div class="form-actions" style="margin-top: 0.75rem;">
+              <input class="form-input" type="text" bind:value={libraryFoldersInput} placeholder="C:\Users\...\Anime" on:keydown={(e) => e.key === 'Enter' && handleAddFolder()} />
+              <button class="action-btn" on:click={handleAddFolder} disabled={!libraryFoldersInput.trim()}>Add</button>
+            </div>
+
+            <div class="form-actions" style="margin-top: 0.5rem;">
+              <button class="action-btn" on:click={handleScanFolders} disabled={libraryScanning || libraryFolders.length === 0}>
+                {libraryScanning ? 'Scanning…' : 'Scan Folders'}
+              </button>
+            </div>
+
+            {#if libraryScanReport}
+              <div class="import-report">
+                <p>Found {libraryScanReport.found} video files, indexed {libraryScanReport.indexed} new entries.</p>
+              </div>
+            {/if}
           {/if}
         </section>
       </div>
@@ -1130,4 +1222,9 @@
     font-family: monospace;
     font-size: 0.78rem;
   }
+
+  .folder-list { list-style: none; padding: 0; margin: 0.5rem 0; }
+  .folder-item { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.6rem; border: 1px solid rgba(143,183,255,0.1); border-radius: 6px; margin-bottom: 0.25rem; background: rgba(255,255,255,0.03); font-size: 0.82rem; }
+  .folder-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); }
+  .btn-remove { border: none; background: transparent; color: #ff9d9d; cursor: pointer; font-size: 0.85rem; padding: 0 0.3rem; }
 </style>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, type AnimeDetail, type SonarrAvailability } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, getEpisodeFiles, openEpisodeFile, type AnimeDetail, type SonarrAvailability, type FileIndexEntry } from './api';
   import SonarrRemap from './SonarrRemap.svelte';
 
   export let animeId: number;
@@ -16,6 +16,9 @@
 
   let sonarrAvail: SonarrAvailability | null = null;
   let sonarrLoading = false;
+
+  let episodeFiles: FileIndexEntry[] = [];
+  let episodeFilesLoading = false;
 
   let draftProgress = 0;
   let draftStatus = '';
@@ -84,6 +87,7 @@
       detail = d;
       setDraftsFromDetail(d);
       loadSonarr();
+      loadEpisodeFiles();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -100,6 +104,17 @@
     } finally {
       sonarrLoading = false;
     }
+  }
+
+  async function loadEpisodeFiles() {
+    episodeFilesLoading = true;
+    try { episodeFiles = await getEpisodeFiles(animeId); }
+    catch { episodeFiles = []; }
+    finally { episodeFilesLoading = false; }
+  }
+
+  function handlePlayFile(path: string) {
+    openEpisodeFile(path);
   }
 
   onMount(() => {
@@ -414,6 +429,29 @@
               {/if}
             </div>
           </div>
+        {/if}
+
+        {#if episodeFiles.length > 0 || episodeFilesLoading}
+          <section class="card">
+            <div class="section-header">
+              <h3>Episode Files</h3>
+              <span class="file-count">{episodeFiles.length} files</span>
+            </div>
+
+            {#if episodeFilesLoading}
+              <p class="muted">Loading…</p>
+            {:else}
+              <div class="episode-file-list">
+                {#each episodeFiles as file}
+                  <div class="episode-file-row">
+                    <span class="ep-num">Ep {file.episode ?? '?'}</span>
+                    <span class="ep-path">{file.file_path}</span>
+                    <button class="action-btn small" on:click={() => handlePlayFile(file.file_path)}>▶ Play</button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </section>
         {/if}
       </div>
     </div>
@@ -826,4 +864,11 @@
     color: var(--color-muted);
     overflow-wrap: anywhere;
   }
+
+  .file-count { font-size: 0.78rem; color: var(--color-muted); }
+  .episode-file-list { display: grid; gap: 0.35rem; margin-top: 0.5rem; }
+  .episode-file-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 0.82rem; }
+  .ep-num { font-weight: 600; color: var(--color-accent); min-width: 2.5rem; }
+  .ep-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); font-family: monospace; font-size: 0.75rem; }
+  .action-btn.small { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
 </style>

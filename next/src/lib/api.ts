@@ -71,6 +71,11 @@ export interface FileIndexEntry {
   indexed_at: number;
 }
 
+export interface LibraryScanReport {
+  found: number;
+  indexed: number;
+}
+
 export interface AniListSyncStatus {
   pending: number;
   failed: number;
@@ -465,4 +470,24 @@ export function updateListEntry(
     watchedEpisodes: updates.watched_episodes ?? null,
     score: updates.score ?? null,
   });
+}
+
+export function getLibraryFolders(invokeFn: InvokeFn = tauriInvoke): Promise<string[]> {
+  return invokeFn<string[]>('get_library_folders');
+}
+
+export function setLibraryFolders(folders: string[], invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_library_folders', { folders });
+}
+
+export function scanLibraryFolders(invokeFn: InvokeFn = tauriInvoke): Promise<LibraryScanReport> {
+  return invokeFn<LibraryScanReport>('scan_library_folders');
+}
+
+export function getEpisodeFiles(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileIndexEntry[]> {
+  return invokeFn<FileIndexEntry[]>('get_episode_files', { animeId });
+}
+
+export function openEpisodeFile(path: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('open_episode_file', { path });
 }

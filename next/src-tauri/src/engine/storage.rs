@@ -529,6 +529,25 @@ impl Storage {
         }))
     }
 
+    pub async fn file_index_by_anime(&self, anime_id: i64) -> anyhow::Result<Vec<FileIndexRow>> {
+        let rows = sqlx::query(
+            "SELECT file_path, anime_id, episode, confidence, indexed_at FROM file_index WHERE anime_id = ?1 ORDER BY episode",
+        )
+        .bind(anime_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| FileIndexRow {
+                file_path: r.get("file_path"),
+                anime_id: r.get("anime_id"),
+                episode: r.get("episode"),
+                confidence: r.get("confidence"),
+                indexed_at: r.get("indexed_at"),
+            })
+            .collect())
+    }
+
     pub async fn list_file_index(&self, limit: i64, offset: i64) -> anyhow::Result<Vec<FileIndexRow>> {
         let rows = sqlx::query(
             "SELECT file_path, anime_id, episode, confidence, indexed_at

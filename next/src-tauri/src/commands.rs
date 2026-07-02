@@ -7,6 +7,7 @@ use crate::engine::anilist::client::AniListClient;
 use crate::engine::anilist::import::{import_library, ImportReport};
 use crate::engine::anilist::oauth;
 use crate::engine::events::EngineEvent;
+use crate::engine::library_scanner;
 use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
 use crate::engine::migration::{backup, discovery, importer, DuplicateStrategy, MigrationReport, V1DataPaths};
 use crate::engine::runtime::EngineState;
@@ -476,6 +477,40 @@ pub async fn update_list_entry_inner(
         .storage
         .update_list_entry_partial(anime_id, status.as_deref(), watched_episodes, score)
         .await
+}
+
+// ── Library scanner command inner functions ─────────────────────────────────
+
+pub async fn get_library_folders_inner(state: &EngineState) -> anyhow::Result<Vec<String>> {
+    library_scanner::get_library_folders(&state.storage).await
+}
+
+pub async fn set_library_folders_inner(
+    state: &EngineState,
+    folders: Vec<String>,
+) -> anyhow::Result<()> {
+    library_scanner::set_library_folders(&state.storage, folders).await
+}
+
+pub async fn scan_library_folders_inner(
+    state: &EngineState,
+) -> anyhow::Result<library_scanner::LibraryScanReport> {
+    let report = library_scanner::scan_library_folders(&state.storage).await?;
+    Ok(library_scanner::LibraryScanReport {
+        found: report.found,
+        indexed: report.indexed,
+    })
+}
+
+pub async fn get_episode_files_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<Vec<FileIndexRow>> {
+    state.storage.file_index_by_anime(anime_id).await
+}
+
+pub async fn open_episode_file_inner(path: String) -> anyhow::Result<()> {
+    library_scanner::open_file(&path)
 }
 
 // ── Sonarr command inner functions ──────────────────────────────────────────
@@ -1003,6 +1038,47 @@ pub async fn update_list_entry(
     update_list_entry_inner(anime_id, status, watched_episodes, score, &state)
         .await
         .map_err(command_error)
+}
+
+// ── Library scanner command wrappers ────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_library_folders(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<String>, String> {
+    get_library_folders_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn set_library_folders(
+    folders: Vec<String>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    set_library_folders_inner(&state, folders)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn scan_library_folders(
+    state: tauri::State<'_, EngineState>,
+) -> Result<library_scanner::LibraryScanReport, String> {
+    scan_library_folders_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_episode_files(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<FileIndexRow>, String> {
+    get_episode_files_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn open_episode_file(path: String) -> Result<(), String> {
+    open_episode_file_inner(path).await.map_err(command_error)
 }
 
 // ── Sonarr command wrappers ─────────────────────────────────────────────────
