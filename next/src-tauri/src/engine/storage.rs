@@ -97,6 +97,48 @@ pub struct AnimeDetailRow {
     pub tracker_id: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SonarrSeriesDb {
+    pub sonarr_id: i64,
+    pub title: String,
+    pub season_count: i32,
+    pub episode_count: i32,
+    pub episode_file_count: i32,
+    pub monitored: bool,
+    pub next_airing: Option<i64>,
+    pub path: Option<String>,
+    pub poster_url: Option<String>,
+    pub overview: Option<String>,
+    pub network: Option<String>,
+    pub status: Option<String>,
+    pub added: i64,
+    pub last_synced: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SonarrMappingDb {
+    pub id: Option<i64>,
+    pub sonarr_id: i64,
+    pub anime_id: Option<i64>,
+    pub title_match: String,
+    pub confidence: i32,
+    pub mapped_at: i64,
+    pub user_confirmed: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SonarrAvailabilityDb {
+    pub sonarr_id: i64,
+    pub sonarr_title: String,
+    pub monitored: bool,
+    pub episode_count: i32,
+    pub episode_file_count: i32,
+    pub next_airing: Option<i64>,
+    pub path: Option<String>,
+    pub season_count: i32,
+    pub sonarr_status: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct Storage {
     pool: SqlitePool,
@@ -766,6 +808,185 @@ impl Storage {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    // ── Sonarr series ───────────────────────────────────────────────────────────
+
+    pub async fn sonarr_series_upsert(&self, series: &SonarrSeriesDb) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO sonarr_series (sonarr_id, title, season_count, episode_count, episode_file_count, monitored, next_airing, path, poster_url, overview, network, status, added, last_synced)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+             ON CONFLICT(sonarr_id) DO UPDATE SET
+               title = excluded.title,
+               season_count = excluded.season_count,
+               episode_count = excluded.episode_count,
+               episode_file_count = excluded.episode_file_count,
+               monitored = excluded.monitored,
+               next_airing = excluded.next_airing,
+               path = excluded.path,
+               poster_url = excluded.poster_url,
+               overview = excluded.overview,
+               network = excluded.network,
+               status = excluded.status,
+               last_synced = excluded.last_synced",
+        )
+        .bind(series.sonarr_id)
+        .bind(&series.title)
+        .bind(series.season_count)
+        .bind(series.episode_count)
+        .bind(series.episode_file_count)
+        .bind(series.monitored)
+        .bind(series.next_airing)
+        .bind(&series.path)
+        .bind(&series.poster_url)
+        .bind(&series.overview)
+        .bind(&series.network)
+        .bind(&series.status)
+        .bind(series.added)
+        .bind(series.last_synced)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn sonarr_series_list(&self) -> anyhow::Result<Vec<SonarrSeriesDb>> {
+        let rows = sqlx::query(
+            "SELECT sonarr_id, title, season_count, episode_count, episode_file_count, monitored, next_airing, path, poster_url, overview, network, status, added, last_synced
+             FROM sonarr_series ORDER BY title",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.iter().map(|row| SonarrSeriesDb {
+            sonarr_id: row.get("sonarr_id"),
+            title: row.get("title"),
+            season_count: row.get("season_count"),
+            episode_count: row.get("episode_count"),
+            episode_file_count: row.get("episode_file_count"),
+            monitored: row.get("monitored"),
+            next_airing: row.get("next_airing"),
+            path: row.get("path"),
+            poster_url: row.get("poster_url"),
+            overview: row.get("overview"),
+            network: row.get("network"),
+            status: row.get("status"),
+            added: row.get("added"),
+            last_synced: row.get("last_synced"),
+        }).collect())
+    }
+
+    pub async fn sonarr_series_count(&self) -> anyhow::Result<i64> {
+        let row = sqlx::query("SELECT COUNT(*) FROM sonarr_series")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.get::<i64, _>(0))
+    }
+
+    pub async fn sonarr_series_delete_all(&self) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM sonarr_series").execute(&self.pool).await?;
+        Ok(())
+    }
+
+    // ── Sonarr mapping ──────────────────────────────────────────────────────────
+
+    pub async fn sonarr_mapping_upsert(&self, mapping: &SonarrMappingDb) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO sonarr_mapping (sonarr_id, anime_id, title_match, confidence, mapped_at, user_confirmed)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(sonarr_id) DO UPDATE SET
+               anime_id = excluded.anime_id,
+               title_match = excluded.title_match,
+               confidence = excluded.confidence,
+               mapped_at = excluded.mapped_at,
+               user_confirmed = excluded.user_confirmed",
+        )
+        .bind(mapping.sonarr_id)
+        .bind(mapping.anime_id)
+        .bind(&mapping.title_match)
+        .bind(mapping.confidence)
+        .bind(mapping.mapped_at)
+        .bind(mapping.user_confirmed)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn sonarr_mapping_by_anime(&self, anime_id: i64) -> anyhow::Result<Option<SonarrMappingDb>> {
+        let row = sqlx::query(
+            "SELECT id, sonarr_id, anime_id, title_match, confidence, mapped_at, user_confirmed
+             FROM sonarr_mapping WHERE anime_id = ?1",
+        )
+        .bind(anime_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| SonarrMappingDb {
+            id: Some(r.get("id")),
+            sonarr_id: r.get("sonarr_id"),
+            anime_id: r.get("anime_id"),
+            title_match: r.get("title_match"),
+            confidence: r.get("confidence"),
+            mapped_at: r.get("mapped_at"),
+            user_confirmed: r.get("user_confirmed"),
+        }))
+    }
+
+    pub async fn sonarr_mapping_unmapped(&self) -> anyhow::Result<Vec<SonarrMappingDb>> {
+        let rows = sqlx::query(
+            "SELECT id, sonarr_id, anime_id, title_match, confidence, mapped_at, user_confirmed
+             FROM sonarr_mapping WHERE anime_id IS NULL ORDER BY title_match",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.iter().map(|r| SonarrMappingDb {
+            id: Some(r.get("id")),
+            sonarr_id: r.get("sonarr_id"),
+            anime_id: r.get("anime_id"),
+            title_match: r.get("title_match"),
+            confidence: r.get("confidence"),
+            mapped_at: r.get("mapped_at"),
+            user_confirmed: r.get("user_confirmed"),
+        }).collect())
+    }
+
+    pub async fn sonarr_mapping_count(&self) -> anyhow::Result<i64> {
+        let row = sqlx::query("SELECT COUNT(*) FROM sonarr_mapping")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(row.get::<i64, _>(0))
+    }
+
+    pub async fn sonarr_mapping_delete_all(&self) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM sonarr_mapping").execute(&self.pool).await?;
+        Ok(())
+    }
+
+    // ── Sonarr availability (join) ──────────────────────────────────────────────
+
+    pub async fn sonarr_availability(&self, anime_id: i64) -> anyhow::Result<Option<SonarrAvailabilityDb>> {
+        let row = sqlx::query(
+            "SELECT s.sonarr_id, s.title, s.monitored, s.episode_count, s.episode_file_count,
+                    s.next_airing, s.path, s.season_count, s.status as sonarr_status
+             FROM sonarr_series s
+             JOIN sonarr_mapping m ON s.sonarr_id = m.sonarr_id
+             WHERE m.anime_id = ?1",
+        )
+        .bind(anime_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| SonarrAvailabilityDb {
+            sonarr_id: r.get("sonarr_id"),
+            sonarr_title: r.get("title"),
+            monitored: r.get("monitored"),
+            episode_count: r.get("episode_count"),
+            episode_file_count: r.get("episode_file_count"),
+            next_airing: r.get("next_airing"),
+            path: r.get("path"),
+            season_count: r.get("season_count"),
+            sonarr_status: r.get("sonarr_status"),
+        }))
     }
 }
 
