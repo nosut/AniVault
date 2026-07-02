@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { searchLibrary, type LibraryEntry } from './api';
+  import { searchLibrary, updateListEntry, type LibraryEntry } from './api';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
@@ -56,6 +56,37 @@
     } else {
       sortKey = key;
       sortDir = 'asc';
+    }
+  }
+
+  let progressUpdating = new Set<number>();
+
+  async function handleIncrement(entry: LibraryEntry) {
+    if (progressUpdating.has(entry.anime_id)) return;
+    const newEp = entry.watched_episodes + 1;
+    if (entry.episode_count && newEp > entry.episode_count) return;
+    progressUpdating.add(entry.anime_id);
+    try {
+      await updateListEntry(entry.anime_id, { watched_episodes: newEp });
+      entry.watched_episodes = newEp;
+    } catch (e) {
+      // revert on error handled by refresh
+    } finally {
+      progressUpdating.delete(entry.anime_id);
+    }
+  }
+
+  async function handleDecrement(entry: LibraryEntry) {
+    if (progressUpdating.has(entry.anime_id)) return;
+    const newEp = Math.max(0, entry.watched_episodes - 1);
+    progressUpdating.add(entry.anime_id);
+    try {
+      await updateListEntry(entry.anime_id, { watched_episodes: newEp });
+      entry.watched_episodes = newEp;
+    } catch (e) {
+      // revert on error
+    } finally {
+      progressUpdating.delete(entry.anime_id);
     }
   }
 
@@ -115,16 +146,18 @@
       on:input={debouncedReload}
       aria-label="Search library"
     />
-    <select
-      class="filter"
-      bind:value={statusFilter}
-      on:change={load}
-      aria-label="Filter by status"
-    >
-      {#each statusOptions as opt}
-        <option value={opt.value}>{opt.label}</option>
-      {/each}
-    </select>
+  </div>
+  <div class="status-tabs">
+    {#each statusOptions as opt}
+      <button
+        type="button"
+        class="status-tab"
+        class:active={statusFilter === opt.value}
+        on:click={() => { statusFilter = opt.value; load(); }}
+      >
+        {opt.label}
+      </button>
+    {/each}
   </div>
 
   {#if error}
@@ -258,8 +291,10 @@
               <td>
                 <span class="badge">{formatStatus(entry.status)}</span>
               </td>
-              <td class="num-cell">
-                {entry.watched_episodes ?? 0} / {entry.episode_count ?? '?'}
+              <td class="num-cell progress-cell">
+                <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
+                <span>{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
+                <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
               </td>
               <td class="num-cell">
                 {entry.score ?? '-'}
@@ -285,47 +320,83 @@
     align-items: center;
   }
 
-  .search,
-  .filter {
+  .search {
     border-radius: var(--radius-card);
     color: var(--color-text);
     padding: 0.6rem 0.9rem;
     font-family: var(--font-ui);
     font-size: 0.9rem;
     outline: none;
-  }
-
-  .search {
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(143, 183, 255, 0.18);
     min-width: 16rem;
     flex: 1 1 16rem;
   }
 
-  .filter {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(143, 183, 255, 0.25);
-    min-width: 10rem;
+  .search:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(143, 183, 255, 0.25);
   }
 
-  .search {
-    min-width: 16rem;
-    flex: 1 1 16rem;
+  .status-tabs {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    padding: 0.25rem 0;
   }
 
-  .filter {
-    min-width: 10rem;
+  .status-tab {
+    border: 1px solid rgba(143, 183, 255, 0.18);
+    border-radius: 999px;
+    padding: 0.35rem 0.8rem;
+    background: transparent;
+    color: var(--color-muted);
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
   }
 
-  .filter option {
-    background: #141820;
+  .status-tab:hover {
+    background: rgba(143, 183, 255, 0.08);
     color: var(--color-text);
   }
 
-  .search:focus,
-  .filter:focus {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px rgba(143, 183, 255, 0.25);
+  .status-tab.active {
+    background: rgba(143, 183, 255, 0.18);
+    color: var(--color-accent);
+    border-color: rgba(143, 183, 255, 0.35);
+  }
+
+  .progress-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    justify-content: flex-end;
+    white-space: nowrap;
+  }
+
+  .progress-btn {
+    border: 1px solid rgba(143, 183, 255, 0.2);
+    border-radius: 4px;
+    background: rgba(143, 183, 255, 0.06);
+    color: var(--color-muted);
+    width: 1.4rem;
+    height: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0;
+    transition: background 0.12s, color 0.12s;
+  }
+
+  .progress-btn:hover {
+    background: rgba(143, 183, 255, 0.2);
+    color: var(--color-text);
   }
 
   .table-wrap {

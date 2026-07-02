@@ -181,7 +181,7 @@ describe('api wrappers', () => {
   it('marks episode watched', async () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     await expect(markEpisodeWatched(1, 5, invoke)).resolves.toBeUndefined();
-    expect(invoke).toHaveBeenCalledWith('mark_episode_watched', { anime_id: 1, episode: 5 });
+    expect(invoke).toHaveBeenCalledWith('mark_episode_watched', { animeId: 1, episode: 5 });
   });
 
   it('lists recent history', async () => {
@@ -195,13 +195,13 @@ describe('api wrappers', () => {
     const result = { known_file: false, parsed: null, candidates: [] };
     const invoke = vi.fn().mockResolvedValue(result);
     await expect(identifyFile('test.mkv', null, invoke)).resolves.toEqual(result);
-    expect(invoke).toHaveBeenCalledWith('identify_file', { file_path: 'test.mkv', window_title: null });
+    expect(invoke).toHaveBeenCalledWith('identify_file', { filePath: 'test.mkv', windowTitle: null });
   });
 
   it('confirms identification', async () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     await expect(confirmIdentification('test.mkv', 1, 5, invoke)).resolves.toBeUndefined();
-    expect(invoke).toHaveBeenCalledWith('confirm_identification', { file_path: 'test.mkv', anime_id: 1, episode: 5 });
+    expect(invoke).toHaveBeenCalledWith('confirm_identification', { filePath: 'test.mkv', animeId: 1, episode: 5 });
   });
 
   it('lists known files', async () => {
@@ -261,13 +261,13 @@ describe('api wrappers', () => {
     };
     const invoke = vi.fn().mockResolvedValue(detail);
     await expect(fetchAnimeDetail(1, invoke)).resolves.toEqual(detail);
-    expect(invoke).toHaveBeenCalledWith('fetch_anime_detail', { anime_id: 1 });
+    expect(invoke).toHaveBeenCalledWith('fetch_anime_detail', { animeId: 1 });
   });
 
   it('updates list entry through invoke', async () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     await expect(updateListEntry(1, { watched_episodes: 7 }, invoke)).resolves.toBeUndefined();
-    expect(invoke).toHaveBeenCalledWith('update_list_entry', { anime_id: 1, status: null, watched_episodes: 7, score: null });
+    expect(invoke).toHaveBeenCalledWith('update_list_entry', { animeId: 1, status: null, watchedEpisodes: 7, score: null });
   });
 
   it('gets session state through invoke', async () => {
@@ -330,13 +330,13 @@ describe('api wrappers', () => {
     };
     const invoke = vi.fn().mockResolvedValue(avail);
     await expect(getSonarrAvailability(42, invoke)).resolves.toEqual(avail);
-    expect(invoke).toHaveBeenCalledWith('get_sonarr_availability', { anime_id: 42 });
+    expect(invoke).toHaveBeenCalledWith('get_sonarr_availability', { animeId: 42 });
   });
 
   it('remaps sonarr through invoke', async () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     await expect(remapSonarr(5, 42, invoke)).resolves.toBeUndefined();
-    expect(invoke).toHaveBeenCalledWith('remap_sonarr', { sonarr_id: 5, anime_id: 42 });
+    expect(invoke).toHaveBeenCalledWith('remap_sonarr', { sonarrId: 5, animeId: 42 });
   });
 
   it('tests sonarr connection through invoke', async () => {

@@ -284,7 +284,7 @@ export function stopTracking(invokeFn: InvokeFn = tauriInvoke): Promise<Tracking
 }
 
 export function markEpisodeWatched(anime_id: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
-  return invokeFn<void>('mark_episode_watched', { anime_id, episode });
+  return invokeFn<void>('mark_episode_watched', { animeId: anime_id, episode });
 }
 
 export function listRecentHistory(limit: number, invokeFn: InvokeFn = tauriInvoke): Promise<RecentHistoryEntry[]> {
@@ -292,11 +292,11 @@ export function listRecentHistory(limit: number, invokeFn: InvokeFn = tauriInvok
 }
 
 export function identifyFile(filePath: string, windowTitle: string | null, invokeFn: InvokeFn = tauriInvoke): Promise<RecognitionResult> {
-  return invokeFn<RecognitionResult>('identify_file', { file_path: filePath, window_title: windowTitle });
+  return invokeFn<RecognitionResult>('identify_file', { filePath: filePath, windowTitle: windowTitle });
 }
 
 export function confirmIdentification(filePath: string, animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
-  return invokeFn<void>('confirm_identification', { file_path: filePath, anime_id: animeId, episode });
+  return invokeFn<void>('confirm_identification', { filePath: filePath, animeId: animeId, episode });
 }
 
 export function listKnownFiles(limit: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileIndexEntry[]> {
@@ -363,7 +363,7 @@ export function getSonarrAvailability(
   animeId: number,
   invokeFn: InvokeFn = tauriInvoke,
 ): Promise<SonarrAvailability | null> {
-  return invokeFn<SonarrAvailability | null>('get_sonarr_availability', { anime_id: animeId });
+  return invokeFn<SonarrAvailability | null>('get_sonarr_availability', { animeId: animeId });
 }
 
 export function remapSonarr(
@@ -371,7 +371,7 @@ export function remapSonarr(
   animeId: number | null,
   invokeFn: InvokeFn = tauriInvoke,
 ): Promise<void> {
-  return invokeFn<void>('remap_sonarr', { sonarr_id: sonarrId, anime_id: animeId });
+  return invokeFn<void>('remap_sonarr', { sonarrId: sonarrId, animeId: animeId });
 }
 
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {
@@ -398,7 +398,7 @@ export function getLibraryStats(invokeFn: InvokeFn = tauriInvoke): Promise<Libra
 }
 
 export function fetchAnimeDetail(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<AnimeDetail> {
-  return invokeFn<AnimeDetail>('fetch_anime_detail', { anime_id: animeId });
+  return invokeFn<AnimeDetail>('fetch_anime_detail', { animeId: animeId });
 }
 
 export function updateListEntry(
@@ -407,9 +407,9 @@ export function updateListEntry(
   invokeFn: InvokeFn = tauriInvoke,
 ): Promise<void> {
   return invokeFn<void>('update_list_entry', {
-    anime_id: animeId,
+    animeId: animeId,
     status: updates.status ?? null,
-    watched_episodes: updates.watched_episodes ?? null,
+    watchedEpisodes: updates.watched_episodes ?? null,
     score: updates.score ?? null,
   });
 }
