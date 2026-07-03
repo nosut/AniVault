@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { getSeasonAnime, searchLibrary, updateListEntry, type SeasonAnimeEntry } from './api';
+  import { getSeasonAnime, searchLibrary, updateListEntry, queueAniListSync, type SeasonAnimeEntry } from './api';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
@@ -58,6 +58,7 @@
   async function handleAddToList(animeId: number, title: string) {
     try {
       await updateListEntry(animeId, { status: 'plan_to_watch' });
+      await queueAniListSync(animeId, 0);
       libraryIds.add(animeId);
       libraryIds = new Set(libraryIds);
     } catch(e) { /* show error? */ }

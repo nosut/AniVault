@@ -137,6 +137,7 @@ pub fn run() {
             commands::get_anilist_connection_status,
             commands::get_anime_relations,
             commands::get_calendar,
+            commands::queue_anilist_sync,
             commands::get_statistics,
             commands::get_engine_status,
             commands::get_episode_files,

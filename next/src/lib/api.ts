@@ -412,6 +412,10 @@ export interface WatchHistoryEntry {
   source: string;
 }
 
+export function queueAniListSync(animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('queue_anilist_sync', { animeId, episode });
+}
+
 export function getWatchHistory(query?: string, limit?: number, offset?: number, invokeFn: InvokeFn = tauriInvoke): Promise<WatchHistoryEntry[]> {
   return invokeFn<WatchHistoryEntry[]>('get_watch_history', { query: query ?? null, limit: limit ?? 100, offset: offset ?? 0 });
 }

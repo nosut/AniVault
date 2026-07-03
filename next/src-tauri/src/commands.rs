@@ -831,6 +831,20 @@ pub async fn get_anime_relations(anime_id: i64, state: tauri::State<'_, EngineSt
     get_anime_relations_inner(&state, anime_id).await.map_err(command_error)
 }
 
+// ── Sync queue helpers ───────────────────────────────────────────────────────
+
+pub async fn queue_anilist_sync_inner(state: &EngineState, anime_id: i64, episode: i32) -> anyhow::Result<()> {
+    let payload = serde_json::json!({"episode": episode, "status": "plan_to_watch"}).to_string();
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+    state.storage.queue_sync(anime_id, "anilist", "update", &payload, now).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn queue_anilist_sync(anime_id: i64, episode: i32, state: tauri::State<'_, EngineState>) -> Result<(), String> {
+    queue_anilist_sync_inner(&state, anime_id, episode).await.map_err(command_error)
+}
+
 // ── Calendar ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]

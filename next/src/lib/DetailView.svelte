@@ -228,6 +228,10 @@
     clampProgress();
   }
 
+  function stripHtml(html: string): string {
+    return html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').trim();
+  }
+
   function formatDate(ts: number | null): string {
     if (!ts) return '—';
     return new Date(ts * 1000).toLocaleString();
@@ -315,7 +319,7 @@
         </div>
 
         {#if detail.synopsis}
-          <p class="synopsis">{detail.synopsis}</p>
+          <p class="synopsis">{stripHtml(detail.synopsis)}</p>
         {:else}
           <p class="synopsis muted">No synopsis available.</p>
         {/if}
@@ -678,6 +682,7 @@
     margin: 0;
     line-height: 1.55;
     color: #c8d2e0;
+    white-space: pre-line;
   }
 
   .synopsis.muted {
