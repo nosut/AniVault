@@ -486,7 +486,7 @@
           </div>
         {/if}
 
-        {#if episodeFiles.length > 0 || episodeFilesLoading}
+        {#if detail}
           <section class="card">
             <div class="section-header">
               <h3>Episode Files</h3>
@@ -500,7 +500,7 @@
 
             {#if episodeFilesLoading}
               <p class="muted">Loading…</p>
-            {:else}
+            {:else if episodeFiles.length > 0}
               <div class="episode-file-list">
                 {#each episodeFiles as file}
                   <div class="episode-file-row">
@@ -510,6 +510,8 @@
                   </div>
                 {/each}
               </div>
+            {:else if !episodeFilesLoading}
+              <p class="muted">No files found. Click Rescan to scan library folders.</p>
             {/if}
           </section>
         {/if}
