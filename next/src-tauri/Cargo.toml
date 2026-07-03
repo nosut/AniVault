@@ -37,5 +37,5 @@ windows = { version = "0.61.1", features = [
 ] }
 notify = { version = "6", default-features = false, features = ["macos_kqueue"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry", "fmt"] }
 tracing-appender = "0.2"

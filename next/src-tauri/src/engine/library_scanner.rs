@@ -101,6 +101,20 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
                 }
             }
 
+            // If direct search failed, try searching with individual words
+            if anime_id.is_none() && !parsed.as_ref().is_some_and(|p| p.cleaned_title.is_empty()) {
+                let cleaned = parsed.as_ref().map(|p| &p.cleaned_title).cloned().unwrap_or_default();
+                let words: Vec<&str> = cleaned.split_whitespace().collect();
+                if words.len() > 2 {
+                    let short_query = words[..3].join(" ");
+                    if let Ok(candidates) = storage.search_anime_by_title(&short_query, 3).await {
+                        if let Some(c) = candidates.first() {
+                            anime_id = Some(c.id);
+                        }
+                    }
+                }
+            }
+
             storage
                 .upsert_file_index(
                     &file_path_str,
