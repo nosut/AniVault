@@ -241,11 +241,11 @@ mutation ($mediaId: Int, $progress: Int) {
     }
 
     /// Fetch the authenticated user's currently-watching anime with airing schedule.
-    /// Uses Viewer→userId pattern (same as working fetch_user_list).
+    /// Uses Viewer→userId with GraphQL variables (working pattern).
     pub async fn fetch_airing_schedule(&self) -> anyhow::Result<Vec<AiringEntryRaw>> {
-        // Query Viewer to get authenticated user ID (same pattern as fetch_user_list)
+        // Query Viewer to get authenticated user ID
         let viewer_raw: serde_json::Value = self.query(
-            "query { Viewer { id name }}",
+            "query { Viewer { id }}",
             serde_json::json!({}),
         ).await?;
         let user_id = viewer_raw
@@ -255,15 +255,23 @@ mutation ($mediaId: Int, $progress: Int) {
             .and_then(|id| id.as_i64())
             .ok_or_else(|| anyhow::anyhow!("Could not get authenticated user ID"))?;
 
-        let query_str = format!(
-            "query {{ MediaListCollection(userId: {}, type: ANIME) {{ lists {{ entries {{ \
-             media {{ id title {{ romaji english native }} coverImage {{ large }} episodes \
-             nextAiringEpisode {{ airingAt timeUntilAiring episode }} }} \
-             progress }} }} }} }}",
-            user_id
-        );
+        // Use GraphQL variables (confirmed working pattern)
+        let query_str = r#"query ($userId: Int!, $type: MediaType!) {
+  MediaListCollection(userId: $userId, type: $type) {
+    lists { entries {
+      media {
+        id title { romaji english native }
+        coverImage { large }
+        episodes
+        nextAiringEpisode { airingAt timeUntilAiring episode }
+      }
+      progress
+    }}
+  }
+}"#;
+        let variables = serde_json::json!({ "userId": user_id, "type": "ANIME" });
 
-        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let raw: serde_json::Value = self.query(query_str, variables).await?;
 
         let mut entries = Vec::new();
         if let Some(lists) = raw
