@@ -37,6 +37,7 @@ pub fn run() {
 
             // Initialize file logging
             if let Ok(log_dir) = app.path().app_log_dir() {
+                let _ = std::fs::create_dir_all(&log_dir);
                 crate::engine::log::init_logging(&log_dir);
             }
 

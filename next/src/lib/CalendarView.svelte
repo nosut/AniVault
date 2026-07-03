@@ -64,9 +64,11 @@
   {:else if sorted.length === 0}
     <div class="cal-empty">
       {#if stats && stats.watching > 0}
-        <p>No upcoming episodes scheduled. Your watching anime may not have known airing dates yet.</p>
+        <p>No upcoming episodes scheduled for {stats.watching} watching series.</p>
+        <p class="debug-hint">Check Sonarr connection in Settings. Calendar works with Sonarr.</p>
       {:else}
-        <p>No currently watching anime. Add anime to your Watching list on AniList.</p>
+        <p>No currently watching anime.</p>
+        <p class="debug-hint">Import your library from AniList first, or connect Sonarr for calendar data.</p>
       {/if}
     </div>
   {:else}

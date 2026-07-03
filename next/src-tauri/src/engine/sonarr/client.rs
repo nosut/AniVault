@@ -64,6 +64,24 @@ pub struct SonarrImageRaw {
     pub remote_url: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SonarrCalendarEntry {
+    pub title: Option<String>,
+    #[serde(rename = "seriesId")]
+    pub series_id: Option<i64>,
+    #[serde(rename = "seasonNumber")]
+    pub season_number: Option<i32>,
+    #[serde(rename = "episodeNumber")]
+    pub episode_number: Option<i32>,
+    #[serde(rename = "airDate")]
+    pub air_date: Option<String>,
+    #[serde(rename = "airDateUtc")]
+    pub air_date_utc: Option<String>,
+    #[serde(rename = "hasFile")]
+    pub has_file: Option<bool>,
+    pub id: Option<i64>,
+}
+
 impl SonarrClient {
     pub fn new(url: String, api_key: String) -> Self {
         let url = url.trim_end_matches('/').to_string();
@@ -113,6 +131,20 @@ impl SonarrClient {
         }
 
         let body: Vec<SonarrSeriesRaw> = resp.json().await?;
+        Ok(body)
+    }
+
+    /// Fetch upcoming calendar entries from Sonarr.
+    /// start and end are ISO date strings like "2026-07-01"
+    pub async fn fetch_calendar(&self, start: &str, end: &str) -> anyhow::Result<Vec<SonarrCalendarEntry>> {
+        let url = format!("{}/api/v3/calendar?start={}&end={}&includeSeries=true", self.url, start, end);
+        let resp = self.http.get(&url).headers(self.headers()).send().await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr calendar HTTP {}: {}", status, body));
+        }
+        let body: Vec<SonarrCalendarEntry> = resp.json().await?;
         Ok(body)
     }
 }

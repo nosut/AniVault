@@ -889,32 +889,97 @@ pub struct CalendarEntry {
 }
 
 pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<CalendarEntry>> {
-    use crate::engine::anilist::client::AniListClient;
-    let token = crate::engine::anilist::auth::load_token(&state.storage)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("AniList not connected"))?;
-    let client = AniListClient::new(token);
+    // Try Sonarr first if connected
+    let url_raw = state.storage.get_setting("sonarr.url").await.ok().flatten();
+    let api_key_enc = state.storage.get_setting("sonarr.api_key").await.ok().flatten();
 
-    // Get watching anime IDs from local DB, then batch query AniList
+    if let (Some(url_raw), Some(api_key_enc)) = (url_raw, api_key_enc) {
+        if let (Ok(url), Ok(api_key)) = (
+            serde_json::from_str::<String>(&url_raw),
+            crate::engine::secrets::unprotect_secret(&api_key_enc)
+        ) {
+            let client = crate::engine::sonarr::client::SonarrClient::new(url, api_key);
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            let future = (chrono::Local::now() + chrono::Duration::days(60)).format("%Y-%m-%d").to_string();
+
+            match client.fetch_calendar(&today, &future).await {
+                Ok(entries) => {
+                    let calendar_entries: Vec<CalendarEntry> = entries.into_iter().map(|e| {
+                        let air_ts = e.air_date_utc.as_ref().and_then(|d| {
+                            // Try full ISO datetime first, fall back to date-only
+                            chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%dT%H:%M:%SZ").ok()
+                                .map(|dt| dt.and_utc().timestamp())
+                                .or_else(|| {
+                                    chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
+                                        .and_then(|nd| nd.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp()))
+                                })
+                        });
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64;
+                        let remaining = air_ts.map(|air| (air - now).max(0));
+                        CalendarEntry {
+                            anime_id: 0,
+                            title: e.title.unwrap_or_else(|| "Unknown".into()),
+                            image_url: None,
+                            episode_count: None,
+                            progress: None,
+                            next_episode: e.episode_number,
+                            airing_at: air_ts,
+                            time_until_airing: remaining,
+                        }
+                    }).collect();
+                    tracing::info!("Sonarr calendar: {} entries", calendar_entries.len());
+                    return Ok(calendar_entries);
+                }
+                Err(e) => {
+                    tracing::warn!("Sonarr calendar failed: {}, falling back to AniList", e);
+                }
+            }
+        }
+    }
+
+    // Fall back to AniList
+    let token = match crate::engine::anilist::auth::load_token(&state.storage).await? {
+        Some(t) => t,
+        None => return Ok(vec![]),
+    };
+    let client = crate::engine::anilist::client::AniListClient::new(token);
+
     let watching_ids = state.storage.watching_anime_ids().await?;
-    let media_list = client.fetch_airing_schedule(&watching_ids).await?;
+    tracing::info!("Calendar AniList fallback: {} watching anime IDs", watching_ids.len());
 
-    Ok(media_list.into_iter().filter_map(|m| {
-        m.next_airing_episode.as_ref()?; // only include entries with airing data
-        let title = m.title.as_ref()
-            .and_then(|t| t.romaji.clone().or_else(|| t.english.clone()))
-            .unwrap_or_else(|| format!("Anime #{}", m.id));
-        Some(CalendarEntry {
-            anime_id: m.id,
-            title,
-            image_url: m.cover_image.as_ref().and_then(|c| c.large.clone()),
-            episode_count: m.episodes,
-            progress: None, // progress not available via Page query
-            next_episode: m.next_airing_episode.as_ref().map(|e| e.episode),
-            airing_at: m.next_airing_episode.as_ref().map(|e| e.airing_at),
-            time_until_airing: m.next_airing_episode.as_ref().map(|e| e.time_until_airing),
-        })
-    }).collect())
+    if watching_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    match client.fetch_airing_schedule(&watching_ids).await {
+        Ok(entries) => {
+            let result: Vec<CalendarEntry> = entries.into_iter().filter_map(|m| {
+                let next_ep = m.next_airing_episode.as_ref()?;
+                let title = m.title.as_ref()
+                    .and_then(|t| t.english.clone().or_else(|| t.romaji.clone()))
+                    .unwrap_or_else(|| format!("Anime #{}", m.id));
+                Some(CalendarEntry {
+                    anime_id: m.id,
+                    title,
+                    image_url: m.cover_image.as_ref().and_then(|c| c.large.clone()),
+                    episode_count: m.episodes,
+                    progress: None,
+                    next_episode: Some(next_ep.episode),
+                    airing_at: Some(next_ep.airing_at),
+                    time_until_airing: Some(next_ep.time_until_airing),
+                })
+            }).collect();
+            tracing::info!("AniList calendar: {} entries", result.len());
+            Ok(result)
+        }
+        Err(e) => {
+            tracing::error!("AniList calendar failed: {}", e);
+            Err(e)
+        }
+    }
 }
 
 pub async fn get_statistics_inner(state: &EngineState) -> anyhow::Result<AnimeStats> {
