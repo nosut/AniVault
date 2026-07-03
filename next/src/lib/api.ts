@@ -467,6 +467,10 @@ export interface SeasonAnimeEntry {
   popularity: number | null;
 }
 
+export function searchAnime(query: string, invokeFn: InvokeFn = tauriInvoke): Promise<SeasonAnimeEntry[]> {
+  return invokeFn<SeasonAnimeEntry[]>('search_anime', { query });
+}
+
 export function getSeasonAnime(season: string, year: number, genre?: string, invokeFn: InvokeFn = tauriInvoke): Promise<SeasonAnimeEntry[]> {
   return invokeFn<SeasonAnimeEntry[]>('get_season_anime', { season, year, genre: genre ?? null });
 }

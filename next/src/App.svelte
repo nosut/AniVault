@@ -10,14 +10,16 @@
   import StatsView from './lib/StatsView.svelte';
   import HistoryView from './lib/HistoryView.svelte';
   import SeasonView from './lib/SeasonView.svelte';
+  import SearchView from './lib/SearchView.svelte';
   import bannerUrl from './assets/banner.png';
 
-  type View = 'dashboard' | 'library' | 'season' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
+  type View = 'dashboard' | 'library' | 'season' | 'search' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
 
   const navItems = [
     { id: 'dashboard' as View, label: 'Dashboard' },
     { id: 'library' as View, label: 'Library' },
     { id: 'season' as View, label: 'Season' },
+    { id: 'search' as View, label: 'Search' },
     { id: 'calendar' as View, label: 'Calendar' },
     { id: 'history' as View, label: 'History' },
     { id: 'stats' as View, label: 'Stats' },
@@ -46,6 +48,12 @@
   }
 
   function handleSeasonSelect(event: CustomEvent<{ anime_id: number }>) {
+    previousView = currentView;
+    detailAnimeId = event.detail.anime_id;
+    currentView = 'detail';
+  }
+
+  function handleSearchSelect(event: CustomEvent<{ anime_id: number }>) {
     previousView = currentView;
     detailAnimeId = event.detail.anime_id;
     currentView = 'detail';
@@ -108,6 +116,8 @@
       <LibraryView on:select={handleLibrarySelect} />
     {:else if currentView === 'season'}
       <SeasonView on:select={handleSeasonSelect} />
+    {:else if currentView === 'search'}
+      <SearchView on:select={handleSearchSelect} />
     {:else if currentView === 'calendar'}
       <CalendarView />
     {:else if currentView === 'history'}

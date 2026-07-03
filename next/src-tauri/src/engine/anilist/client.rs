@@ -240,56 +240,43 @@ mutation ($mediaId: Int, $progress: Int) {
         Ok(())
     }
 
-    /// Fetch the authenticated user's currently-watching anime with airing schedule.
-    /// Uses Viewer→userId with GraphQL variables (working pattern).
-    pub async fn fetch_airing_schedule(&self) -> anyhow::Result<Vec<AiringEntryRaw>> {
-        // Query Viewer to get authenticated user ID
-        let viewer_raw: serde_json::Value = self.query(
-            "query { Viewer { id }}",
-            serde_json::json!({}),
-        ).await?;
-        let user_id = viewer_raw
-            .get("data")
-            .and_then(|d| d.get("Viewer"))
-            .and_then(|v| v.get("id"))
-            .and_then(|id| id.as_i64())
-            .ok_or_else(|| anyhow::anyhow!("Could not get authenticated user ID"))?;
+    /// Fetch airing schedule for specific anime IDs using Page query with id_in.
+    /// This avoids MediaListCollection which requires user identification.
+    pub async fn fetch_airing_schedule(&self, anime_ids: &[i64]) -> anyhow::Result<Vec<Media>> {
+        if anime_ids.is_empty() {
+            return Ok(vec![]);
+        }
 
-        // Use GraphQL variables (confirmed working pattern)
-        let query_str = r#"query ($userId: Int!, $type: MediaType!) {
-  MediaListCollection(userId: $userId, type: $type) {
-    lists { entries {
-      media {
-        id title { romaji english native }
-        coverImage { large }
-        episodes
-        nextAiringEpisode { airingAt timeUntilAiring episode }
-      }
-      progress
-    }}
-  }
-}"#;
-        let variables = serde_json::json!({ "userId": user_id, "type": "ANIME" });
+        let id_list = anime_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", ");
+        let query_str = format!(
+            "query {{ Page(page: 1, perPage: 50) {{ media(id_in: [{}], type: ANIME) {{ \
+             id title {{ romaji english native }} coverImage {{ large }} episodes \
+             nextAiringEpisode {{ airingAt timeUntilAiring episode }} }} }} }}",
+            id_list
+        );
 
-        let raw: serde_json::Value = self.query(query_str, variables).await?;
+        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
 
-        let mut entries = Vec::new();
-        if let Some(lists) = raw
-            .get("data")
-            .and_then(|d| d.get("MediaListCollection"))
-            .and_then(|c| c.get("lists"))
-            .and_then(|l| l.as_array())
-        {
-            for group in lists {
-                if let Some(group_entries) = group.get("entries").and_then(|e| e.as_array()) {
-                    for e in group_entries {
-                        if let Ok(entry) = serde_json::from_value::<AiringEntryRaw>(e.clone()) {
-                            entries.push(entry);
-                        }
-                    }
-                }
+        if let Some(errors) = raw.get("errors").and_then(|e| e.as_array()) {
+            if !errors.is_empty() {
+                let msgs: Vec<String> = errors.iter().filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(String::from)).collect();
+                return Err(anyhow::anyhow!("AniList error: {}", msgs.join("; ")));
             }
         }
+
+        let media_list = raw
+            .get("data")
+            .and_then(|d| d.get("Page"))
+            .and_then(|p| p.get("media"))
+            .and_then(|m| m.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let entries: Vec<Media> = media_list
+            .into_iter()
+            .filter_map(|m| serde_json::from_value::<Media>(m).ok())
+            .collect();
+
         Ok(entries)
     }
 
@@ -317,6 +304,20 @@ mutation ($mediaId: Int, $progress: Int) {
         Ok(entries)
     }
 
+    /// Search anime by title.
+    pub async fn search_anime(&self, query: &str) -> anyhow::Result<Vec<SearchAnimeResult>> {
+        let escaped = query.replace('"', "\\\"");
+        let query_str = format!(
+            "query {{ Page(page: 1, perPage: 20) {{ media(search: \"{}\", type: ANIME) {{ \
+             id title {{ romaji english native }} coverImage {{ large }} \
+             episodes status format averageScore }} }} }}",
+            escaped
+        );
+        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let media_list = raw.get("data").and_then(|d| d.get("Page")).and_then(|p| p.get("media")).and_then(|m| m.as_array()).cloned().unwrap_or_default();
+        Ok(media_list.into_iter().filter_map(|m| serde_json::from_value::<SearchAnimeResult>(m).ok()).collect())
+    }
+
     /// Fetch related anime for a given anime ID (sequels, prequels, side stories, etc.).
     pub async fn fetch_anime_relations(&self, anime_id: i64) -> anyhow::Result<Vec<RelationEdge>> {
         let query_str = format!(
@@ -336,12 +337,6 @@ mutation ($mediaId: Int, $progress: Int) {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct AiringEntryRaw {
-    pub media: Option<Media>,
-    pub progress: Option<i32>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SeasonAnime {
     pub id: i64,
     pub title: Option<MediaTitle>,
@@ -353,6 +348,19 @@ pub struct SeasonAnime {
     #[serde(rename = "averageScore")]
     pub average_score: Option<i32>,
     pub popularity: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SearchAnimeResult {
+    pub id: i64,
+    pub title: Option<MediaTitle>,
+    pub episodes: Option<i32>,
+    pub status: Option<String>,
+    pub format: Option<String>,
+    #[serde(rename = "averageScore")]
+    pub average_score: Option<i32>,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<CoverImage>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

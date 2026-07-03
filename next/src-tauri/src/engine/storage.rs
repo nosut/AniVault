@@ -1259,6 +1259,15 @@ impl Storage {
         Ok(AnimeStats { score_distribution, total_anime, total_episodes_watched: total_eps, total_rewatches, avg_score, episodes_today, episodes_this_week })
     }
 
+    pub async fn watching_anime_ids(&self) -> anyhow::Result<Vec<i64>> {
+        let rows = sqlx::query(
+            "SELECT anime_id FROM list_entry WHERE status = 'watching' ORDER BY anime_id"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get::<i64, _>("anime_id")).collect())
+    }
+
     pub async fn continue_watching(&self, limit: i64) -> anyhow::Result<Vec<ContinueWatchingRow>> {
         let rows = sqlx::query(
             "SELECT a.id as anime_id, \

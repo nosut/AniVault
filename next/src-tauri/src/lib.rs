@@ -165,6 +165,7 @@ pub fn run() {
             commands::restore_database,
             commands::run_migration,
             commands::scan_library_folders,
+            commands::search_anime,
             commands::search_library,
             commands::set_launch_on_startup,
             commands::set_library_folders,

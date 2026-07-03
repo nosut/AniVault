@@ -749,6 +749,35 @@ pub async fn import_database_inner(
         .map_err(command_error)
 }
 
+// ── AniList Search ─────────────────────────────────────────────────────────────
+
+pub async fn search_anime_inner(state: &EngineState, query: String) -> anyhow::Result<Vec<SeasonAnimeEntry>> {
+    let token = crate::engine::anilist::auth::load_token(&state.storage).await?.ok_or_else(|| anyhow::anyhow!("not connected"))?;
+    let client = AniListClient::new(token);
+    let results = client.search_anime(&query).await?;
+    Ok(results.into_iter().map(|r| {
+        let title = r.title.as_ref()
+            .and_then(|t| t.romaji.clone())
+            .or_else(|| r.title.as_ref().and_then(|t| t.english.clone()))
+            .unwrap_or_else(|| format!("#{}", r.id));
+        SeasonAnimeEntry {
+            id: r.id,
+            title,
+            image_url: r.cover_image.and_then(|c| c.large),
+            episodes: r.episodes,
+            status: r.status,
+            format: r.format,
+            average_score: r.average_score,
+            popularity: None,
+        }
+    }).collect())
+}
+
+#[tauri::command]
+pub async fn search_anime(query: String, state: tauri::State<'_, EngineState>) -> Result<Vec<SeasonAnimeEntry>, String> {
+    search_anime_inner(&state, query).await.map_err(command_error)
+}
+
 // ── Season Browser ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -865,26 +894,25 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
         .await?
         .ok_or_else(|| anyhow::anyhow!("AniList not connected"))?;
     let client = AniListClient::new(token);
-    let entries = client.fetch_airing_schedule().await?;
 
-    Ok(entries.into_iter().filter_map(|e| {
-        let media = e.media?;
-        // Only include entries with known airing data
-        if media.next_airing_episode.is_none() { return None; }
-        let title = media.title.as_ref()?
-            .romaji.clone()
-            .or_else(|| media.title.as_ref()?.english.clone())
-            .unwrap_or_else(|| format!("Anime #{}", media.id));
-        let next_ep = media.next_airing_episode.as_ref();
+    // Get watching anime IDs from local DB, then batch query AniList
+    let watching_ids = state.storage.watching_anime_ids().await?;
+    let media_list = client.fetch_airing_schedule(&watching_ids).await?;
+
+    Ok(media_list.into_iter().filter_map(|m| {
+        m.next_airing_episode.as_ref()?; // only include entries with airing data
+        let title = m.title.as_ref()
+            .and_then(|t| t.romaji.clone().or_else(|| t.english.clone()))
+            .unwrap_or_else(|| format!("Anime #{}", m.id));
         Some(CalendarEntry {
-            anime_id: media.id,
+            anime_id: m.id,
             title,
-            image_url: media.cover_image.as_ref().and_then(|c| c.large.clone()),
-            episode_count: media.episodes,
-            progress: e.progress,
-            next_episode: next_ep.map(|e| e.episode),
-            airing_at: next_ep.map(|e| e.airing_at),
-            time_until_airing: next_ep.map(|e| e.time_until_airing),
+            image_url: m.cover_image.as_ref().and_then(|c| c.large.clone()),
+            episode_count: m.episodes,
+            progress: None, // progress not available via Page query
+            next_episode: m.next_airing_episode.as_ref().map(|e| e.episode),
+            airing_at: m.next_airing_episode.as_ref().map(|e| e.airing_at),
+            time_until_airing: m.next_airing_episode.as_ref().map(|e| e.time_until_airing),
         })
     }).collect())
 }
