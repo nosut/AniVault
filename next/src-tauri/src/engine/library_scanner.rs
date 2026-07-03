@@ -54,10 +54,12 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
             let file_path_str = file_path.to_string_lossy().to_string();
             found += 1;
 
-            // Skip if already indexed
-            if storage.get_file_index(&file_path_str).await?.is_some() {
-                skip_count += 1;
-                continue;
+            // Skip if already indexed with a valid match; re-evaluate if unmatched (confidence 0)
+            if let Some(existing) = storage.get_file_index(&file_path_str).await? {
+                if existing.confidence > 0 {
+                    skip_count += 1;
+                    continue;
+                }
             }
 
             // Parse filename to find episode info — use just the filename, not the full path

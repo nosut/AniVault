@@ -22,6 +22,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Initialize file logging first (before engine, so all startup is logged)
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                crate::engine::log::init_logging(&log_dir);
+            }
+
             let database_path = app
                 .path()
                 .app_data_dir()
@@ -34,12 +39,6 @@ pub fn run() {
             .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             sync_worker::spawn_sync_worker(&state);
             app.manage(state);
-
-            // Initialize file logging
-            if let Ok(log_dir) = app.path().app_log_dir() {
-                let _ = std::fs::create_dir_all(&log_dir);
-                crate::engine::log::init_logging(&log_dir);
-            }
 
             tracing::info!("AniVault engine initialized at {}", database_path.display());
 
