@@ -79,7 +79,7 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
                 None
             };
 
-            // If no match from filename, try parent directory names
+            // If no match from filename, try parent directory names directly
             if anime_id.is_none() {
                 // Try immediate parent (e.g., "Season 1")
                 let parent = file_path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).map(|s| s.to_string());
@@ -87,10 +87,11 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
                 let grandparent = file_path.parent().and_then(|p| p.parent()).and_then(|p| p.file_name()).and_then(|n| n.to_str()).map(|s| s.to_string());
                 
                 for dir_name in [parent.as_deref(), grandparent.as_deref()].into_iter().flatten() {
-                    let parsed_dir = parse_filename(dir_name, None);
-                    if let Some(ref p) = parsed_dir {
-                        if !p.cleaned_title.is_empty() {
-                            let candidates = storage.search_anime_by_title(&p.cleaned_title, 3).await?;
+                    // Use directory name directly for title search (parser needs episode numbers)
+                    let cleaned = dir_name.replace(['[', ']', '(', ')', '_'], " ")
+                        .split_whitespace().collect::<Vec<_>>().join(" ");
+                    if !cleaned.is_empty() {
+                        if let Ok(candidates) = storage.search_anime_by_title(&cleaned, 3).await {
                             if let Some(c) = candidates.first() {
                                 anime_id = Some(c.id);
                                 break;

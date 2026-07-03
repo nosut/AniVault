@@ -241,40 +241,29 @@ mutation ($mediaId: Int, $progress: Int) {
     }
 
     /// Fetch the authenticated user's currently-watching anime with airing schedule.
-    /// Uses auth token only (no userName) — avoids Viewer query issues.
+    /// Uses Viewer→userId pattern (same as working fetch_user_list).
     pub async fn fetch_airing_schedule(&self) -> anyhow::Result<Vec<AiringEntryRaw>> {
-        let query_str = r#"query {
-  MediaListCollection(type: ANIME) {
-    lists { entries {
-      media {
-        id title { romaji english native }
-        coverImage { large }
-        episodes
-        nextAiringEpisode { airingAt timeUntilAiring episode }
-      }
-      progress
-    }}
-  }
-}"#;
+        // Query Viewer to get authenticated user ID (same pattern as fetch_user_list)
+        let viewer_raw: serde_json::Value = self.query(
+            "query { Viewer { id name }}",
+            serde_json::json!({}),
+        ).await?;
+        let user_id = viewer_raw
+            .get("data")
+            .and_then(|d| d.get("Viewer"))
+            .and_then(|v| v.get("id"))
+            .and_then(|id| id.as_i64())
+            .ok_or_else(|| anyhow::anyhow!("Could not get authenticated user ID"))?;
 
-        let raw: serde_json::Value = self.query(query_str, serde_json::json!({})).await?;
+        let query_str = format!(
+            "query {{ MediaListCollection(userId: {}, type: ANIME) {{ lists {{ entries {{ \
+             media {{ id title {{ romaji english native }} coverImage {{ large }} episodes \
+             nextAiringEpisode {{ airingAt timeUntilAiring episode }} }} \
+             progress }} }} }} }}",
+            user_id
+        );
 
-        // Debug: log response structure for diagnostics
-        let entry_count = raw
-            .get("data").and_then(|d| d.get("MediaListCollection"))
-            .and_then(|c| c.get("lists")).and_then(|l| l.as_array())
-            .map_or(0, |a| {
-                a.iter().filter_map(|g| g.get("entries")?.as_array()).map(|e| e.len()).sum()
-            });
-        let has_errors = raw.get("errors").is_some();
-        tracing::info!("Calendar: {} entries returned, has_errors={}, raw={}", entry_count, has_errors, raw);
-
-        if let Some(errors) = raw.get("errors") {
-            let msg = errors.as_array()
-                .map(|a| a.iter().filter_map(|e| e.get("message").and_then(|m| m.as_str())).collect::<Vec<_>>().join("; "))
-                .unwrap_or_default();
-            return Err(anyhow::anyhow!("AniList error: {}", msg));
-        }
+        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
 
         let mut entries = Vec::new();
         if let Some(lists) = raw
