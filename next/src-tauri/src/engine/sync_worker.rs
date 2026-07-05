@@ -38,26 +38,27 @@ pub async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Dedup: only push the most recent episode per anime_id.
-    let mut latest: HashMap<i64, i32> = HashMap::new();
+    // Dedup: rows are ordered by created_at ASC, so the last row per anime_id is
+    // the newest — push its status + progress (captures both category and episode).
+    let mut latest: HashMap<i64, (Option<String>, i32)> = HashMap::new();
     for row in &rows {
         let payload: serde_json::Value =
             serde_json::from_str(&row.payload_json).unwrap_or_default();
         let episode = payload["episode"].as_i64().unwrap_or(0) as i32;
-        latest
-            .entry(row.anime_id)
-            .and_modify(|ep| {
-                if episode > *ep {
-                    *ep = episode;
-                }
-            })
-            .or_insert(episode);
+        let status = payload["status"].as_str().map(|s| s.to_string());
+        latest.insert(row.anime_id, (status, episode));
     }
 
     for row in &rows {
-        let episode = latest.get(&row.anime_id).copied().unwrap_or(0);
+        let (status, episode) = latest
+            .get(&row.anime_id)
+            .cloned()
+            .unwrap_or((None, 0));
 
-        match client.push_progress(row.anime_id, episode).await {
+        match client
+            .push_list_entry(row.anime_id, status.as_deref(), episode)
+            .await
+        {
             Ok(()) => {
                 state.storage.delete_sync_row(row.id).await?;
             }
@@ -87,6 +88,33 @@ pub async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Queue an AniList update for an anime's current list state (status + progress).
+/// Best-effort and only when connected — reads the live `list_entry` so the push
+/// always reflects the latest local state. Call after any list-entry change.
+pub async fn enqueue_anilist_sync(state: &EngineState, anime_id: i64) {
+    // Only queue when connected to AniList.
+    if !matches!(load_token(&state.storage).await, Ok(Some(_))) {
+        return;
+    }
+    let entry = match state.storage.get_list_entry(anime_id).await {
+        Ok(Some(e)) => e,
+        _ => return,
+    };
+    let payload = serde_json::json!({
+        "episode": entry.watched_episodes,
+        "status": entry.status,
+    })
+    .to_string();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let _ = state
+        .storage
+        .queue_sync(anime_id, "anilist", "update", &payload, now)
+        .await;
 }
 
 /// Spawn a background task that polls the sync queue every 30 seconds.

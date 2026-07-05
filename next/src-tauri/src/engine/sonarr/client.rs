@@ -33,6 +33,14 @@ pub struct SonarrSeriesRaw {
     pub added: Option<String>,
     #[serde(default)]
     pub statistics: Option<SonarrStatisticsRaw>,
+    #[serde(default)]
+    pub tags: Vec<i64>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SonarrTag {
+    pub id: i64,
+    pub label: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -65,10 +73,17 @@ pub struct SonarrImageRaw {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct SonarrCalendarSeries {
+    pub id: Option<i64>,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct SonarrCalendarEntry {
     pub title: Option<String>,
     #[serde(rename = "seriesId")]
     pub series_id: Option<i64>,
+    pub series: Option<SonarrCalendarSeries>,
     #[serde(rename = "seasonNumber")]
     pub season_number: Option<i32>,
     #[serde(rename = "episodeNumber")]
@@ -131,6 +146,21 @@ impl SonarrClient {
         }
 
         let body: Vec<SonarrSeriesRaw> = resp.json().await?;
+        Ok(body)
+    }
+
+    /// Fetch the tag definitions (id → label) configured in Sonarr.
+    pub async fn fetch_tags(&self) -> anyhow::Result<Vec<SonarrTag>> {
+        let resp = self
+            .http
+            .get(format!("{}/api/v3/tag", self.url))
+            .headers(self.headers())
+            .send()
+            .await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            return Err(anyhow::anyhow!("Sonarr returned HTTP {}", resp.status()));
+        }
+        let body: Vec<SonarrTag> = resp.json().await?;
         Ok(body)
     }
 

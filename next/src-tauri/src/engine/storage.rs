@@ -45,6 +45,8 @@ pub struct FileIndexRow {
     pub episode: Option<i32>,
     pub confidence: i32,
     pub indexed_at: i64,
+    #[serde(default)]
+    pub ignored: bool,
 }
 
 pub struct ListEntryFullRow {
@@ -79,6 +81,8 @@ pub struct LibraryRow {
     pub episode_count: Option<i32>,
     pub score: Option<i32>,
     pub image_url: Option<String>,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -156,6 +160,17 @@ pub struct SonarrMappingDb {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+pub struct SonarrSeriesListRow {
+    pub sonarr_id: i64,
+    pub title: String,
+    pub poster_url: Option<String>,
+    pub episode_count: i32,
+    pub anime_id: Option<i64>,
+    pub confidence: Option<i32>,
+    pub anime_title: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SonarrAvailabilityDb {
     pub sonarr_id: i64,
     pub sonarr_title: String,
@@ -200,10 +215,6 @@ impl Storage {
 
     pub async fn close(&self) {
         self.pool.close().await;
-    }
-
-    pub(crate) fn pool(&self) -> &SqlitePool {
-        &self.pool
     }
 
     pub async fn insert_minimal_anime(&self, id: i64, title: &str) -> anyhow::Result<()> {
@@ -371,7 +382,7 @@ impl Storage {
     pub async fn list_all_watch_history(&self, limit: i64, offset: i64) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
         let rows = sqlx::query(
             "SELECT wh.id, wh.anime_id, \
-             COALESCE(json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
              wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
              FROM watch_history wh \
              LEFT JOIN anime a ON wh.anime_id = a.id \
@@ -414,7 +425,7 @@ impl Storage {
         let pattern = format!("%{}%", query);
         let rows = sqlx::query(
             "SELECT wh.id, wh.anime_id, \
-             COALESCE(json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
              wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
              FROM watch_history wh \
              LEFT JOIN anime a ON wh.anime_id = a.id \
@@ -465,16 +476,46 @@ impl Storage {
     }
 
     pub async fn search_anime_by_title(&self, query: &str, limit: i64) -> anyhow::Result<Vec<AnimeRow>> {
-        let pattern = format!("%{}%", query);
-        let rows = sqlx::query(
-            "SELECT id, titles_json, episode_count FROM anime
-             WHERE titles_json LIKE ?1
-             ORDER BY id LIMIT ?2",
-        )
-        .bind(&pattern)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
+        // Tokenize the query into significant words and match anime whose titles_json
+        // contains ANY of them. A single full-title LIKE is too brittle: punctuation
+        // ("Online!" vs stored "online?"), stylized characters ("«Fruitmaster»"), and
+        // romaji-vs-English differences all cause misses. Broaden the candidate set here
+        // and let the caller (matcher::score_title_match) rank precisely.
+        let words: Vec<String> = query
+            .split_whitespace()
+            .map(|w| {
+                w.chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .collect::<String>()
+                    .to_lowercase()
+            })
+            // Drop very short / low-signal tokens ("a", "of", "to", "the", numbers)
+            .filter(|w| w.len() >= 3 && w.parse::<i64>().is_err())
+            .collect();
+
+        // Build a WHERE clause with one LIKE per token, ORed together. Fetch a wider
+        // pool than `limit` so the ranking step downstream has room to work.
+        let (where_clause, patterns): (String, Vec<String>) = if words.is_empty() {
+            // Fall back to the whole (trimmed) query if nothing survived tokenization.
+            ("titles_json LIKE ?1".to_string(), vec![format!("%{}%", query.trim())])
+        } else {
+            let clauses: Vec<String> = (0..words.len())
+                .map(|i| format!("titles_json LIKE ?{}", i + 1))
+                .collect();
+            let patterns = words.iter().map(|w| format!("%{}%", w)).collect();
+            (clauses.join(" OR "), patterns)
+        };
+
+        let pool_limit = (limit * 5).max(25);
+        let sql = format!(
+            "SELECT id, titles_json, episode_count FROM anime WHERE {} ORDER BY id LIMIT {}",
+            where_clause, pool_limit
+        );
+        let mut q = sqlx::query(&sql);
+        for p in &patterns {
+            q = q.bind(p);
+        }
+        let rows = q.fetch_all(&self.pool).await?;
         Ok(rows
             .iter()
             .map(|row| AnimeRow {
@@ -514,7 +555,7 @@ impl Storage {
 
     pub async fn get_file_index(&self, file_path: &str) -> anyhow::Result<Option<FileIndexRow>> {
         let row = sqlx::query(
-            "SELECT file_path, anime_id, episode, confidence, indexed_at
+            "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored
              FROM file_index WHERE file_path = ?1",
         )
         .bind(file_path)
@@ -526,12 +567,45 @@ impl Storage {
             episode: row.get("episode"),
             confidence: row.get("confidence"),
             indexed_at: row.get("indexed_at"),
+            ignored: row.get::<i64, _>("ignored") != 0,
+        }))
+    }
+
+    /// Look up a mapped file by its filename (basename) rather than full path.
+    /// Players like mpv only surface the filename in their window title, so the
+    /// absolute-path index lookup misses; this matches on the trailing filename.
+    pub async fn get_file_index_by_filename(
+        &self,
+        filename: &str,
+    ) -> anyhow::Result<Option<FileIndexRow>> {
+        // Escape LIKE metacharacters so titles with % or _ match literally.
+        let escaped = filename
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{escaped}");
+        let row = sqlx::query(
+            "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored \
+             FROM file_index \
+             WHERE file_path LIKE ?1 ESCAPE '\\' AND anime_id IS NOT NULL AND ignored = 0 \
+             ORDER BY confidence DESC, indexed_at DESC LIMIT 1",
+        )
+        .bind(pattern)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|row| FileIndexRow {
+            file_path: row.get("file_path"),
+            anime_id: row.get("anime_id"),
+            episode: row.get("episode"),
+            confidence: row.get("confidence"),
+            indexed_at: row.get("indexed_at"),
+            ignored: row.get::<i64, _>("ignored") != 0,
         }))
     }
 
     pub async fn file_index_by_anime(&self, anime_id: i64) -> anyhow::Result<Vec<FileIndexRow>> {
         let rows = sqlx::query(
-            "SELECT file_path, anime_id, episode, confidence, indexed_at FROM file_index WHERE anime_id = ?1 ORDER BY episode",
+            "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored FROM file_index WHERE anime_id = ?1 ORDER BY episode",
         )
         .bind(anime_id)
         .fetch_all(&self.pool)
@@ -544,13 +618,14 @@ impl Storage {
                 episode: r.get("episode"),
                 confidence: r.get("confidence"),
                 indexed_at: r.get("indexed_at"),
+                ignored: r.get::<i64, _>("ignored") != 0,
             })
             .collect())
     }
 
     pub async fn list_file_index(&self, limit: i64, offset: i64) -> anyhow::Result<Vec<FileIndexRow>> {
         let rows = sqlx::query(
-            "SELECT file_path, anime_id, episode, confidence, indexed_at
+            "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored
              FROM file_index ORDER BY indexed_at DESC LIMIT ?1 OFFSET ?2",
         )
         .bind(limit)
@@ -565,8 +640,169 @@ impl Storage {
                 episode: row.get("episode"),
                 confidence: row.get("confidence"),
                 indexed_at: row.get("indexed_at"),
+                ignored: row.get::<i64, _>("ignored") != 0,
             })
             .collect())
+    }
+
+    pub async fn delete_file_index(&self, file_path: &str) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM file_index WHERE file_path = ?1")
+            .bind(file_path)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Toggle the persistent "ignore" tombstone. When ignoring, the existing
+    /// match is cleared so the file drops out of auto-match results, but the row
+    /// is kept so the scanner keeps skipping it on future rescans.
+    pub async fn set_file_index_ignored(
+        &self,
+        file_path: &str,
+        ignored: bool,
+    ) -> anyhow::Result<()> {
+        if ignored {
+            sqlx::query(
+                "UPDATE file_index SET ignored = 1, anime_id = NULL, confidence = 0 WHERE file_path = ?1",
+            )
+            .bind(file_path)
+            .execute(&self.pool)
+            .await?;
+        } else {
+            sqlx::query("UPDATE file_index SET ignored = 0 WHERE file_path = ?1")
+                .bind(file_path)
+                .execute(&self.pool)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Batch unmap: clear the anime link (and stale confidence) so files return
+    /// to the "Unmapped" pool, keeping the rows so they can be re-mapped.
+    pub async fn unmap_file_indexes(&self, file_paths: &[String]) -> anyhow::Result<()> {
+        if file_paths.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        for path in file_paths {
+            sqlx::query("UPDATE file_index SET anime_id = NULL, confidence = 0 WHERE file_path = ?1")
+                .bind(path)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Remove bogus file-index rows whose "path" is actually a player window
+    /// title (no directory separator). These were mistakenly stored from mpv/VLC
+    /// and shadow the real mappings. Returns the number removed.
+    pub async fn delete_pathless_file_index(&self) -> anyhow::Result<u64> {
+        let res = sqlx::query(
+            "DELETE FROM file_index WHERE instr(file_path, '\\') = 0 AND instr(file_path, '/') = 0",
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected())
+    }
+
+    /// All indexed file paths whose location is under `dir` (prefix match on the
+    /// directory path). Used by the scanner to find rows whose file has been
+    /// deleted from disk so they can be pruned. `dir` should already include a
+    /// trailing path separator so it can't match a sibling like `Anime2\` when
+    /// the folder is `Anime\`.
+    pub async fn file_paths_under(&self, dir: &str) -> anyhow::Result<Vec<String>> {
+        // Escape LIKE metacharacters so paths with % or _ match literally.
+        let escaped = dir
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("{escaped}%");
+        let rows = sqlx::query(
+            "SELECT file_path FROM file_index WHERE file_path LIKE ?1 ESCAPE '\\'",
+        )
+        .bind(pattern)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get::<String, _>("file_path")).collect())
+    }
+
+    /// Batch delete of file-index rows in a single transaction.
+    pub async fn delete_file_indexes(&self, file_paths: &[String]) -> anyhow::Result<()> {
+        if file_paths.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        for path in file_paths {
+            sqlx::query("DELETE FROM file_index WHERE file_path = ?1")
+                .bind(path)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Batch ignore / un-ignore in a single transaction (see `set_file_index_ignored`).
+    pub async fn set_file_indexes_ignored(
+        &self,
+        file_paths: &[String],
+        ignored: bool,
+    ) -> anyhow::Result<()> {
+        if file_paths.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        for path in file_paths {
+            if ignored {
+                sqlx::query(
+                    "UPDATE file_index SET ignored = 1, anime_id = NULL, confidence = 0 WHERE file_path = ?1",
+                )
+                .bind(path)
+                .execute(&mut *tx)
+                .await?;
+            } else {
+                sqlx::query("UPDATE file_index SET ignored = 0 WHERE file_path = ?1")
+                    .bind(path)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Batch manual mapping: each tuple is (file_path, anime_id, episode). All are
+    /// written at full confidence (100) in a single transaction.
+    pub async fn upsert_file_mappings(
+        &self,
+        mappings: &[(String, i64, i32)],
+        indexed_at: i64,
+    ) -> anyhow::Result<()> {
+        if mappings.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        for (file_path, anime_id, episode) in mappings {
+            sqlx::query(
+                "INSERT INTO file_index (file_path, anime_id, episode, confidence, indexed_at, ignored)
+                 VALUES (?1, ?2, ?3, 100, ?4, 0)
+                 ON CONFLICT(file_path) DO UPDATE SET
+                   anime_id = excluded.anime_id,
+                   episode = excluded.episode,
+                   confidence = 100,
+                   indexed_at = excluded.indexed_at,
+                   ignored = 0",
+            )
+            .bind(file_path)
+            .bind(anime_id)
+            .bind(episode)
+            .bind(indexed_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
     }
 
     // ── M3 AniList storage helpers ──────────────────────────────────────────
@@ -593,6 +829,25 @@ impl Storage {
         .bind(episode_count)
         .bind(image_url)
         .bind(last_modified)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Set an anime's release season (COALESCE — only overwrites when a value is
+    /// provided, so it won't clear an existing season).
+    pub async fn set_anime_season(
+        &self,
+        id: i64,
+        season: Option<&str>,
+        season_year: Option<i32>,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE anime SET season = COALESCE(?2, season), season_year = COALESCE(?3, season_year) WHERE id = ?1",
+        )
+        .bind(id)
+        .bind(season)
+        .bind(season_year)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -831,10 +1086,10 @@ impl Storage {
         let pattern = format!("%{}%", query);
 
         let mut sql = String::from(
-            "SELECT a.id as anime_id, json_extract(a.titles_json, '$.romaji') as title, \
+            "SELECT a.id as anime_id, COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji')) as title, \
              COALESCE(le.status, 'unlisted') as status, \
              COALESCE(le.watched_episodes, 0) as watched_episodes, \
-             a.episode_count, le.score, a.image_url \
+             a.episode_count, le.score, a.image_url, a.season, a.season_year \
              FROM anime a \
              LEFT JOIN list_entry le ON a.id = le.anime_id \
              WHERE a.titles_json LIKE ?",
@@ -876,6 +1131,8 @@ impl Storage {
                 episode_count: row.get("episode_count"),
                 score: row.get("score"),
                 image_url: row.get("image_url"),
+                season: row.get("season"),
+                season_year: row.get("season_year"),
             })
             .collect())
     }
@@ -969,6 +1226,46 @@ impl Storage {
         .bind(now)
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    /// Flip a list entry to "completed" once its watched-episode count reaches the
+    /// anime's episode count (e.g. 12/12). No-op if the show has no known episode
+    /// count, isn't started, or is already completed.
+    pub async fn auto_complete_if_capped(&self, anime_id: i64) -> anyhow::Result<bool> {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let res = sqlx::query(
+            "UPDATE list_entry SET status = 'completed', local_updated = ?2 \
+             WHERE anime_id = ?1 AND status != 'completed' AND watched_episodes > 0 \
+               AND watched_episodes >= \
+                   (SELECT episode_count FROM anime \
+                    WHERE id = ?1 AND episode_count IS NOT NULL AND episode_count > 0)",
+        )
+        .bind(anime_id)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(res.rows_affected() > 0)
+    }
+
+    /// Delete an anime and everything tied to it. `list_entry`, `watch_history`,
+    /// `tracker_mapping` and `sync_queue` cascade on delete; `sonarr_mapping`
+    /// nulls out. Any indexed files are unmapped (and their stale confidence
+    /// cleared) so they resurface as Unmapped rather than pointing at a ghost id.
+    pub async fn delete_anime(&self, anime_id: i64) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE file_index SET anime_id = NULL, confidence = 0 WHERE anime_id = ?1")
+            .bind(anime_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM anime WHERE id = ?1")
+            .bind(anime_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -1093,6 +1390,26 @@ impl Storage {
         }))
     }
 
+    pub async fn sonarr_mapping_by_sonarr_id(&self, sonarr_id: i64) -> anyhow::Result<Option<SonarrMappingDb>> {
+        let row = sqlx::query(
+            "SELECT id, sonarr_id, anime_id, title_match, confidence, mapped_at, user_confirmed
+             FROM sonarr_mapping WHERE sonarr_id = ?1",
+        )
+        .bind(sonarr_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| SonarrMappingDb {
+            id: Some(r.get("id")),
+            sonarr_id: r.get("sonarr_id"),
+            anime_id: r.get("anime_id"),
+            title_match: r.get("title_match"),
+            confidence: r.get("confidence"),
+            mapped_at: r.get("mapped_at"),
+            user_confirmed: r.get("user_confirmed"),
+        }))
+    }
+
     pub async fn sonarr_mapping_unmapped(&self) -> anyhow::Result<Vec<SonarrMappingDb>> {
         let rows = sqlx::query(
             "SELECT id, sonarr_id, anime_id, title_match, confidence, mapped_at, user_confirmed
@@ -1117,6 +1434,54 @@ impl Storage {
             .fetch_one(&self.pool)
             .await?;
         Ok(row.get::<i64, _>(0))
+    }
+
+    /// Remove Sonarr series that are no longer wanted (e.g. lost their tag).
+    /// Passing an empty slice clears them all. Mappings cascade on delete.
+    pub async fn prune_sonarr_series_except(&self, keep_ids: &[i64]) -> anyhow::Result<()> {
+        if keep_ids.is_empty() {
+            sqlx::query("DELETE FROM sonarr_series").execute(&self.pool).await?;
+            return Ok(());
+        }
+        let placeholders = (1..=keep_ids.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!("DELETE FROM sonarr_series WHERE sonarr_id NOT IN ({placeholders})");
+        let mut q = sqlx::query(&sql);
+        for id in keep_ids {
+            q = q.bind(id);
+        }
+        q.execute(&self.pool).await?;
+        Ok(())
+    }
+
+    /// List every imported Sonarr series with its current anime mapping (if any),
+    /// for the manual-mapping UI.
+    pub async fn list_sonarr_series(&self) -> anyhow::Result<Vec<SonarrSeriesListRow>> {
+        let rows = sqlx::query(
+            "SELECT s.sonarr_id, s.title, s.poster_url, s.episode_count, \
+                    m.anime_id, m.confidence, \
+                    COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji')) as anime_title \
+             FROM sonarr_series s \
+             LEFT JOIN sonarr_mapping m ON m.sonarr_id = s.sonarr_id \
+             LEFT JOIN anime a ON a.id = m.anime_id \
+             ORDER BY s.title COLLATE NOCASE",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| SonarrSeriesListRow {
+                sonarr_id: r.get("sonarr_id"),
+                title: r.get("title"),
+                poster_url: r.get("poster_url"),
+                episode_count: r.get("episode_count"),
+                anime_id: r.get("anime_id"),
+                confidence: r.get("confidence"),
+                anime_title: r.get("anime_title"),
+            })
+            .collect())
     }
 
     pub async fn sonarr_mapping_delete_all(&self) -> anyhow::Result<()> {
@@ -1259,6 +1624,35 @@ impl Storage {
         Ok(AnimeStats { score_distribution, total_anime, total_episodes_watched: total_eps, total_rewatches, avg_score, episodes_today, episodes_this_week })
     }
 
+    pub async fn all_library_anime_ids(&self) -> anyhow::Result<Vec<i64>> {
+        let rows = sqlx::query("SELECT anime_id FROM list_entry").fetch_all(&self.pool).await?;
+        Ok(rows.iter().map(|r| r.get::<i64, _>("anime_id")).collect())
+    }
+
+    /// Anime ids eligible for the airing calendar: currently watching or planned.
+    pub async fn calendar_anime_ids(&self) -> anyhow::Result<Vec<i64>> {
+        let rows = sqlx::query(
+            "SELECT anime_id FROM list_entry WHERE status IN ('watching', 'plan_to_watch') ORDER BY anime_id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get::<i64, _>("anime_id")).collect())
+    }
+
+    /// Word-wildcard search: builds %word1%word2%word3% pattern for LIKE.
+    /// Useful when punctuation differences prevent exact substring matching.
+    pub async fn search_anime_by_words(&self, words: &[&str], limit: i64) -> anyhow::Result<Vec<AnimeRow>> {
+        if words.is_empty() { return Ok(vec![]); }
+        let pattern = format!("%{}%", words.join("%"));
+        let rows = sqlx::query("SELECT id, titles_json, episode_count FROM anime WHERE titles_json LIKE ?1 ORDER BY id LIMIT ?2")
+            .bind(&pattern).bind(limit).fetch_all(&self.pool).await?;
+        Ok(rows.iter().map(|row| AnimeRow {
+            id: row.get("id"),
+            titles_json: row.get("titles_json"),
+            episode_count: row.get("episode_count"),
+        }).collect())
+    }
+
     pub async fn watching_anime_ids(&self) -> anyhow::Result<Vec<i64>> {
         let rows = sqlx::query(
             "SELECT anime_id FROM list_entry WHERE status = 'watching' ORDER BY anime_id"
@@ -1271,7 +1665,7 @@ impl Storage {
     pub async fn continue_watching(&self, limit: i64) -> anyhow::Result<Vec<ContinueWatchingRow>> {
         let rows = sqlx::query(
             "SELECT a.id as anime_id, \
-             COALESCE(json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
              a.image_url, \
              COALESCE(le.watched_episodes, 0) as watched_episodes, \
              a.episode_count, \

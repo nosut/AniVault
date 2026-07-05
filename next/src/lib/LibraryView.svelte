@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { searchLibrary, updateListEntry, getEpisodeFiles, openEpisodeFile, type LibraryEntry, type FileIndexEntry } from './api';
+  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent } from './api';
+
+  export let events: EngineEvent[] = [];
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
@@ -15,16 +17,118 @@
     catch {}
   }
 
+  function loadPref(key: string, fallback: string): string {
+    try { return localStorage.getItem(key) ?? fallback; }
+    catch { return fallback; }
+  }
+  function persistPref(key: string, value: string) {
+    try { localStorage.setItem(key, value); } catch {}
+  }
+
   let query = '';
   let statusFilter: string | null = loadPersistedFilter();
   let entries: LibraryEntry[] = [];
   let loading = false;
   let error = '';
   let episodeFilesMap = new Map<number, FileIndexEntry[]>();
+  let stats: LibraryStats | null = null;
 
-  let sortKey: 'title' | 'status' | 'progress' = 'title';
-  let sortDir: 'asc' | 'desc' = 'asc';
-  let viewMode: 'table' | 'grid' = 'table';
+  type SortKey = 'title' | 'status' | 'progress' | 'season';
+  type Sort = { key: SortKey; dir: 'asc' | 'desc' };
+
+  // Per-category sort preferences: each status tab remembers its own sort, so
+  // switching tabs (e.g. Watching→progress, Plan to Watch→season) never forces
+  // you to re-apply the sort. Persisted across restarts.
+  const SORT_STORE_KEY = 'anivault-library-sort-by-category';
+  const DEFAULT_SORT: Record<string, Sort> = {
+    watching: { key: 'progress', dir: 'asc' },
+    on_hold: { key: 'progress', dir: 'asc' },
+    plan_to_watch: { key: 'season', dir: 'asc' },
+  };
+  const categoryKey = (filter: string | null): string => filter ?? 'all';
+  const defaultSortFor = (cat: string): Sort => DEFAULT_SORT[cat] ?? { key: 'title', dir: 'asc' };
+
+  function loadCategorySort(): Record<string, Sort> {
+    try {
+      const raw = localStorage.getItem(SORT_STORE_KEY);
+      if (raw) return JSON.parse(raw) as Record<string, Sort>;
+    } catch { /* fall through to migration */ }
+    // Migrate a pre-existing single global sort into the current category so the
+    // active view keeps its ordering after upgrading to per-category sorting.
+    const legacyKey = loadPref('anivault-library-sortkey', '') as SortKey;
+    const legacyDir = loadPref('anivault-library-sortdir', '') as 'asc' | 'desc';
+    return legacyKey && legacyDir
+      ? { [categoryKey(statusFilter)]: { key: legacyKey, dir: legacyDir } }
+      : {};
+  }
+
+  let categorySort: Record<string, Sort> = loadCategorySort();
+  const currentSort = (): Sort =>
+    categorySort[categoryKey(statusFilter)] ?? defaultSortFor(categoryKey(statusFilter));
+
+  let sortKey: SortKey = currentSort().key;
+
+  // Season column is only meaningful for the Plan to Watch backlog.
+  $: showSeason = statusFilter === 'plan_to_watch';
+
+  const SEASON_ORDER: Record<string, number> = { WINTER: 0, SPRING: 1, SUMMER: 2, FALL: 3 };
+  function formatSeason(season: string | null, year: number | null): string {
+    if (!season && !year) return '—';
+    const s = season ? season.charAt(0) + season.slice(1).toLowerCase() : '';
+    return [s, year ?? ''].filter((x) => x !== '' && x != null).join(' ');
+  }
+  function seasonSortVal(e: LibraryEntry): number {
+    if (!e.season_year) return Number.POSITIVE_INFINITY;
+    return e.season_year * 10 + (SEASON_ORDER[e.season ?? ''] ?? 0);
+  }
+  let sortDir: 'asc' | 'desc' = currentSort().dir;
+  let viewMode: 'table' | 'grid' = loadPref('anivault-library-viewmode', 'table') as 'table' | 'grid';
+  let compact = loadPref('anivault-library-compact', 'false') === 'true';
+
+  $: persistPref('anivault-library-viewmode', viewMode);
+  $: persistPref('anivault-library-compact', compact ? 'true' : 'false');
+
+  async function loadStats() {
+    try { stats = await getLibraryStats(); } catch { /* non-fatal */ }
+  }
+
+  // Live-update rows when the engine advances progress (auto-detected playback).
+  // Depends only on `events` so it won't loop on the writes below.
+  $: applyProgressEvents(events);
+  function applyProgressEvents(evs: EngineEvent[]) {
+    if (!evs || evs.length === 0 || entries.length === 0) return;
+    let changed = false;
+    for (const ev of evs) {
+      if (!('ProgressAdvanced' in ev)) continue;
+      const { anime_id, new_episode } = ev.ProgressAdvanced;
+      const entry = entries.find((e) => e.anime_id === anime_id);
+      if (entry && new_episode > entry.watched_episodes) {
+        entry.watched_episodes = new_episode;
+        if (entry.episode_count && new_episode >= entry.episode_count) {
+          entry.status = 'completed';
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      entries = [...entries];
+      void loadStats();
+    }
+  }
+
+  function tabCount(value: string | null): number | null {
+    if (!stats) return null;
+    switch (value) {
+      case null: return stats.total;
+      case 'watching': return stats.watching;
+      case 'completed': return stats.completed;
+      case 'on_hold': return stats.on_hold;
+      case 'dropped': return stats.dropped;
+      case 'plan_to_watch': return stats.plan_to_watch;
+      case 'unlisted': return Math.max(0, stats.total - (stats.watching + stats.completed + stats.on_hold + stats.dropped + stats.plan_to_watch));
+      default: return null;
+    }
+  }
 
   let debounceTimer: ReturnType<typeof setTimeout>;
 
@@ -46,7 +150,10 @@
     loading = true;
     error = '';
     try {
-      const results = await searchLibrary(query, statusFilter, 200, 0);
+      // A search spans the whole library — ignore the selected category tab so
+      // matches from every status show up. With no query, the tab filters as usual.
+      const searchFilter = query.trim() ? null : statusFilter;
+      const results = await searchLibrary(query, searchFilter, 200, 0);
       entries = results;
       if (results.length > 0) {
         loadEpisodeFiles(results);
@@ -77,13 +184,30 @@
     }, 300);
   }
 
-  function setSort(key: 'title' | 'status' | 'progress') {
+  function setSort(key: SortKey) {
     if (sortKey === key) {
       sortDir = sortDir === 'asc' ? 'desc' : 'asc';
     } else {
       sortKey = key;
       sortDir = 'asc';
     }
+    saveCurrentSort();
+  }
+
+  // Remember the active sort for the current category and persist the whole map.
+  function saveCurrentSort() {
+    categorySort = { ...categorySort, [categoryKey(statusFilter)]: { key: sortKey, dir: sortDir } };
+    try { localStorage.setItem(SORT_STORE_KEY, JSON.stringify(categorySort)); } catch { /* ignore */ }
+  }
+
+  // Switch category and restore that category's own remembered sort.
+  function selectStatus(value: string | null) {
+    statusFilter = value;
+    persistFilter(statusFilter);
+    const s = currentSort();
+    sortKey = s.key;
+    sortDir = s.dir;
+    load();
   }
 
   let progressUpdating = new Set<number>();
@@ -92,7 +216,11 @@
 
   function handleDragStart(e: DragEvent, entry: LibraryEntry) {
     dragEntry = entry;
-    e.dataTransfer!.effectAllowed = 'move';
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      // Required for the drop event to fire in Chromium/WebView2.
+      e.dataTransfer.setData('text/plain', String(entry.anime_id));
+    }
   }
 
   async function handleDrop(newStatus: string | null) {
@@ -102,6 +230,14 @@
     try {
       await updateListEntry(entry.anime_id, { status: newStatus });
       entry.status = newStatus;
+      // Reflect the change: drop the row if the active filter now excludes it,
+      // otherwise reassign so the badge re-renders.
+      if (statusFilter && statusFilter !== newStatus) {
+        entries = entries.filter((e) => e.anime_id !== entry.anime_id);
+      } else {
+        entries = [...entries];
+      }
+      void loadStats();
     } catch (e) {
       // revert on next reload
     }
@@ -115,6 +251,11 @@
     try {
       await updateListEntry(entry.anime_id, { watched_episodes: newEp });
       entry.watched_episodes = newEp;
+      // Auto-complete when the cap is reached (mirrors the backend).
+      if (entry.episode_count && newEp >= entry.episode_count) {
+        entry.status = 'completed';
+      }
+      entries = [...entries];
     } catch (e) {
       // revert on error handled by refresh
     } finally {
@@ -129,6 +270,7 @@
     try {
       await updateListEntry(entry.anime_id, { watched_episodes: newEp });
       entry.watched_episodes = newEp;
+      entries = [...entries];
     } catch (e) {
       // revert on error
     } finally {
@@ -170,6 +312,8 @@
       }
       selectedIds.clear(); allSelected = false;
       selectedIds = new Set(selectedIds);
+      entries = [...entries];
+      void loadStats();
       batchUpdating = false;
     };
   }
@@ -185,10 +329,34 @@
       try {
         await updateListEntry(id, { watched_episodes: newEp });
         entry.watched_episodes = newEp;
+        if (entry.episode_count && newEp >= entry.episode_count) {
+          entry.status = 'completed';
+        }
       } catch { /* continue */ }
     }
     selectedIds.clear(); allSelected = false;
     selectedIds = new Set(selectedIds);
+    entries = [...entries];
+    batchUpdating = false;
+  }
+
+  let confirmingDelete = false;
+
+  async function batchDelete() {
+    if (batchUpdating) return;
+    if (!confirmingDelete) { confirmingDelete = true; return; }
+    confirmingDelete = false;
+    batchUpdating = true;
+    const ids = [...selectedIds];
+    for (const id of ids) {
+      try {
+        await deleteAnime(id);
+      } catch { /* continue */ }
+    }
+    entries = entries.filter((e) => !selectedIds.has(e.anime_id));
+    selectedIds.clear(); allSelected = false;
+    selectedIds = new Set(selectedIds);
+    void loadStats();
     batchUpdating = false;
   }
 
@@ -216,8 +384,87 @@
     if (file) openEpisodeFile(file.file_path);
   }
 
+  // Right-click context menu.
+  let ctxMenu: { x: number; y: number; entry: LibraryEntry } | null = null;
+
+  function openContextMenu(e: MouseEvent, entry: LibraryEntry) {
+    e.preventDefault();
+    ctxMenu = { x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 320), entry };
+  }
+  function closeContextMenu() { ctxMenu = null; }
+
+  function ctxFiles(): { ep: number; path: string }[] {
+    if (!ctxMenu) return [];
+    return (episodeFilesMap.get(ctxMenu.entry.anime_id) ?? [])
+      .map(f => ({ ep: f.episode ?? 0, path: f.file_path }))
+      .filter(f => f.ep > 0)
+      .sort((a, b) => a.ep - b.ep);
+  }
+  function playCtxPath(path: string) { openEpisodeFile(path); closeContextMenu(); }
+  function ctxNextEp(): number | null {
+    if (!ctxMenu) return null;
+    const files = ctxFiles();
+    const f = files.find(x => x.ep === ctxMenu!.entry.watched_episodes + 1)
+      ?? files.find(x => x.ep > ctxMenu!.entry.watched_episodes);
+    return f ? f.ep : null;
+  }
+  function ctxPrevEp(): number | null {
+    if (!ctxMenu) return null;
+    const want = ctxMenu.entry.watched_episodes;
+    const f = ctxFiles().filter(x => x.ep <= want).sort((a, b) => b.ep - a.ep)[0];
+    return f ? f.ep : null;
+  }
+  function playCtxEp(ep: number | null) {
+    if (ep == null) return;
+    const f = ctxFiles().find(x => x.ep === ep);
+    if (f) playCtxPath(f.path);
+  }
+  function ctxOpenFolder() {
+    const files = ctxFiles();
+    if (files.length > 0) openContainingFolder(files[0].path);
+    closeContextMenu();
+  }
+  async function ctxDelete() {
+    if (!ctxMenu) return;
+    const id = ctxMenu.entry.anime_id;
+    closeContextMenu();
+    try {
+      await deleteAnime(id);
+      entries = entries.filter(e => e.anime_id !== id);
+      void loadStats();
+    } catch { /* ignore */ }
+  }
+  async function ctxRescan() {
+    if (!ctxMenu) return;
+    const id = ctxMenu.entry.anime_id;
+    closeContextMenu();
+    try {
+      await scanLibraryFolders();
+      const files = await getEpisodeFiles(id);
+      episodeFilesMap.set(id, files);
+      episodeFilesMap = new Map(episodeFilesMap);
+    } catch { /* ignore */ }
+  }
+
+  // Category display order for grouping cross-category search results.
+  const CATEGORY_ORDER = ['watching', 'completed', 'on_hold', 'dropped', 'plan_to_watch'];
+  function categoryRank(status: string): number {
+    const i = CATEGORY_ORDER.indexOf(status);
+    return i === -1 ? CATEGORY_ORDER.length : i;
+  }
+
   $: sortedEntries = (() => {
     const list = [...entries];
+
+    // While searching (results span every category), group by category, then name.
+    if (query.trim()) {
+      list.sort((a, b) => {
+        const c = categoryRank(a.status) - categoryRank(b.status);
+        return c !== 0 ? c : a.title.localeCompare(b.title);
+      });
+      return list;
+    }
+
     const dir = sortDir === 'asc' ? 1 : -1;
     list.sort((a, b) => {
       let cmp = 0;
@@ -234,6 +481,9 @@
           cmp = pa - pb;
           break;
         }
+        case 'season':
+          cmp = seasonSortVal(a) - seasonSortVal(b);
+          break;
       }
       return cmp * dir;
     });
@@ -242,10 +492,12 @@
 
   onMount(() => {
     void load();
+    void loadStats();
   });
 </script>
 
 <div class="library-view">
+  <div class="lib-header">
   <div class="controls">
     <input
       type="text"
@@ -258,6 +510,11 @@
     <button class="view-toggle" on:click={() => viewMode = viewMode === 'table' ? 'grid' : 'table'} aria-label="Toggle view">
       {viewMode === 'table' ? '▦ Grid' : '☰ Table'}
     </button>
+    {#if viewMode === 'table'}
+      <button class="view-toggle" on:click={() => compact = !compact} aria-pressed={compact} title="Toggle compact list density">
+        {compact ? '≣ Comfortable' : '≡ Compact'}
+      </button>
+    {/if}
   </div>
   <div class="status-tabs">
     {#each statusOptions as opt}
@@ -266,13 +523,14 @@
         class="status-tab"
         class:active={statusFilter === opt.value}
         class:dragover={dragEntry !== null && dragEntry.status !== opt.value}
-        on:dragover={(e) => { e.preventDefault(); }}
-        on:drop={() => handleDrop(opt.value)}
-        on:click={() => { statusFilter = opt.value; persistFilter(statusFilter); load(); }}
+        on:dragover={(e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; }}
+        on:drop={(e) => { e.preventDefault(); handleDrop(opt.value); }}
+        on:click={() => selectStatus(opt.value)}
       >
-        {opt.label}
+        {opt.label}{#if stats}<span class="tab-count"> ({tabCount(opt.value)})</span>{/if}
       </button>
     {/each}
+  </div>
   </div>
 
   {#if error}
@@ -291,6 +549,7 @@
           aria-label={`${entry.title}, ${entry.status}`}
           on:click={() => handleRowActivate(entry)}
           on:keydown={(e) => e.key === 'Enter' && handleRowActivate(entry)}
+          on:contextmenu={(e) => openContextMenu(e, entry)}
         >
           <div class="poster-check">
             <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation aria-label={`Select ${entry.title}`} />
@@ -306,7 +565,9 @@
             <div class="progress-wrap poster-progress">
               <div class="progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
               <div class="progress-inner">
+                <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
                 <span class="progress-text">{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
+                <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
               </div>
             </div>
             {#if episodeFilesMap.has(entry.anime_id) && entry.episode_count && entry.episode_count > 0}
@@ -335,7 +596,7 @@
     </div>
   {:else}
     <div class="table-wrap">
-      <table>
+      <table class:compact>
         <thead>
           <tr>
             <th class="col-check" scope="col">
@@ -380,6 +641,20 @@
                 {/if}
               </button>
             </th>
+            {#if showSeason}
+              <th class="col-season" scope="col">
+                <button
+                  type="button"
+                  class="sort-btn"
+                  aria-label="Sort by season"
+                  aria-sort={sortKey === 'season' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  on:click={() => setSort('season')}
+                >
+                  Season
+                  {#if sortKey === 'season'}<span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>{/if}
+                </button>
+              </th>
+            {/if}
             <th class="col-progress" scope="col">
               <button
                 type="button"
@@ -416,7 +691,7 @@
             {/each}
           {:else if sortedEntries.length === 0}
             <tr class="empty-row">
-              <td colspan="6">
+              <td colspan={showSeason ? 7 : 6}>
                 <p class="empty">No anime found.</p>
               </td>
             </tr>
@@ -428,6 +703,7 @@
                 tabindex="0"
                 on:click={() => handleRowActivate(entry)}
                 on:keydown={(e) => onRowKeydown(e, entry)}
+                on:contextmenu={(e) => openContextMenu(e, entry)}
                 on:dragstart={(e) => handleDragStart(e, entry)}
                 on:dragend={() => dragEntry = null}
               >
@@ -452,6 +728,9 @@
                 <td>
                   <span class="badge">{formatStatus(entry.status)}</span>
                 </td>
+                {#if showSeason}
+                  <td class="col-season season-cell">{formatSeason(entry.season, entry.season_year)}</td>
+                {/if}
                 <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
                   <div class="progress-wrap">
                     <div class="progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
@@ -508,15 +787,59 @@
         <button class="action-btn" on:click={batchSetStatus('dropped')}>Dropped</button>
         <button class="action-btn" on:click={batchSetStatus('plan_to_watch')}>Plan to Watch</button>
         <button class="action-btn" on:click={batchIncrementProgress}>+1 Ep</button>
+        <button class="action-btn danger" on:click={batchDelete} on:blur={() => confirmingDelete = false}>
+          {confirmingDelete ? `Delete ${selectedIds.size}? Click again` : 'Delete'}
+        </button>
       </div>
     {/if}
   {/if}
+
+  {#if ctxMenu}
+    <div class="ctx-backdrop" on:click={closeContextMenu} on:contextmenu|preventDefault={closeContextMenu} role="presentation"></div>
+    <div class="ctx-menu" style="left: {ctxMenu.x}px; top: {ctxMenu.y}px;" role="menu">
+      <button class="ctx-item" role="menuitem" disabled={ctxNextEp() === null} on:click={() => playCtxEp(ctxNextEp())}>
+        ▶ Play next{#if ctxNextEp() !== null} <span class="ctx-dim">Ep {ctxNextEp()}</span>{/if}
+      </button>
+      <button class="ctx-item" role="menuitem" disabled={ctxPrevEp() === null} on:click={() => playCtxEp(ctxPrevEp())}>
+        ◀ Play previous{#if ctxPrevEp() !== null} <span class="ctx-dim">Ep {ctxPrevEp()}</span>{/if}
+      </button>
+
+      <div class="ctx-sub">
+        <button class="ctx-item has-sub" role="menuitem" disabled={ctxFiles().length === 0}>Play episode <span class="ctx-arrow">▸</span></button>
+        {#if ctxFiles().length > 0}
+          <div class="ctx-submenu">
+            {#each ctxFiles() as f (f.path)}
+              <button class="ctx-item" role="menuitem" on:click={() => playCtxPath(f.path)}>Episode {f.ep}</button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <div class="ctx-sep"></div>
+      <button class="ctx-item" role="menuitem" disabled={ctxFiles().length === 0} on:click={ctxOpenFolder}>📂 Open folder</button>
+      <button class="ctx-item" role="menuitem" on:click={ctxRescan}>↻ Rescan episodes</button>
+      <button class="ctx-item danger" role="menuitem" on:click={ctxDelete}>🗑 Delete from library</button>
+    </div>
+  {/if}
 </div>
+
+<svelte:window on:keydown={(e) => e.key === 'Escape' && closeContextMenu()} />
 
 <style>
   .library-view {
     display: grid;
     gap: 1rem;
+  }
+
+  .lib-header {
+    position: sticky;
+    top: -1.5rem;
+    z-index: 6;
+    display: grid;
+    gap: 0.75rem;
+    padding: 1.5rem 0 0.5rem;
+    margin: -1.5rem 0 -0.25rem;
+    background: var(--color-bg, #0a0d14);
   }
 
   .controls {
@@ -699,6 +1022,20 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   }
 
+  /* Compact / dense list mode — fits many more rows on screen. */
+  table.compact { font-size: 0.82rem; }
+  table.compact thead th { padding: 0.4rem 0.7rem; }
+  table.compact tbody td { padding: 0.12rem 0.7rem; }
+  table.compact .thumb,
+  table.compact .thumb.fallback { width: 18px; height: 18px; }
+  table.compact .badge { padding: 0.04rem 0.4rem; font-size: 0.66rem; }
+  table.compact .progress-wrap { height: 1.15rem; }
+  table.compact .progress-text { font-size: 0.72rem; min-width: 2.4rem; }
+  table.compact .progress-btn { width: 1.05rem; height: 1.05rem; font-size: 0.72rem; }
+  table.compact .ep-download-bar { height: 0.25rem; margin-top: 0.1rem; }
+  table.compact .ep-segment:hover { transform: scaleY(1.5); }
+  table.compact .play-inline-btn { padding: 0.05rem 0.35rem; }
+
   .data-row {
     cursor: pointer;
     transition: background 0.15s ease;
@@ -752,6 +1089,9 @@
     font-variant-numeric: tabular-nums;
     color: var(--color-muted);
   }
+
+  .col-season { white-space: nowrap; }
+  .season-cell { color: var(--color-muted); white-space: nowrap; }
 
   .empty-row td {
     text-align: center;
@@ -894,11 +1234,103 @@
   }
 
   .poster-progress {
-    height: 1.2rem;
+    height: 1.5rem;
   }
 
   .poster-progress .progress-text {
     font-size: 0.72rem;
+    min-width: 2.5rem;
+  }
+
+  .poster-progress .progress-btn {
+    width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.8rem;
+  }
+
+  .tab-count {
+    opacity: 0.65;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ctx-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+  }
+
+  .ctx-menu {
+    position: fixed;
+    z-index: 41;
+    min-width: 11rem;
+    max-width: 16rem;
+    background: rgba(16, 21, 32, 0.98);
+    border: 1px solid rgba(143, 183, 255, 0.25);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    padding: 0.35rem;
+    display: grid;
+    gap: 0.15rem;
+  }
+
+  .ctx-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    padding: 0.4rem 0.55rem;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .ctx-item:hover:not(:disabled) {
+    background: rgba(143, 183, 255, 0.15);
+  }
+
+  .ctx-item:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .ctx-item.danger { color: #ffb0b0; }
+  .ctx-item.danger:hover:not(:disabled) { background: rgba(255, 130, 130, 0.15); }
+
+  .ctx-dim { color: var(--color-muted); font-size: 0.75rem; }
+  .ctx-arrow { float: right; color: var(--color-muted); }
+
+  .ctx-sep {
+    height: 1px;
+    background: rgba(143, 183, 255, 0.15);
+    margin: 0.25rem 0.3rem;
+  }
+
+  .ctx-sub { position: relative; }
+
+  .ctx-submenu {
+    display: none;
+    position: absolute;
+    left: 100%;
+    top: 0;
+    margin-left: 2px;
+    min-width: 8rem;
+    max-height: 18rem;
+    overflow-y: auto;
+    background: rgba(16, 21, 32, 0.99);
+    border: 1px solid rgba(143, 183, 255, 0.25);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    padding: 0.35rem;
+    gap: 0.1rem;
+  }
+
+  .ctx-sub:hover .ctx-submenu,
+  .ctx-submenu:hover {
+    display: grid;
   }
 
   @keyframes pulse {
@@ -968,6 +1400,16 @@
 
   .action-btn:hover {
     background: rgba(143, 183, 255, 0.2);
+  }
+
+  .action-btn.danger {
+    border-color: rgba(255, 130, 130, 0.4);
+    background: rgba(255, 130, 130, 0.12);
+    color: #ffb0b0;
+  }
+
+  .action-btn.danger:hover {
+    background: rgba(255, 130, 130, 0.24);
   }
 
   .col-files {

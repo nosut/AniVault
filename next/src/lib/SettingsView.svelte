@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getEngineStatus, getLaunchOnStartup, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport } from './api';
+  import { getEngineStatus, getLaunchOnStartup, getStartInTray, setStartInTray, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport } from './api';
   import {
     discoverV1Data, previewMigration, runMigration,
     backupDatabase, restoreDatabase, exportDatabase, importDatabase,
@@ -8,8 +8,11 @@
   } from './api';
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
+  import FileManager from './FileManager.svelte';
+  import SonarrRemap from './SonarrRemap.svelte';
+  import { listSonarrSeries, type SonarrSeriesListRow } from './api';
 
-  type Tab = 'general' | 'tracking' | 'library' | 'anilist' | 'sonarr' | 'migration' | 'about';
+  type Tab = 'general' | 'tracking' | 'library' | 'files' | 'anilist' | 'sonarr' | 'migration' | 'about';
   let activeTab: Tab = 'general';
 
   let startupEnabled = false;
@@ -17,6 +20,7 @@
   let startupError: string | null = null;
   let startupSaveState: 'idle' | 'saving' | 'saved' = 'idle';
   let startupSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let startInTray = false;
 
   let trackingEnabled = true;
   let trackingLoading = false;
@@ -45,6 +49,38 @@
   let sonarrImporting = false;
   let sonarrImportReport: SonarrImportReport | null = null;
   let sonarrImportError: string | null = null;
+
+  // Sonarr series mapping list
+  let sonarrSeries: SonarrSeriesListRow[] = [];
+  let sonarrSeriesLoading = false;
+  let sonarrSeriesFilter: 'all' | 'unmapped' = 'all';
+  let sonarrSeriesSearch = '';
+
+  async function loadSonarrSeries() {
+    sonarrSeriesLoading = true;
+    try { sonarrSeries = await listSonarrSeries(); }
+    catch { sonarrSeries = []; }
+    finally { sonarrSeriesLoading = false; }
+  }
+
+  // Update just the affected row in place so the list doesn't scroll back to top.
+  function onSonarrRemapped(sonarrId: number, detail: { animeId: number | null; title: string | null }) {
+    sonarrSeries = sonarrSeries.map((s) =>
+      s.sonarr_id === sonarrId
+        ? { ...s, anime_id: detail.animeId, anime_title: detail.title }
+        : s,
+    );
+  }
+
+  $: sonarrSeriesFiltered = sonarrSeries.filter((s) => {
+    if (sonarrSeriesFilter === 'unmapped' && s.anime_id != null) return false;
+    if (sonarrSeriesSearch.trim()) {
+      const q = sonarrSeriesSearch.trim().toLowerCase();
+      if (!`${s.title} ${s.anime_title ?? ''}`.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+  $: sonarrUnmappedCount = sonarrSeries.filter((s) => s.anime_id == null).length;
 
   // Library state
   let libraryFolders: string[] = [];
@@ -92,6 +128,7 @@
     startupError = null;
     try {
       startupEnabled = await getLaunchOnStartup();
+      startInTray = await getStartInTray();
     } catch (e) {
       startupError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -112,6 +149,22 @@
       startupSaveState = 'idle';
       startupError = e instanceof Error ? e.message : String(e);
       startupEnabled = !next;
+    }
+  }
+
+  async function handleStartInTrayToggle() {
+    const next = !startInTray;
+    startInTray = next;
+    startupSaveState = 'saving';
+    if (startupSaveTimer) clearTimeout(startupSaveTimer);
+    try {
+      await setStartInTray(next);
+      startupSaveState = 'saved';
+      startupSaveTimer = setTimeout(() => (startupSaveState = 'idle'), 1500);
+    } catch (e) {
+      startupSaveState = 'idle';
+      startupError = e instanceof Error ? e.message : String(e);
+      startInTray = !next;
     }
   }
 
@@ -216,6 +269,7 @@
     try {
       sonarrImportReport = await importSonarrSeries();
       await loadSonarrStatus();
+      await loadSonarrSeries();
     } catch (e) {
       sonarrImportError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -319,6 +373,7 @@
     loadLibraryFolders();
     loadEngineStatus();
     loadSonarrStatus();
+    loadSonarrSeries();
   });
 
   onDestroy(() => {
@@ -329,7 +384,7 @@
 
 <div class="settings-view">
   <nav class="tab-bar" role="tablist" aria-label="Settings sections">
-    {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'library', label: 'Library'}, {id: 'anilist', label: 'AniList'}, {id: 'sonarr', label: 'Sonarr'}, {id: 'migration', label: 'Migration'}, {id: 'about', label: 'About'}] as tab}
+    {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'library', label: 'Library'}, {id: 'files', label: 'Files'}, {id: 'anilist', label: 'AniList'}, {id: 'sonarr', label: 'Sonarr'}, {id: 'migration', label: 'Migration'}, {id: 'about', label: 'About'}] as tab}
       <button
         type="button"
         role="tab"
@@ -378,6 +433,19 @@
                 {startupEnabled ? 'Enabled' : 'Disabled'}
               </button>
             </div>
+            <div class="toggle-row">
+              <span class="label">Start minimized to the system tray</span>
+              <button
+                type="button"
+                class="toggle-btn"
+                class:active={startInTray}
+                aria-pressed={startInTray}
+                on:click={handleStartInTrayToggle}
+              >
+                {startInTray ? 'Enabled' : 'Disabled'}
+              </button>
+            </div>
+            <p class="hint">When enabled, launching on Windows startup opens AniVault directly to the tray (no window). Open it any time from the tray icon.</p>
           {/if}
         </section>
       </div>
@@ -483,6 +551,12 @@
       </div>
     {/if}
 
+    {#if activeTab === 'files'}
+      <div class="panel" role="tabpanel" id="panel-files" aria-labelledby="tab-files">
+        <FileManager />
+      </div>
+    {/if}
+
     {#if activeTab === 'anilist'}
       <div id="panel-anilist" role="tabpanel" class="panel">
         <div class="anilist-grid">
@@ -561,6 +635,43 @@
             {/if}
             {#if sonarrImportError}
               <p class="error">{sonarrImportError}</p>
+            {/if}
+          </section>
+
+          <section class="card">
+            <div class="section-header">
+              <h3>Series Mapping</h3>
+              <span class="save-state">{sonarrUnmappedCount} unmapped</span>
+            </div>
+            <p class="hint">Map Sonarr series to anime in your library. Unmapped series won't show Sonarr info on their detail page or in the calendar.</p>
+
+            <div class="form-actions" style="margin-bottom: 0.5rem;">
+              <input class="form-input" type="text" placeholder="Search series…" bind:value={sonarrSeriesSearch} style="flex:1;" />
+              <button class="action-btn outline" class:active={sonarrSeriesFilter === 'all'} on:click={() => (sonarrSeriesFilter = 'all')}>All</button>
+              <button class="action-btn outline" class:active={sonarrSeriesFilter === 'unmapped'} on:click={() => (sonarrSeriesFilter = 'unmapped')}>Unmapped</button>
+            </div>
+
+            {#if sonarrSeriesLoading}
+              <p class="muted">Loading…</p>
+            {:else if sonarrSeries.length === 0}
+              <p class="muted">No series imported yet. Click Import Series above.</p>
+            {:else}
+              <ul class="sonarr-series-list">
+                {#each sonarrSeriesFiltered.slice(0, 300) as s (s.sonarr_id)}
+                  <li class="sonarr-series-row">
+                    <span class="ss-title" title={s.title}>{s.title}</span>
+                    {#if s.anime_id != null}
+                      <span class="ss-map mapped">→ {s.anime_title ?? `#${s.anime_id}`}</span>
+                    {:else}
+                      <span class="ss-map unmapped">Unmapped</span>
+                    {/if}
+                    <SonarrRemap sonarrId={s.sonarr_id} currentAnimeId={s.anime_id} on:changed={(e) => onSonarrRemapped(s.sonarr_id, e.detail)} />
+                  </li>
+                {/each}
+              </ul>
+              {#if sonarrSeriesFiltered.length > 300}
+                <p class="muted">Showing first 300 of {sonarrSeriesFiltered.length}. Refine with search.</p>
+              {/if}
             {/if}
           </section>
         {:else}
@@ -1253,6 +1364,29 @@
     font-family: monospace;
     font-size: 0.78rem;
   }
+
+  .action-btn.outline.active {
+    background: rgba(143, 183, 255, 0.28);
+    border-color: rgba(143, 183, 255, 0.6);
+    color: #e9eefc;
+  }
+
+  .sonarr-series-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.3rem; max-height: 28rem; overflow-y: auto; }
+  .sonarr-series-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid rgba(143,183,255,0.1);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.03);
+    font-size: 0.82rem;
+  }
+  .ss-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text); }
+  .ss-map { font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 12rem; }
+  .ss-map.mapped { color: var(--color-accent); }
+  .ss-map.unmapped { color: #f0c040; }
 
   .folder-list { list-style: none; padding: 0; margin: 0.5rem 0; }
   .folder-item { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.6rem; border: 1px solid rgba(143,183,255,0.1); border-radius: 6px; margin-bottom: 0.25rem; background: rgba(255,255,255,0.03); font-size: 0.82rem; }

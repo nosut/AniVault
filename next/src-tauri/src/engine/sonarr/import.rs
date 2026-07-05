@@ -1,6 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::engine::parser::parse_filename;
 use crate::engine::storage::{SonarrSeriesDb, Storage};
 use crate::engine::sonarr::client::{SonarrClient, SonarrSeriesRaw};
 
@@ -155,11 +154,33 @@ fn pick_poster_url(raw: &SonarrSeriesRaw) -> Option<String> {
         .and_then(|img| img.remote_url.clone())
 }
 
+/// Tag labels that mark a series as "one I care about". Only series carrying one
+/// of these Sonarr tags are imported.
+const WANTED_TAGS: &[&str] = &["1 - nosut", "mine"];
+
 pub async fn import_sonarr_series(
     client: &SonarrClient,
     storage: &Storage,
 ) -> anyhow::Result<ImportReport> {
-    let raw_series = client.fetch_series().await?;
+    let all_series = client.fetch_series().await?;
+
+    // Resolve which tag ids correspond to the wanted labels, then keep only series
+    // carrying at least one of them.
+    let tags = client.fetch_tags().await.unwrap_or_default();
+    let wanted_ids: std::collections::HashSet<i64> = tags
+        .iter()
+        .filter(|t| {
+            WANTED_TAGS
+                .iter()
+                .any(|w| w.eq_ignore_ascii_case(t.label.trim()))
+        })
+        .map(|t| t.id)
+        .collect();
+    let raw_series: Vec<&SonarrSeriesRaw> = all_series
+        .iter()
+        .filter(|s| s.tags.iter().any(|id| wanted_ids.contains(id)))
+        .collect();
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -169,7 +190,7 @@ pub async fn import_sonarr_series(
     let mut auto_mapped: i64 = 0;
     let mut unmapped: i64 = 0;
 
-    for raw in &raw_series {
+    for raw in raw_series.iter().copied() {
         let ep_count = total_episode_count(raw);
         let file_count = total_file_count(raw);
         let se_count = season_count(raw);
@@ -198,60 +219,81 @@ pub async fn import_sonarr_series(
         storage.sonarr_series_upsert(&series_db).await?;
         imported += 1;
 
-        // Try auto-match
-        let parsed = parse_filename(&raw.title, None);
-        let search_title = parsed
-            .as_ref()
-            .map(|p| p.cleaned_title.as_str())
-            .unwrap_or(&raw.title);
-
-        let candidates = storage.search_anime_by_title(search_title, 5).await?;
-
-        let best = candidates
-            .iter()
-            .map(|anime| {
-                let score = score_match_series(
-                    &raw.title,
-                    &anime.titles_json,
-                    ep_count,
-                    anime.episode_count,
-                );
-                (anime.id, score)
-            })
-            .max_by_key(|(_, score)| *score);
-
-        if let Some((anime_id, score)) = best {
-            let mapping = crate::engine::storage::SonarrMappingDb {
-                id: None,
-                sonarr_id: raw.id,
-                anime_id: if score >= 80 { Some(anime_id) } else { None },
-                title_match: search_title.to_string(),
-                confidence: score,
-                mapped_at: now,
-                user_confirmed: false,
-            };
-            storage.sonarr_mapping_upsert(&mapping).await?;
-
-            if score >= 80 {
-                auto_mapped += 1;
-            } else {
-                unmapped += 1;
+        // Never clobber a mapping the user set by hand.
+        if let Ok(Some(existing)) = storage.sonarr_mapping_by_sonarr_id(raw.id).await {
+            if existing.user_confirmed {
+                if existing.anime_id.is_some() {
+                    auto_mapped += 1;
+                } else {
+                    unmapped += 1;
+                }
+                continue;
             }
+        }
+
+        // Auto-match using the SAME normalized title scorer as file/episode
+        // matching (punctuation-insensitive, checks romaji/english/native/synonyms),
+        // rather than the weaker raw-string series scorer.
+        let title = raw.title.as_str();
+        let cleaned: String = title
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c } else { ' ' })
+            .collect();
+
+        // Gather candidates from a broad OR-based search AND an AND word-subsequence
+        // search. The AND search is essential: it surfaces the exact title even when
+        // the OR search's id-ordered candidate pool overflows on common words
+        // (e.g. "The ... and the ..."), which is what left identical titles unmatched.
+        let mut candidates: Vec<crate::engine::storage::AnimeRow> = Vec::new();
+        for q in [title, cleaned.as_str()] {
+            if q.trim().is_empty() {
+                continue;
+            }
+            if let Ok(mut c) = storage.search_anime_by_title(q, 25).await {
+                candidates.append(&mut c);
+            }
+        }
+        let words: Vec<&str> = cleaned.split_whitespace().filter(|w| w.len() >= 3).collect();
+        if !words.is_empty() {
+            if let Ok(mut c) = storage.search_anime_by_words(&words, 20).await {
+                candidates.append(&mut c);
+            }
+        }
+
+        let mut best_id: Option<i64> = None;
+        let mut best_score: u8 = 0;
+        for c in &candidates {
+            let s = crate::engine::matcher::score_titles_json(title, &c.titles_json);
+            if s > best_score {
+                best_score = s;
+                best_id = Some(c.id);
+            }
+        }
+
+        // Exact/containment matches score >= 80 after normalization; require that
+        // for a confident auto-map (word-overlap-only maxes at 60 and stays manual).
+        const SONARR_MATCH_THRESHOLD: u8 = 80;
+        let mapped = best_score >= SONARR_MATCH_THRESHOLD;
+        let mapping = crate::engine::storage::SonarrMappingDb {
+            id: None,
+            sonarr_id: raw.id,
+            anime_id: if mapped { best_id } else { None },
+            title_match: title.to_string(),
+            confidence: best_score as i32,
+            mapped_at: now,
+            user_confirmed: false,
+        };
+        storage.sonarr_mapping_upsert(&mapping).await?;
+        if mapped {
+            auto_mapped += 1;
         } else {
-            // No candidates at all — store as unmapped
-            let mapping = crate::engine::storage::SonarrMappingDb {
-                id: None,
-                sonarr_id: raw.id,
-                anime_id: None,
-                title_match: search_title.to_string(),
-                confidence: 0,
-                mapped_at: now,
-                user_confirmed: false,
-            };
-            storage.sonarr_mapping_upsert(&mapping).await?;
             unmapped += 1;
         }
     }
+
+    // Drop any previously-imported series that are no longer tag-eligible.
+    let keep_ids: Vec<i64> = raw_series.iter().map(|s| s.id).collect();
+    storage.prune_sonarr_series_except(&keep_ids).await?;
 
     Ok(ImportReport {
         imported,

@@ -3,6 +3,19 @@ use serde_json::Value;
 
 const ANILIST_API_URL: &str = "https://graphql.anilist.co";
 
+/// Map a local list status to AniList's `MediaListStatus` enum. Returns `None`
+/// for unlisted/unknown so the mutation leaves status untouched.
+pub fn map_anilist_status(local: &str) -> Option<&'static str> {
+    match local {
+        "watching" => Some("CURRENT"),
+        "plan_to_watch" => Some("PLANNING"),
+        "completed" => Some("COMPLETED"),
+        "dropped" => Some("DROPPED"),
+        "on_hold" => Some("PAUSED"),
+        _ => None,
+    }
+}
+
 /// A single GraphQL error returned by AniList.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +76,9 @@ pub struct Media {
     #[serde(rename = "coverImage")]
     pub cover_image: Option<CoverImage>,
     pub description: Option<String>,
+    pub season: Option<String>,
+    #[serde(rename = "seasonYear")]
+    pub season_year: Option<i32>,
     #[serde(rename = "nextAiringEpisode")]
     pub next_airing_episode: Option<AiringEpisode>,
 }
@@ -81,6 +97,20 @@ pub struct MediaTitle {
     pub romaji: Option<String>,
     pub english: Option<String>,
     pub native: Option<String>,
+}
+
+/// A single episode's airing slot from AniList's `airingSchedules` — one row per
+/// episode (unlike `nextAiringEpisode`, which is only the next one). Powers the
+/// full-month calendar.
+#[derive(Debug, Clone)]
+pub struct AiringScheduleItem {
+    pub media_id: i64,
+    pub episode: i32,
+    pub airing_at: i64,
+    pub time_until_airing: i64,
+    pub title: String,
+    pub image_url: Option<String>,
+    pub episode_count: Option<i32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -127,15 +157,35 @@ impl AniListClient {
             "variables": variables,
         });
 
-        let response = self
-            .http
-            .post(ANILIST_API_URL)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+        // AniList enforces a strict per-minute rate limit and returns HTTP 429
+        // with a `Retry-After` header (seconds) when exceeded. Honor it here so
+        // every caller transparently waits and retries instead of failing.
+        let mut attempt = 0u8;
+        let response = loop {
+            let response = self
+                .http
+                .post(ANILIST_API_URL)
+                .header("Authorization", format!("Bearer {}", self.token))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .json(&body)
+                .send()
+                .await?;
+
+            if response.status().as_u16() == 429 && attempt < 5 {
+                let retry_after = response
+                    .headers()
+                    .get("retry-after")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.trim().parse::<u64>().ok())
+                    .unwrap_or(60)
+                    .clamp(1, 65);
+                attempt += 1;
+                tokio::time::sleep(std::time::Duration::from_secs(retry_after)).await;
+                continue;
+            }
+            break response;
+        };
 
         let status = response.status();
         let bytes = response.bytes().await?;
@@ -185,7 +235,7 @@ impl AniListClient {
 query {{
   MediaListCollection(userName: "{}", type: ANIME) {{
     lists {{ entries {{
-      media {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description }}
+      media {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description season seasonYear }}
       status score progress updatedAt notes
       startedAt {{ year month day }}
       completedAt {{ year month day }}
@@ -208,7 +258,7 @@ query {{
 
             format!(
                 "query {{ MediaListCollection(userId: {}, type: ANIME) {{ lists {{ entries {{ \
-                 media {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description }} \
+                 media {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description season seasonYear }} \
                  status score progress updatedAt notes \
                  startedAt {{ year month day }} \
                  completedAt {{ year month day }} \
@@ -240,6 +290,29 @@ mutation ($mediaId: Int, $progress: Int) {
         Ok(())
     }
 
+    /// Push both list status and episode progress. `status` is a local status
+    /// string (watching/completed/...); unknown/unlisted maps to null so only
+    /// progress is written.
+    pub async fn push_list_entry(
+        &self,
+        anime_id: i64,
+        status: Option<&str>,
+        progress: i32,
+    ) -> anyhow::Result<()> {
+        let query_str = r#"
+mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
+  SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) { id status progress }
+}
+"#;
+        let variables = serde_json::json!({
+            "mediaId": anime_id,
+            "status": status.and_then(map_anilist_status),
+            "progress": progress,
+        });
+        self.query::<serde_json::Value>(query_str, variables).await?;
+        Ok(())
+    }
+
     /// Fetch airing schedule for specific anime IDs using Page query with id_in.
     /// This avoids MediaListCollection which requires user identification.
     pub async fn fetch_airing_schedule(&self, anime_ids: &[i64]) -> anyhow::Result<Vec<Media>> {
@@ -247,37 +320,143 @@ mutation ($mediaId: Int, $progress: Int) {
             return Ok(vec![]);
         }
 
-        let id_list = anime_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", ");
-        let query_str = format!(
-            "query {{ Page(page: 1, perPage: 50) {{ media(id_in: [{}], type: ANIME) {{ \
-             id title {{ romaji english native }} coverImage {{ large }} episodes \
-             nextAiringEpisode {{ airingAt timeUntilAiring episode }} }} }} }}",
-            id_list
-        );
+        // AniList caps a page at 50 media, so request the ids in chunks of 50 and
+        // aggregate. Without this, a library with more than 50 followed shows
+        // would silently lose the overflow from the calendar.
+        let mut entries: Vec<Media> = Vec::new();
+        for chunk in anime_ids.chunks(50) {
+            let id_list = chunk.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", ");
+            let query_str = format!(
+                "query {{ Page(page: 1, perPage: 50) {{ media(id_in: [{}], type: ANIME) {{ \
+                 id title {{ romaji english native }} coverImage {{ large }} episodes \
+                 nextAiringEpisode {{ airingAt timeUntilAiring episode }} }} }} }}",
+                id_list
+            );
 
-        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+            let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
 
-        if let Some(errors) = raw.get("errors").and_then(|e| e.as_array()) {
-            if !errors.is_empty() {
-                let msgs: Vec<String> = errors.iter().filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(String::from)).collect();
-                return Err(anyhow::anyhow!("AniList error: {}", msgs.join("; ")));
+            if let Some(errors) = raw.get("errors").and_then(|e| e.as_array()) {
+                if !errors.is_empty() {
+                    let msgs: Vec<String> = errors.iter().filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(String::from)).collect();
+                    return Err(anyhow::anyhow!("AniList error: {}", msgs.join("; ")));
+                }
+            }
+
+            let media_list = raw
+                .get("data")
+                .and_then(|d| d.get("Page"))
+                .and_then(|p| p.get("media"))
+                .and_then(|m| m.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            entries.extend(
+                media_list
+                    .into_iter()
+                    .filter_map(|m| serde_json::from_value::<Media>(m).ok()),
+            );
+        }
+
+        Ok(entries)
+    }
+
+    /// Fetch every episode airing between `airing_after` and `airing_before`
+    /// (Unix seconds) for the given media ids — the full airing schedule, not
+    /// just the next episode. Chunks ids by 50 and paginates each chunk so no
+    /// episodes are dropped. Used to build the month calendar.
+    pub async fn fetch_airing_schedule_range(
+        &self,
+        media_ids: &[i64],
+        airing_after: i64,
+        airing_before: i64,
+    ) -> anyhow::Result<Vec<AiringScheduleItem>> {
+        if media_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut items: Vec<AiringScheduleItem> = Vec::new();
+
+        for chunk in media_ids.chunks(50) {
+            let id_list = chunk.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", ");
+            let mut page = 1;
+            loop {
+                let query_str = format!(
+                    "query {{ Page(page: {page}, perPage: 50) {{ pageInfo {{ hasNextPage }} \
+                     airingSchedules(mediaId_in: [{id_list}], airingAt_greater: {airing_after}, \
+                     airingAt_lesser: {airing_before}, sort: TIME) {{ episode airingAt \
+                     timeUntilAiring mediaId media {{ id title {{ romaji english }} \
+                     coverImage {{ large }} episodes }} }} }} }}"
+                );
+
+                let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+
+                if let Some(errors) = raw.get("errors").and_then(|e| e.as_array()) {
+                    if !errors.is_empty() {
+                        let msgs: Vec<String> = errors
+                            .iter()
+                            .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(String::from))
+                            .collect();
+                        return Err(anyhow::anyhow!("AniList error: {}", msgs.join("; ")));
+                    }
+                }
+
+                let page_obj = raw.get("data").and_then(|d| d.get("Page"));
+                let schedules = page_obj
+                    .and_then(|p| p.get("airingSchedules"))
+                    .and_then(|s| s.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                for s in &schedules {
+                    let media = s.get("media");
+                    let media_id = s
+                        .get("mediaId")
+                        .and_then(|v| v.as_i64())
+                        .or_else(|| media.and_then(|m| m.get("id")).and_then(|v| v.as_i64()));
+                    let Some(media_id) = media_id else { continue };
+
+                    let title = media
+                        .and_then(|m| m.get("title"))
+                        .and_then(|t| {
+                            t.get("english")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .or_else(|| t.get("romaji").and_then(|v| v.as_str()))
+                                .map(String::from)
+                        })
+                        .unwrap_or_else(|| format!("Anime #{media_id}"));
+
+                    items.push(AiringScheduleItem {
+                        media_id,
+                        episode: s.get("episode").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                        airing_at: s.get("airingAt").and_then(|v| v.as_i64()).unwrap_or(0),
+                        time_until_airing: s.get("timeUntilAiring").and_then(|v| v.as_i64()).unwrap_or(0),
+                        title,
+                        image_url: media
+                            .and_then(|m| m.get("coverImage"))
+                            .and_then(|c| c.get("large"))
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
+                        episode_count: media
+                            .and_then(|m| m.get("episodes"))
+                            .and_then(|v| v.as_i64())
+                            .map(|n| n as i32),
+                    });
+                }
+
+                let has_next = page_obj
+                    .and_then(|p| p.get("pageInfo"))
+                    .and_then(|pi| pi.get("hasNextPage"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                // Cap pages defensively so a huge library can't loop unbounded.
+                if !has_next || page >= 10 {
+                    break;
+                }
+                page += 1;
             }
         }
 
-        let media_list = raw
-            .get("data")
-            .and_then(|d| d.get("Page"))
-            .and_then(|p| p.get("media"))
-            .and_then(|m| m.as_array())
-            .cloned()
-            .unwrap_or_default();
-
-        let entries: Vec<Media> = media_list
-            .into_iter()
-            .filter_map(|m| serde_json::from_value::<Media>(m).ok())
-            .collect();
-
-        Ok(entries)
+        Ok(items)
     }
 
     /// Fetch anime from a specific season with optional genre filter.
@@ -316,6 +495,48 @@ mutation ($mediaId: Int, $progress: Int) {
         let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
         let media_list = raw.get("data").and_then(|d| d.get("Page")).and_then(|p| p.get("media")).and_then(|m| m.as_array()).cloned().unwrap_or_default();
         Ok(media_list.into_iter().filter_map(|m| serde_json::from_value::<SearchAnimeResult>(m).ok()).collect())
+    }
+
+    /// Search several titles in a single request using GraphQL field aliases
+    /// (`a0: Page(...) { media(...) } a1: ...`). Returns one result list per input
+    /// title, aligned to the input order. Used by the bulk "match via AniList"
+    /// flow to keep request counts (and rate-limit pressure) low.
+    pub async fn search_anime_multi(
+        &self,
+        titles: &[String],
+    ) -> anyhow::Result<Vec<Vec<SearchAnimeResult>>> {
+        if titles.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut fields = String::new();
+        for (i, title) in titles.iter().enumerate() {
+            let escaped = title.replace('\\', "\\\\").replace('"', "\\\"");
+            fields.push_str(&format!(
+                "a{i}: Page(page: 1, perPage: 5) {{ media(search: \"{escaped}\", type: ANIME) {{ \
+                 id title {{ romaji english native }} coverImage {{ large }} \
+                 episodes status format averageScore }} }} ",
+            ));
+        }
+        let query_str = format!("query {{ {fields}}}");
+        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let data = raw.get("data");
+
+        let mut out = Vec::with_capacity(titles.len());
+        for i in 0..titles.len() {
+            let media = data
+                .and_then(|d| d.get(format!("a{i}")))
+                .and_then(|p| p.get("media"))
+                .and_then(|m| m.as_array())
+                .cloned()
+                .unwrap_or_default();
+            out.push(
+                media
+                    .into_iter()
+                    .filter_map(|m| serde_json::from_value::<SearchAnimeResult>(m).ok())
+                    .collect(),
+            );
+        }
+        Ok(out)
     }
 
     /// Fetch related anime for a given anime ID (sequels, prequels, side stories, etc.).

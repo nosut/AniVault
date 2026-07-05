@@ -446,7 +446,6 @@ mod tests {
     #[tokio::test]
     async fn read_v1_sqlite_returns_data() {
         use sqlx::sqlite::SqliteConnectOptions;
-        use sqlx::Row;
         use std::str::FromStr;
 
         // Create temp file v1 database using sqlx

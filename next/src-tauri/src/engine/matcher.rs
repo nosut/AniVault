@@ -10,6 +10,27 @@ pub struct RecognitionResult {
     pub candidates: Vec<MatchCandidate>,
 }
 
+/// Score a query against every title variant stored in an anime row's `titles_json`
+/// (romaji, english, japanese, and synonyms). Returns the best match score 0..=100.
+/// Shared by the real-time recognizer and the library scanner so both rank identically.
+pub fn score_titles_json(query: &str, titles_json: &str) -> u8 {
+    let titles: serde_json::Value = serde_json::from_str(titles_json).unwrap_or_default();
+    let mut best = 0u8;
+    for key in ["romaji", "english", "japanese"] {
+        if let Some(t) = titles[key].as_str() {
+            best = best.max(score_title_match(query, t));
+        }
+    }
+    if let Some(arr) = titles["synonyms"].as_array() {
+        for v in arr {
+            if let Some(s) = v.as_str() {
+                best = best.max(score_title_match(query, s));
+            }
+        }
+    }
+    best
+}
+
 fn normalize_title(title: &str) -> String {
     title
         .to_lowercase()
@@ -27,7 +48,11 @@ fn score_title_match(query: &str, candidate: &str) -> u8 {
     if q == c {
         return 100;
     }
-    if q.contains(&c) || c.contains(&q) {
+    // Containment match — but guard against a very short title matching inside an
+    // unrelated longer one (e.g. "K" or "Air" is a substring of countless titles).
+    // Only award the containment score when the shorter (contained) string is
+    // long enough to be a meaningful signal.
+    if q.len().min(c.len()) >= 4 && (q.contains(&c) || c.contains(&q)) {
         return 80;
     }
     // Simple word-overlap score
@@ -41,6 +66,13 @@ fn score_title_match(query: &str, candidate: &str) -> u8 {
     ((overlap as f64 / total as f64) * 60.0) as u8
 }
 
+/// Does this string look like a real filesystem path (vs. a player's window
+/// title)? Real paths contain a directory separator; mpv/VLC titles don't.
+/// Used to avoid indexing/looking-up bogus window-title "paths".
+pub fn looks_like_path(s: &str) -> bool {
+    s.contains('\\') || s.contains('/')
+}
+
 /// Extract just the filename from a path for parsing.
 /// Preserves the full path for file index lookups.
 fn strip_path(file_path: &str) -> &str {
@@ -50,28 +82,72 @@ fn strip_path(file_path: &str) -> &str {
         .unwrap_or(file_path)
 }
 
+/// Pull the video filename (up to and including its extension) out of a window
+/// title / path. mpv/VLC put "<filename>.mkv - mpv" in the title, so the
+/// substring ending at the last video extension is the filename we indexed.
+fn extract_video_filename(text: &str) -> Option<String> {
+    const EXTS: &[&str] = &["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm", "m4v"];
+    let lower = text.to_lowercase();
+    let mut best_end: Option<usize> = None;
+    for ext in EXTS {
+        let pat = format!(".{ext}");
+        if let Some(pos) = lower.rfind(&pat) {
+            let end = pos + pat.len();
+            best_end = Some(best_end.map_or(end, |b| b.max(end)));
+        }
+    }
+    best_end.map(|end| text[..end].trim().to_string())
+}
+
+/// Build a "known file" recognition result for an already-mapped anime id.
+async fn known_result(
+    storage: &Storage,
+    anime_id: i64,
+    confidence: i32,
+) -> Option<RecognitionResult> {
+    let anime = storage.fetch_anime(anime_id).await.ok().flatten()?;
+    let titles: serde_json::Value = serde_json::from_str(&anime.titles_json).unwrap_or_default();
+    let title = titles["romaji"].as_str().unwrap_or("Unknown").to_string();
+    Some(RecognitionResult {
+        known_file: true,
+        parsed: None,
+        candidates: vec![MatchCandidate {
+            anime_id,
+            title,
+            confidence: confidence as u8,
+            match_source: "file_index".to_string(),
+        }],
+    })
+}
+
 pub async fn recognize_file(
     file_path: &str,
     window_title: Option<&str>,
     storage: &Storage,
 ) -> anyhow::Result<RecognitionResult> {
-    // Check remembered file index first
-    if let Some(existing) = storage.get_file_index(file_path).await? {
-        if let Some(anime_id) = existing.anime_id {
-            if let Some(anime) = storage.fetch_anime(anime_id).await? {
-                let titles: serde_json::Value =
-                    serde_json::from_str(&anime.titles_json).unwrap_or_default();
-                let title = titles["romaji"].as_str().unwrap_or("Unknown").to_string();
-                return Ok(RecognitionResult {
-                    known_file: true,
-                    parsed: None,
-                    candidates: vec![MatchCandidate {
-                        anime_id,
-                        title,
-                        confidence: existing.confidence as u8,
-                        match_source: "file_index".to_string(),
-                    }],
-                });
+    // 1. Exact full-path index lookup — only for real paths. Players like mpv put
+    //    the window title in `file_path`, which must never be used as a file key.
+    if looks_like_path(file_path) {
+        if let Some(existing) = storage.get_file_index(file_path).await? {
+            if let Some(anime_id) = existing.anime_id {
+                if let Some(res) = known_result(storage, anime_id, existing.confidence).await {
+                    return Ok(res);
+                }
+            }
+        }
+    }
+
+    // 2. Filename fallback — mpv/VLC only expose the filename in the window title,
+    //    not the absolute path, so match the mapped file by its basename. This is
+    //    what lets a played S04E13 file resolve to the *Season 4* entry rather than
+    //    falling through to a title match on the base-season entry.
+    let fname_source = window_title.unwrap_or(file_path);
+    if let Some(fname) = extract_video_filename(fname_source) {
+        if let Some(existing) = storage.get_file_index_by_filename(&fname).await? {
+            if let Some(anime_id) = existing.anime_id {
+                if let Some(res) = known_result(storage, anime_id, existing.confidence).await {
+                    return Ok(res);
+                }
             }
         }
     }

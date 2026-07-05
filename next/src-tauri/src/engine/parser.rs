@@ -37,6 +37,13 @@ static S01E01_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)[Ss](\d{1,2})[Ee](\d{1,4})").unwrap()
 });
 
+// "1x01" / "12x05" cross format (season x episode). Season capped at 2 digits and
+// episode requires 2+ digits, so it won't collide with resolutions (1920x1080),
+// aspect ratios (16x9), or titles like "3x3 Eyes".
+static SEASON_X_EP_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(\d{1,2})x(\d{2,4})\b").unwrap()
+});
+
 static EPISODE_WORD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\bepisode\s+(\d{1,4})\b").unwrap()
 });
@@ -47,6 +54,12 @@ static DASH_MULTI_NUM_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 static YEAR_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\((?:19|20)\d{2}\)").unwrap()
+});
+
+// Trailing " - mpv" / " - VLC media player" etc. that players append to the
+// window title.
+static PLAYER_SUFFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\s*-\s*(?:mpv|vlc(?:\s+media\s+player)?|potplayer|mpc-?(?:hc|be)?|smplayer|kmplayer|gom\s*player|windows media player)\s*$").unwrap()
 });
 
 pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedFilename> {
@@ -65,6 +78,9 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
         .replace(".avi", "")
         .replace(".mov", "")
         .replace(".wmv", "");
+
+    // Strip a trailing player-name suffix that media players add to window titles.
+    cleaned = PLAYER_SUFFIX_RE.replace(&cleaned, "").to_string();
 
     // Extract release group from leading brackets
     let release_group = RELEASE_GROUP_RE
@@ -89,6 +105,18 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
             if n > 0 && n <= 2000 {
                 episode = Some(n);
                 cleaned = S01E01_RE.replace(&cleaned, "").to_string();
+            }
+        }
+    }
+
+    // Try "1x01" cross format (season x episode)
+    if episode.is_none() {
+        if let Some(caps) = SEASON_X_EP_RE.captures(&cleaned) {
+            if let Ok(n) = caps[2].parse::<i32>() {
+                if n > 0 && n <= 2000 {
+                    episode = Some(n);
+                    cleaned = SEASON_X_EP_RE.replace(&cleaned, "").to_string();
+                }
             }
         }
     }

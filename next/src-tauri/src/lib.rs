@@ -22,9 +22,16 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            // Initialize file logging first (before engine, so all startup is logged)
-            if let Ok(log_dir) = app.path().app_log_dir() {
-                crate::engine::log::init_logging(&log_dir);
+            // Initialize file logging first (before engine, so all startup is logged).
+            // Fall back to the app-data dir if the platform log dir can't be resolved,
+            // rather than silently running with no logging at all.
+            let log_dir = app
+                .path()
+                .app_log_dir()
+                .or_else(|_| app.path().app_data_dir().map(|d| d.join("logs")));
+            match log_dir {
+                Ok(dir) => crate::engine::log::init_logging(&dir),
+                Err(e) => eprintln!("[AniVault] could not resolve a log directory: {e}"),
             }
 
             let database_path = app
@@ -38,6 +45,38 @@ pub fn run() {
             )
             .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             sync_worker::spawn_sync_worker(&state);
+
+            // Auto-start playback tracking on launch unless the user disabled it.
+            {
+                let s = state.clone();
+                tauri::async_runtime::spawn(async move {
+                    // One-time cleanup of any bogus window-title "paths" stored by
+                    // older builds (they shadowed real mappings).
+                    if let Ok(n) = s.storage.delete_pathless_file_index().await {
+                        if n > 0 {
+                            tracing::info!("Removed {n} bogus (pathless) file-index rows");
+                        }
+                    }
+
+                    // Self-heal the Windows launch-on-startup registry entry so it
+                    // always points at the exe that's actually running (repairs a
+                    // stale path from a reinstall / identifier change).
+                    commands::reconcile_startup_registry(&s).await;
+
+                    let enabled = s
+                        .storage
+                        .get_setting("tracking.enabled")
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|v| v != "false")
+                        .unwrap_or(true);
+                    if enabled {
+                        let _ = commands::start_tracking_inner(&s).await;
+                    }
+                });
+            }
+
             app.manage(state);
 
             tracing::info!("AniVault engine initialized at {}", database_path.display());
@@ -59,7 +98,10 @@ pub fn run() {
 
             let pause_handle = pause_item.clone();
             let _tray = TrayIconBuilder::new()
-                .icon(tauri::image::Image::from_bytes(include_bytes!("../../../Icon.png")).unwrap())
+                // Crisp 32px tray icon (extracted from the multi-size icon.ico).
+                // Using the full-size PNG here made Windows downscale it to tray
+                // size on the fly, which looked pixelated.
+                .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png")).unwrap())
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| {
@@ -119,6 +161,16 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Show the main window unless launched with --minimized (start in tray).
+            // The window is created hidden (visible: false) to avoid a flash.
+            let start_minimized = std::env::args().any(|a| a == "--minimized");
+            if !start_minimized {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -154,20 +206,39 @@ pub fn run() {
             commands::get_watch_history,
             commands::identify_file,
             commands::import_sonarr_series,
+            commands::list_sonarr_series,
             commands::import_anilist_library,
             commands::import_database,
             commands::list_known_files,
+            commands::set_known_file_ignored,
+            commands::delete_known_file,
+            commands::set_known_file_mapping,
+            commands::set_known_file_mappings,
+            commands::set_known_files_ignored,
+            commands::delete_known_files,
+            commands::unmap_known_files,
+            commands::pick_folder,
+            commands::map_folder_to_anime,
+            commands::import_anilist_anime,
+            commands::deep_match_via_anilist,
+            commands::delete_anime,
+            commands::get_next_airing,
             commands::list_recent_history,
             commands::open_episode_file,
+            commands::open_containing_folder,
             commands::mark_episode_watched,
             commands::preview_migration,
             commands::remap_sonarr,
+            commands::rematch_unmapped_files,
+            commands::rescan_anime_files,
             commands::restore_database,
             commands::run_migration,
             commands::scan_library_folders,
             commands::search_anime,
             commands::search_library,
             commands::set_launch_on_startup,
+            commands::get_start_in_tray,
+            commands::set_start_in_tray,
             commands::set_library_folders,
             commands::set_setting,
             commands::start_tracking,

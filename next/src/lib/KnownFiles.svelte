@@ -1,16 +1,32 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { listKnownFiles, type FileIndexEntry } from './api';
+  import { listKnownFiles, rematchUnmappedFiles, type FileIndexEntry } from './api';
 
   let entries: FileIndexEntry[] = [];
   let error: string | null = null;
+  let rematching = false;
+  let rematchResult: number | null = null;
 
   export async function load() {
     error = null;
+    rematchResult = null;
     try {
-      entries = await listKnownFiles(50);
+      entries = (await listKnownFiles(50)).filter((e) => !e.ignored);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async function handleRematch() {
+    rematching = true;
+    rematchResult = null;
+    try {
+      rematchResult = await rematchUnmappedFiles();
+      await load();
+    } catch {
+      rematchResult = null;
+    } finally {
+      rematching = false;
     }
   }
 
@@ -18,7 +34,15 @@
 </script>
 
 <section class="known-files-card">
-  <p class="eyebrow">Known files</p>
+  <div class="kf-header">
+    <p class="eyebrow">Known files</p>
+    <button class="action-btn small" on:click={handleRematch} disabled={rematching}>
+      {rematching ? 'Matching\u2026' : 'Re-match'}
+    </button>
+  </div>
+  {#if rematchResult !== null}
+    <p class="success-msg">{rematchResult} files matched</p>
+  {/if}
   {#if error}
     <p class="error">{error}</p>
   {:else if entries.length === 0}
@@ -46,6 +70,34 @@
     padding: 1.25rem;
     display: grid;
     gap: 0.75rem;
+  }
+  .kf-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .action-btn {
+    border: 1px solid rgba(143, 183, 255, 0.35);
+    border-radius: 999px;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    background: rgba(143, 183, 255, 0.18);
+    color: #e9eefc;
+    transition: background 0.15s;
+  }
+  .action-btn:hover:not(:disabled) {
+    background: rgba(143, 183, 255, 0.28);
+  }
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .success-msg {
+    color: #6fcf97;
+    font-size: 0.82rem;
+    margin: 0;
   }
   .eyebrow {
     color: var(--color-accent);

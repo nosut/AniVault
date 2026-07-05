@@ -223,46 +223,120 @@ pub async fn get_launch_on_startup_inner(state: &EngineState) -> anyhow::Result<
     }
 }
 
+const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+const RUN_VALUE_NAME: &str = "AniVault";
+
+/// The value the HKCU Run entry should hold, or `None` when the entry should be
+/// absent. When `start_in_tray` is set the app launches with `--minimized` so
+/// autostart goes straight to the tray. Pure so the toggle path and the
+/// launch-time reconcile share one source of truth and it can be unit-tested
+/// without touching the registry.
+pub fn desired_run_value(enabled: bool, start_in_tray: bool, exe_path: &str) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    Some(if start_in_tray {
+        format!("\"{exe_path}\" --minimized")
+    } else {
+        format!("\"{exe_path}\"")
+    })
+}
+
+/// Write (`Some`) or remove (`None`) the AniVault HKCU Run entry via `reg`.
+fn write_run_key(value: Option<&str>) -> anyhow::Result<()> {
+    match value {
+        Some(v) => {
+            let output = std::process::Command::new("reg")
+                .args([
+                    "add", RUN_KEY, "/v", RUN_VALUE_NAME, "/t", "REG_SZ", "/d", v, "/f",
+                ])
+                .output()?;
+            if !output.status.success() {
+                anyhow::bail!("Failed to write registry key");
+            }
+        }
+        None => {
+            // Deleting an absent value is a no-op that returns a nonzero exit;
+            // ignore it so turning the feature off never surfaces an error.
+            let _ = std::process::Command::new("reg")
+                .args(["delete", RUN_KEY, "/v", RUN_VALUE_NAME, "/f"])
+                .output()?;
+        }
+    }
+    Ok(())
+}
+
+/// Write (or remove) the HKCU Run registry entry to match the requested state,
+/// pointing at the current exe.
+fn apply_startup_registry(
+    enabled: bool,
+    start_in_tray: bool,
+    state: &EngineState,
+) -> anyhow::Result<()> {
+    // Only touch the registry when a real Tauri app handle exists (not in tests).
+    if state.app_handle.is_none() {
+        return Ok(());
+    }
+    let exe_path = std::env::current_exe()?.to_string_lossy().to_string();
+    write_run_key(desired_run_value(enabled, start_in_tray, &exe_path).as_deref())
+}
+
+/// Reconcile the HKCU Run entry with the persisted launch-on-startup setting on
+/// every launch. This self-heals a stale exe path left by a reinstall, an app
+/// move, or a bundle-identifier change — the entry is always rewritten to point
+/// at the exe that is actually running. Best-effort: logs and swallows errors so
+/// a registry hiccup never blocks startup. No-op when the feature is disabled
+/// (the toggle already removed the entry) or in headless/test contexts.
+pub async fn reconcile_startup_registry(state: &EngineState) {
+    if state.app_handle.is_none() {
+        return;
+    }
+    if !get_launch_on_startup_inner(state).await.unwrap_or(false) {
+        return;
+    }
+    let start_in_tray = get_start_in_tray_inner(state).await.unwrap_or(false);
+    let exe_path = match std::env::current_exe() {
+        Ok(p) => p.to_string_lossy().to_string(),
+        Err(e) => {
+            tracing::warn!("startup reconcile: cannot resolve current exe: {e}");
+            return;
+        }
+    };
+    match write_run_key(desired_run_value(true, start_in_tray, &exe_path).as_deref()) {
+        Ok(()) => tracing::info!("launch-on-startup reconciled to {exe_path}"),
+        Err(e) => tracing::warn!("startup registry reconcile failed: {e}"),
+    }
+}
+
 pub async fn set_launch_on_startup_inner(enabled: bool, state: &EngineState) -> anyhow::Result<()> {
     let value_json = serde_json::to_string(&serde_json::Value::Bool(enabled))?;
     state
         .storage
         .set_setting("startup.launch_on_startup", &value_json, unix_now_inner()?)
         .await?;
-    // Only write registry when a real Tauri app handle exists (not in tests)
-    if state.app_handle.is_some() {
-        let exe_path = std::env::current_exe()?.to_string_lossy().to_string();
-        if enabled {
-            let output = std::process::Command::new("reg")
-                .args([
-                    "add",
-                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                    "/v",
-                    "AniVault",
-                    "/t",
-                    "REG_SZ",
-                    "/d",
-                    &exe_path,
-                    "/f",
-                ])
-                .output()?;
-            if !output.status.success() {
-                anyhow::bail!("Failed to write registry key");
-            }
-        } else {
-            // Delete key; ignore error if key doesn't exist
-            let _ = std::process::Command::new("reg")
-                .args([
-                    "delete",
-                    r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                    "/v",
-                    "AniVault",
-                    "/f",
-                ])
-                .output()?;
-        }
+    let tray = get_start_in_tray_inner(state).await?;
+    apply_startup_registry(enabled, tray, state)
+}
+
+pub async fn get_start_in_tray_inner(state: &EngineState) -> anyhow::Result<bool> {
+    let val: Option<String> = state.storage.get_setting("startup.start_in_tray").await?;
+    match val {
+        Some(s) => Ok(serde_json::from_str::<serde_json::Value>(&s)?
+            .as_bool()
+            .unwrap_or(false)),
+        None => Ok(false),
     }
-    Ok(())
+}
+
+pub async fn set_start_in_tray_inner(enabled: bool, state: &EngineState) -> anyhow::Result<()> {
+    let value_json = serde_json::to_string(&serde_json::Value::Bool(enabled))?;
+    state
+        .storage
+        .set_setting("startup.start_in_tray", &value_json, unix_now_inner()?)
+        .await?;
+    // Re-apply the registry so the --minimized flag matches, if autostart is on.
+    let launch = get_launch_on_startup_inner(state).await?;
+    apply_startup_registry(launch, enabled, state)
 }
 
 pub async fn drain_engine_events_inner(state: &EngineState) -> Result<Vec<EngineEvent>, String> {
@@ -428,6 +502,48 @@ pub async fn list_known_files_inner(
         .map_err(command_error)
 }
 
+pub async fn rematch_unmapped_files_inner(state: &EngineState) -> anyhow::Result<usize> {
+    let files = state.storage.list_file_index(100_000, 0).await?;
+    let mut rematched = 0usize;
+    let now = unix_now_inner()?;
+
+    for file in &files {
+        // Never touch tombstoned files or user-confirmed / exact (100%) mappings.
+        if file.ignored || file.confidence >= 100 {
+            continue;
+        }
+
+        // Re-evaluate with the same scored logic the scanner uses, storing the
+        // real confidence. This both matches previously-unmatched files and
+        // corrects/demotes stale low-confidence auto-matches from older runs.
+        let path = std::path::Path::new(&file.file_path);
+        let (anime_id, confidence, episode) =
+            crate::engine::library_scanner::match_file(&state.storage, path).await?;
+        let episode = episode.unwrap_or(file.episode.unwrap_or(0));
+
+        // Only write when something actually changed, to avoid needless churn.
+        if anime_id != file.anime_id || confidence != file.confidence {
+            state
+                .storage
+                .upsert_file_index(&file.file_path, anime_id, episode, confidence, now)
+                .await?;
+        }
+
+        if anime_id.is_some() {
+            rematched += 1;
+        }
+    }
+
+    Ok(rematched)
+}
+
+#[tauri::command]
+pub async fn rematch_unmapped_files(
+    state: tauri::State<'_, EngineState>,
+) -> Result<usize, String> {
+    rematch_unmapped_files_inner(&state).await.map_err(command_error)
+}
+
 // ── Library command inner functions ─────────────────────────────────────────
 
 pub async fn search_library_inner(
@@ -447,59 +563,89 @@ pub async fn get_library_stats_inner(state: &EngineState) -> anyhow::Result<Libr
     state.storage.library_stats().await
 }
 
+/// Fetch a single anime's metadata from AniList by id and upsert it into the
+/// local `anime` table. Shared by detail auto-import and the file manager's
+/// "search AniList" mapping flow. Errors if AniList isn't connected or the id
+/// isn't found.
+pub async fn import_anime_from_anilist(state: &EngineState, anime_id: i64) -> anyhow::Result<()> {
+    let token = crate::engine::anilist::auth::load_token(&state.storage)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("not connected to AniList"))?;
+    let client = crate::engine::anilist::client::AniListClient::new(token);
+    let query_str = format!(
+        "query {{ Media(id: {}, type: ANIME) {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description season seasonYear }} }}",
+        anime_id
+    );
+    let raw = client
+        .query::<serde_json::Value>(&query_str, serde_json::json!({}))
+        .await?;
+    let media = raw
+        .get("data")
+        .and_then(|d| d.get("Media"))
+        .filter(|m| !m.is_null())
+        .ok_or_else(|| anyhow::anyhow!("anime #{anime_id} not found on AniList"))?;
+
+    let title = media.get("title");
+    let titles_json = serde_json::json!({
+        "romaji": title.and_then(|t| t.get("romaji")).and_then(|r| r.as_str()).unwrap_or(""),
+        "english": title.and_then(|t| t.get("english")).and_then(|e| e.as_str()),
+        "japanese": title.and_then(|t| t.get("native")).and_then(|n| n.as_str()),
+        "synonyms": [],
+    })
+    .to_string();
+    let ep_count = media.get("episodes").and_then(|e| e.as_i64()).unwrap_or(0) as i32;
+    let image_url = media.get("coverImage").and_then(|c| c.get("large")).and_then(|l| l.as_str());
+    let synopsis = media.get("description").and_then(|d| d.as_str());
+    let anime_type = media.get("type").and_then(|t| t.as_str());
+    let anime_status = media.get("status").and_then(|s| s.as_str());
+    let season = media.get("season").and_then(|s| s.as_str());
+    let season_year = media.get("seasonYear").and_then(|y| y.as_i64()).map(|y| y as i32);
+    let now = unix_now_inner()?;
+
+    state
+        .storage
+        .upsert_anime_full(
+            anime_id,
+            &titles_json,
+            ep_count,
+            image_url,
+            synopsis,
+            anime_type,
+            anime_status,
+            now,
+        )
+        .await?;
+    state
+        .storage
+        .set_anime_season(anime_id, season, season_year)
+        .await?;
+    Ok(())
+}
+
 pub async fn fetch_anime_detail_inner(
     anime_id: i64,
     state: &EngineState,
 ) -> anyhow::Result<AnimeDetailResponse> {
-    let detail = match state.storage.anime_detail(anime_id).await {
+    let mut detail = match state.storage.anime_detail(anime_id).await {
         Ok(d) => d,
         Err(_) => {
-            // Auto-import from AniList if not found locally
-            if let Ok(token) = crate::engine::anilist::auth::load_token(&state.storage).await {
-                if let Some(token) = token {
-                    let client = crate::engine::anilist::client::AniListClient::new(token);
-                    let query_str = format!(
-                        "query {{ Media(id: {}, type: ANIME) {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description }} }}",
-                        anime_id
-                    );
-                    if let Ok(raw) = client.query::<serde_json::Value>(&query_str, serde_json::json!({})).await {
-                        let media = raw.get("data").and_then(|d| d.get("Media"));
-                        if let Some(media) = media {
-                            let title = media.get("title");
-                            let titles_json = serde_json::json!({
-                                "romaji": title.and_then(|t| t.get("romaji")).and_then(|r| r.as_str()).unwrap_or(""),
-                                "english": title.and_then(|t| t.get("english")).and_then(|e| e.as_str()),
-                                "japanese": title.and_then(|t| t.get("native")).and_then(|n| n.as_str()),
-                                "synonyms": [],
-                            }).to_string();
-                            let ep_count = media.get("episodes").and_then(|e| e.as_i64()).unwrap_or(0) as i32;
-                            let image_url = media.get("coverImage").and_then(|c| c.get("large")).and_then(|l| l.as_str());
-                            let synopsis = media.get("description").and_then(|d| d.as_str());
-                            let anime_type = media.get("type").and_then(|t| t.as_str());
-                            let anime_status = media.get("status").and_then(|s| s.as_str());
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs() as i64;
-
-                            let _ = state.storage.upsert_anime_full(
-                                anime_id,
-                                &titles_json,
-                                ep_count,
-                                image_url,
-                                synopsis,
-                                anime_type,
-                                anime_status,
-                                now,
-                            ).await;
-                        }
-                    }
-                }
-            }
+            // Auto-import from AniList if not found locally (best-effort).
+            let _ = import_anime_from_anilist(state, anime_id).await;
             // Retry — should succeed after insert above
             state.storage.anime_detail(anime_id).await?
         }
     };
+
+    // Backfill a missing synopsis from AniList. Shows imported via the fast
+    // bulk-match path have no description (the search endpoint doesn't return
+    // one); fetch it on first detail view. Best-effort — stays empty if offline.
+    if detail.synopsis.as_deref().unwrap_or("").trim().is_empty()
+        && import_anime_from_anilist(state, anime_id).await.is_ok()
+    {
+        if let Ok(d) = state.storage.anime_detail(anime_id).await {
+            detail = d;
+        }
+    }
 
     let recent_history = state.storage.list_recent_watch_history(10).await?;
     Ok(AnimeDetailResponse {
@@ -521,6 +667,50 @@ pub async fn fetch_anime_detail_inner(
     })
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NextAiring {
+    pub episode: i32,
+    pub airing_at: i64,
+    pub time_until_airing: i64,
+}
+
+pub async fn get_next_airing_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<Option<NextAiring>> {
+    let token = match auth::load_token(&state.storage).await? {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    let client = AniListClient::new(token);
+    let query_str = format!(
+        "query {{ Media(id: {anime_id}, type: ANIME) {{ nextAiringEpisode {{ airingAt timeUntilAiring episode }} }} }}"
+    );
+    let raw: serde_json::Value = client.query(&query_str, serde_json::json!({})).await?;
+    let n = raw
+        .get("data")
+        .and_then(|d| d.get("Media"))
+        .and_then(|m| m.get("nextAiringEpisode"))
+        .filter(|v| !v.is_null());
+    Ok(n.map(|n| NextAiring {
+        episode: n.get("episode").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        airing_at: n.get("airingAt").and_then(|v| v.as_i64()).unwrap_or(0),
+        time_until_airing: n.get("timeUntilAiring").and_then(|v| v.as_i64()).unwrap_or(0),
+    }))
+}
+
+/// Fetch the next airing episode for an anime from AniList (for the detail page
+/// air-date + countdown). Returns None when not connected or not currently airing.
+#[tauri::command]
+pub async fn get_next_airing(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Option<NextAiring>, String> {
+    get_next_airing_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
+}
+
 pub async fn update_list_entry_inner(
     anime_id: i64,
     status: Option<String>,
@@ -531,7 +721,30 @@ pub async fn update_list_entry_inner(
     state
         .storage
         .update_list_entry_partial(anime_id, status.as_deref(), watched_episodes, score)
+        .await?;
+    // When progress advances to the episode cap (and the caller didn't set an
+    // explicit status), auto-move the show to "completed".
+    if status.is_none() && watched_episodes.is_some() {
+        state.storage.auto_complete_if_capped(anime_id).await?;
+    }
+    // Push the change (status + progress) back to AniList (best-effort, queued).
+    crate::engine::sync_worker::enqueue_anilist_sync(state, anime_id).await;
+    Ok(())
+}
+
+pub async fn delete_anime_inner(anime_id: i64, state: &EngineState) -> anyhow::Result<()> {
+    state.storage.delete_anime(anime_id).await
+}
+
+/// Completely remove an anime from the library (list entry, history, mappings).
+#[tauri::command]
+pub async fn delete_anime(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    delete_anime_inner(anime_id, &state)
         .await
+        .map_err(command_error)
 }
 
 // ── Library scanner command inner functions ─────────────────────────────────
@@ -551,6 +764,13 @@ pub async fn scan_library_folders_inner(
     state: &EngineState,
 ) -> anyhow::Result<library_scanner::LibraryScanReport> {
     library_scanner::scan_library_folders(&state.storage).await
+}
+
+pub async fn rescan_anime_files_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<library_scanner::LibraryScanReport> {
+    library_scanner::rescan_anime_dirs(&state.storage, anime_id).await
 }
 
 pub async fn get_episode_files_inner(
@@ -889,100 +1109,149 @@ pub struct CalendarEntry {
 }
 
 pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<CalendarEntry>> {
-    let mut result: Vec<CalendarEntry> = Vec::new();
+    // Universe of the airing calendar: the shows you're watching or plan to watch.
+    let calendar_ids: Vec<i64> = state.storage.calendar_anime_ids().await.unwrap_or_default();
+    let calendar_id_set: std::collections::HashSet<i64> = calendar_ids.iter().copied().collect();
 
-    // Try Sonarr first if connected
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    // Cover the previous ~month through ~2 months ahead so the month grid the
+    // user pages through (prev / current / next) is populated.
+    let window_start = now - 31 * 86_400;
+    let window_end = now + 60 * 86_400;
+
+    // One entry per airing episode (a show can appear on many days). AniList is
+    // primary; Sonarr only fills shows AniList returned nothing for.
+    let mut result: Vec<CalendarEntry> = Vec::new();
+    let mut anilist_covered: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    // Guards against the same episode appearing twice across sources.
+    let mut seen: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
+
+    // ── PRIMARY: AniList full airing schedule for followed shows ──────────────
+    if !calendar_ids.is_empty() {
+        if let Some(token) = crate::engine::anilist::auth::load_token(&state.storage).await? {
+            let client = crate::engine::anilist::client::AniListClient::new(token);
+            match client
+                .fetch_airing_schedule_range(&calendar_ids, window_start, window_end)
+                .await
+            {
+                Ok(items) => {
+                    for it in items {
+                        if !calendar_id_set.contains(&it.media_id) {
+                            continue;
+                        }
+                        anilist_covered.insert(it.media_id);
+                        if !seen.insert((it.media_id, it.episode)) {
+                            continue;
+                        }
+                        result.push(CalendarEntry {
+                            anime_id: it.media_id,
+                            title: it.title,
+                            image_url: it.image_url,
+                            episode_count: it.episode_count,
+                            progress: None,
+                            next_episode: Some(it.episode),
+                            airing_at: Some(it.airing_at),
+                            time_until_airing: Some(it.time_until_airing),
+                        });
+                    }
+                    tracing::info!(
+                        "Calendar AniList primary: {} episodes across {} shows",
+                        result.len(),
+                        anilist_covered.len()
+                    );
+                }
+                Err(e) => tracing::warn!("AniList calendar failed: {}, relying on Sonarr", e),
+            }
+        }
+    }
+
+    // ── FALLBACK: Sonarr fills followed shows AniList had no airing for ───────
     let url_raw = state.storage.get_setting("sonarr.url").await.ok().flatten();
     let api_key_enc = state.storage.get_setting("sonarr.api_key").await.ok().flatten();
-
     if let (Some(url_raw), Some(api_key_enc)) = (url_raw, api_key_enc) {
         if let (Ok(url), Ok(api_key)) = (
             serde_json::from_str::<String>(&url_raw),
-            crate::engine::secrets::unprotect_secret(&api_key_enc)
+            crate::engine::secrets::unprotect_secret(&api_key_enc),
         ) {
             let client = crate::engine::sonarr::client::SonarrClient::new(url, api_key);
             let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-            let future = (chrono::Local::now() + chrono::Duration::days(60)).format("%Y-%m-%d").to_string();
+            let future = (chrono::Local::now() + chrono::Duration::days(60))
+                .format("%Y-%m-%d")
+                .to_string();
 
             match client.fetch_calendar(&today, &future).await {
                 Ok(entries) => {
-                    result = entries.into_iter().map(|e| {
+                    let mut filled = 0i64;
+                    for e in entries {
+                        let anime_id = match e.series_id {
+                            Some(sid) => state
+                                .storage
+                                .sonarr_mapping_by_sonarr_id(sid)
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|m| m.anime_id)
+                                .unwrap_or(0),
+                            None => 0,
+                        };
+
+                        // Only followed shows that AniList didn't already cover.
+                        if anime_id <= 0
+                            || !calendar_id_set.contains(&anime_id)
+                            || anilist_covered.contains(&anime_id)
+                        {
+                            continue;
+                        }
+                        let episode = e.episode_number.unwrap_or(0);
+                        if !seen.insert((anime_id, episode)) {
+                            continue;
+                        }
+
                         let air_ts = e.air_date_utc.as_ref().and_then(|d| {
-                            // Try full ISO datetime first, fall back to date-only
-                            chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%dT%H:%M:%SZ").ok()
+                            chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%dT%H:%M:%SZ")
+                                .ok()
                                 .map(|dt| dt.and_utc().timestamp())
                                 .or_else(|| {
-                                    chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
-                                        .and_then(|nd| nd.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp()))
+                                    chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok().and_then(
+                                        |nd| nd.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp()),
+                                    )
                                 })
                         });
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs() as i64;
-                        let remaining = air_ts.map(|air| (air - now).max(0));
-                        CalendarEntry {
-                            anime_id: 0,
-                            title: e.title.unwrap_or_else(|| "Unknown".into()),
+                        result.push(CalendarEntry {
+                            anime_id,
+                            title: e
+                                .series
+                                .as_ref()
+                                .and_then(|s| s.title.as_deref())
+                                .unwrap_or("Unknown")
+                                .to_string(),
                             image_url: None,
                             episode_count: None,
                             progress: None,
                             next_episode: e.episode_number,
                             airing_at: air_ts,
-                            time_until_airing: remaining,
-                        }
-                    }).collect();
-                    tracing::info!("Sonarr calendar: {} entries", result.len());
+                            time_until_airing: air_ts.map(|air| (air - now).max(0)),
+                        });
+                        filled += 1;
+                    }
+                    tracing::info!("Calendar Sonarr fallback: {} episodes filled", filled);
                 }
-                Err(e) => {
-                    tracing::warn!("Sonarr calendar failed: {}, falling back to AniList", e);
-                }
+                Err(e) => tracing::warn!("Sonarr calendar failed: {}", e),
             }
         }
     }
 
-    // Fall back to AniList if Sonarr yielded nothing
-    if result.is_empty() {
-        if let Some(token) = crate::engine::anilist::auth::load_token(&state.storage).await? {
-            let client = crate::engine::anilist::client::AniListClient::new(token);
+    result.sort_by_key(|e| e.airing_at.unwrap_or(i64::MAX));
 
-            let watching_ids = state.storage.watching_anime_ids().await?;
-            tracing::info!("Calendar AniList fallback: {} watching anime IDs", watching_ids.len());
-
-            if !watching_ids.is_empty() {
-                match client.fetch_airing_schedule(&watching_ids).await {
-                    Ok(entries) => {
-                        result = entries.into_iter().filter_map(|m| {
-                            let next_ep = m.next_airing_episode.as_ref()?;
-                            let title = m.title.as_ref()
-                                .and_then(|t| t.english.clone().or_else(|| t.romaji.clone()))
-                                .unwrap_or_else(|| format!("Anime #{}", m.id));
-                            Some(CalendarEntry {
-                                anime_id: m.id,
-                                title,
-                                image_url: m.cover_image.as_ref().and_then(|c| c.large.clone()),
-                                episode_count: m.episodes,
-                                progress: None,
-                                next_episode: Some(next_ep.episode),
-                                airing_at: Some(next_ep.airing_at),
-                                time_until_airing: Some(next_ep.time_until_airing),
-                            })
-                        }).collect();
-                        tracing::info!("AniList calendar: {} entries", result.len());
-                    }
-                    Err(e) => {
-                        tracing::error!("AniList calendar failed: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    // Fallback: if no entries from any source, show watching anime from local DB
+    // ── LAST RESORT: no airing data from either source → local watching list ──
     if result.is_empty() {
         let watching = state.storage.continue_watching(50).await?;
-        if !watching.is_empty() {
-            result = watching.into_iter().map(|w| CalendarEntry {
+        result = watching
+            .into_iter()
+            .map(|w| CalendarEntry {
                 anime_id: w.anime_id,
                 title: w.anime_title,
                 image_url: w.image_url,
@@ -991,9 +1260,9 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                 next_episode: None,
                 airing_at: None,
                 time_until_airing: None,
-            }).collect();
-            tracing::info!("Calendar fallback: {} watching entries from local DB", result.len());
-        }
+            })
+            .collect();
+        tracing::info!("Calendar fallback: {} watching entries from local DB", result.len());
     }
 
     Ok(result)
@@ -1206,6 +1475,447 @@ pub async fn list_known_files(
     list_known_files_inner(limit, &state).await
 }
 
+/// Persistently ignore (tombstone) or un-ignore a known file so the library
+/// scanner and rematch never re-index/re-match it.
+#[tauri::command]
+pub async fn set_known_file_ignored(
+    file_path: String,
+    ignored: bool,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    state
+        .storage
+        .set_file_index_ignored(&file_path, ignored)
+        .await
+        .map_err(command_error)
+}
+
+/// Delete a file from the index. Note: a file still present on disk will be
+/// re-indexed on the next library scan — use `set_known_file_ignored` to
+/// suppress a file permanently.
+#[tauri::command]
+pub async fn delete_known_file(
+    file_path: String,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    state
+        .storage
+        .delete_file_index(&file_path)
+        .await
+        .map_err(command_error)
+}
+
+/// Manually map a known file to an anime + episode at full confidence. Unlike
+/// `confirm_identification`, this is a side-effect-free management write and does
+/// not emit a playback identification event.
+#[tauri::command]
+pub async fn set_known_file_mapping(
+    file_path: String,
+    anime_id: i64,
+    episode: i32,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    let now = unix_now_inner().map_err(command_error)?;
+    state
+        .storage
+        .upsert_file_index(&file_path, Some(anime_id), episode, 100, now)
+        .await
+        .map_err(command_error)
+}
+
+/// One entry of a bulk mapping request.
+#[derive(serde::Deserialize)]
+pub struct FileMappingInput {
+    pub file_path: String,
+    pub anime_id: i64,
+    pub episode: i32,
+}
+
+/// Bulk manual mapping — map many files to anime + episode at once (one
+/// transaction). Used by the bulk file manager to fix a whole series in one go.
+#[tauri::command]
+pub async fn set_known_file_mappings(
+    mappings: Vec<FileMappingInput>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<usize, String> {
+    let now = unix_now_inner().map_err(command_error)?;
+    let tuples: Vec<(String, i64, i32)> = mappings
+        .into_iter()
+        .map(|m| (m.file_path, m.anime_id, m.episode))
+        .collect();
+    let count = tuples.len();
+    state
+        .storage
+        .upsert_file_mappings(&tuples, now)
+        .await
+        .map_err(command_error)?;
+    Ok(count)
+}
+
+/// Bulk ignore / un-ignore.
+#[tauri::command]
+pub async fn set_known_files_ignored(
+    file_paths: Vec<String>,
+    ignored: bool,
+    state: tauri::State<'_, EngineState>,
+) -> Result<usize, String> {
+    let count = file_paths.len();
+    state
+        .storage
+        .set_file_indexes_ignored(&file_paths, ignored)
+        .await
+        .map_err(command_error)?;
+    Ok(count)
+}
+
+/// Bulk delete of index rows.
+#[tauri::command]
+pub async fn delete_known_files(
+    file_paths: Vec<String>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<usize, String> {
+    let count = file_paths.len();
+    state
+        .storage
+        .delete_file_indexes(&file_paths)
+        .await
+        .map_err(command_error)?;
+    Ok(count)
+}
+
+/// Unmap files from their anime (returns them to the Unmapped pool). Used by the
+/// detail page to remove wrongly-mapped episode files.
+#[tauri::command]
+pub async fn unmap_known_files(
+    file_paths: Vec<String>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<usize, String> {
+    let count = file_paths.len();
+    state
+        .storage
+        .unmap_file_indexes(&file_paths)
+        .await
+        .map_err(command_error)?;
+    Ok(count)
+}
+
+/// Show a native folder-picker dialog; returns the chosen path (or None if cancelled).
+#[tauri::command]
+pub async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_folder(move |res| {
+        let _ = tx.send(res);
+    });
+    let picked = rx.await.map_err(|e| e.to_string())?;
+    Ok(picked
+        .and_then(|fp| fp.into_path().ok())
+        .map(|p| p.to_string_lossy().to_string()))
+}
+
+/// Map every video file inside `folder` (recursively) to `anime_id` at full
+/// confidence, with the episode number parsed from each filename. Used by the
+/// detail page's "Map folder" so a series/season folder tracks to that anime.
+pub async fn map_folder_to_anime_inner(
+    folder: &str,
+    anime_id: i64,
+    state: &EngineState,
+) -> anyhow::Result<usize> {
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    let mut errs: Vec<String> = Vec::new();
+    library_scanner::find_video_files(std::path::Path::new(folder), &mut files, &mut errs);
+
+    let mappings: Vec<(String, i64, i32)> = files
+        .iter()
+        .map(|p| {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            let episode = crate::engine::parser::parse_filename(name, None)
+                .map(|pf| pf.episode_number)
+                .filter(|e| *e > 0)
+                .unwrap_or(0);
+            (p.to_string_lossy().to_string(), anime_id, episode)
+        })
+        .collect();
+
+    let now = unix_now_inner()?;
+    state.storage.upsert_file_mappings(&mappings, now).await?;
+    Ok(mappings.len())
+}
+
+#[tauri::command]
+pub async fn map_folder_to_anime(
+    folder: String,
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<usize, String> {
+    map_folder_to_anime_inner(&folder, anime_id, &state)
+        .await
+        .map_err(command_error)
+}
+
+pub async fn import_anilist_anime_inner(state: &EngineState, anime_id: i64) -> anyhow::Result<()> {
+    import_anime_from_anilist(state, anime_id).await?;
+    // Add to the library as "watching" — but only if it isn't already tracked,
+    // so an existing status / progress is never downgraded.
+    if state.storage.get_list_entry(anime_id).await?.is_none() {
+        let now = unix_now_inner()?;
+        state
+            .storage
+            .upsert_list_entry_progress(anime_id, "watching", 0, now)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Import an anime from AniList by id (used when the file manager's "search
+/// AniList" flow maps a file to a show not yet in the local library) and add it
+/// to the library as "watching".
+#[tauri::command]
+pub async fn import_anilist_anime(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    import_anilist_anime_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeepMatchReport {
+    pub groups_total: usize,
+    pub groups_matched: usize,
+    pub files_mapped: usize,
+    pub unmatched: Vec<String>,
+}
+
+/// Does a token look like a `SxxExx` season/episode marker (e.g. `S01E02`,
+/// `S01E01-02-03`)? Used to split a series name off a Sonarr-style filename.
+fn is_season_episode_token(tok: &str) -> bool {
+    let b = tok.trim().as_bytes();
+    let mut i = 0;
+    if i >= b.len() || !(b[i] == b'S' || b[i] == b's') {
+        return false;
+    }
+    i += 1;
+    let s_digits = i;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == s_digits {
+        return false;
+    }
+    if i >= b.len() || !(b[i] == b'E' || b[i] == b'e') {
+        return false;
+    }
+    i += 1;
+    let e_digits = i;
+    while i < b.len() && b[i].is_ascii_digit() {
+        i += 1;
+    }
+    i != e_digits
+}
+
+/// Derive a series key from a file path: the filename portion before the
+/// `SxxExx` marker (e.g. "Cyberpunk - Edgerunners"), falling back to the parent
+/// folder name, then the bare filename.
+fn series_key_from_path(path: &str) -> String {
+    let stem = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path);
+    let parts: Vec<&str> = stem.split(" - ").collect();
+    let mut series_parts: Vec<&str> = Vec::new();
+    for p in &parts {
+        if is_season_episode_token(p) {
+            break;
+        }
+        series_parts.push(p);
+    }
+    let key = series_parts.join(" - ").trim().to_string();
+    if !key.is_empty() && key != stem {
+        return key;
+    }
+    if let Some(parent) = std::path::Path::new(path)
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+    {
+        if !parent.is_empty() {
+            return parent.to_string();
+        }
+    }
+    stem.to_string()
+}
+
+fn titles_json_from_search(r: &crate::engine::anilist::client::SearchAnimeResult) -> String {
+    let t = r.title.as_ref();
+    serde_json::json!({
+        "romaji": t.and_then(|x| x.romaji.clone()).unwrap_or_default(),
+        "english": t.and_then(|x| x.english.clone()),
+        "japanese": t.and_then(|x| x.native.clone()),
+        "synonyms": [],
+    })
+    .to_string()
+}
+
+/// Upsert an anime into the library directly from a search result — no extra
+/// `Media(id)` round-trip — and add a "watching" list entry if it isn't already
+/// tracked. Used by bulk deep-match so a matched series costs only the (batched)
+/// search request, not a second per-series AniList call.
+async fn import_search_result_as_watching(
+    state: &EngineState,
+    r: &crate::engine::anilist::client::SearchAnimeResult,
+    now: i64,
+) -> anyhow::Result<()> {
+    let titles_json = titles_json_from_search(r);
+    let image = r.cover_image.as_ref().and_then(|c| c.large.as_deref());
+    state
+        .storage
+        .upsert_anime_full(
+            r.id,
+            &titles_json,
+            r.episodes.unwrap_or(0),
+            image,
+            None,
+            Some("ANIME"),
+            r.status.as_deref(),
+            now,
+        )
+        .await?;
+    if state.storage.get_list_entry(r.id).await?.is_none() {
+        state
+            .storage
+            .upsert_list_entry_progress(r.id, "watching", 0, now)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn search_multi_with_retry(
+    client: &AniListClient,
+    chunk: &[String],
+) -> anyhow::Result<Vec<Vec<crate::engine::anilist::client::SearchAnimeResult>>> {
+    let mut attempt = 0u8;
+    loop {
+        match client.search_anime_multi(chunk).await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                if e.to_string().contains("429") && attempt < 3 {
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+}
+
+pub async fn deep_match_via_anilist_inner(state: &EngineState) -> anyhow::Result<DeepMatchReport> {
+    let token = auth::load_token(&state.storage)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("not connected to AniList"))?;
+    let client = AniListClient::new(token);
+    let now = unix_now_inner()?;
+
+    // Group unmapped, non-ignored files by series.
+    let files = state.storage.list_file_index(100_000, 0).await?;
+    let mut groups: std::collections::HashMap<String, Vec<(String, i32)>> =
+        std::collections::HashMap::new();
+    for f in &files {
+        if f.ignored || f.anime_id.is_some() {
+            continue;
+        }
+        let episode = match f.episode {
+            Some(e) if e > 0 => e,
+            _ => {
+                let name = std::path::Path::new(&f.file_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&f.file_path);
+                crate::engine::parser::parse_filename(name, None)
+                    .map(|p| p.episode_number)
+                    .filter(|e| *e > 0)
+                    .unwrap_or(1)
+            }
+        };
+        let key = series_key_from_path(&f.file_path);
+        groups.entry(key).or_default().push((f.file_path.clone(), episode));
+    }
+
+    let groups_total = groups.len();
+    let mut groups_matched = 0usize;
+    let mut files_mapped = 0usize;
+    let mut unmatched: Vec<String> = Vec::new();
+
+    const BATCH: usize = 8;
+    const AUTO_THRESHOLD: u8 = 80;
+
+    let keys: Vec<String> = groups.keys().cloned().collect();
+    let total_chunks = keys.len().div_ceil(BATCH);
+    for (chunk_i, chunk) in keys.chunks(BATCH).enumerate() {
+        let results = search_multi_with_retry(&client, chunk).await?;
+        for (ki, key) in chunk.iter().enumerate() {
+            let mut best: Option<&crate::engine::anilist::client::SearchAnimeResult> = None;
+            let mut best_score: u8 = 0;
+            if let Some(candidates) = results.get(ki) {
+                for c in candidates {
+                    let score =
+                        crate::engine::matcher::score_titles_json(key, &titles_json_from_search(c));
+                    if score > best_score {
+                        best_score = score;
+                        best = Some(c);
+                    }
+                }
+            }
+
+            match (best_score >= AUTO_THRESHOLD, best) {
+                (true, Some(r)) => {
+                    // Import straight from the search result — no extra Media(id)
+                    // AniList call — then map the whole series locally.
+                    import_search_result_as_watching(state, r, now).await?;
+                    if let Some(group_files) = groups.get(key) {
+                        let mappings: Vec<(String, i64, i32)> = group_files
+                            .iter()
+                            .map(|(p, ep)| (p.clone(), r.id, *ep))
+                            .collect();
+                        state.storage.upsert_file_mappings(&mappings, now).await?;
+                        groups_matched += 1;
+                        files_mapped += group_files.len();
+                    }
+                }
+                _ => unmatched.push(key.clone()),
+            }
+        }
+
+        // Throttle between batches to stay under AniList's ~30 req/min limit
+        // (~24/min here). `query()` additionally honors 429 Retry-After as a
+        // backstop if we still get limited.
+        if chunk_i + 1 < total_chunks {
+            tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+        }
+    }
+
+    unmatched.sort();
+    Ok(DeepMatchReport {
+        groups_total,
+        groups_matched,
+        files_mapped,
+        unmatched,
+    })
+}
+
+/// Bulk auto-match every unmapped file against AniList search: group by series,
+/// import strong matches into the library ("watching") and map all their files.
+#[tauri::command]
+pub async fn deep_match_via_anilist(
+    state: tauri::State<'_, EngineState>,
+) -> Result<DeepMatchReport, String> {
+    deep_match_via_anilist_inner(&state)
+        .await
+        .map_err(command_error)
+}
+
 // ── AniList command wrappers ────────────────────────────────────────────────
 
 #[tauri::command]
@@ -1350,6 +2060,16 @@ pub async fn scan_library_folders(
 }
 
 #[tauri::command]
+pub async fn rescan_anime_files(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<library_scanner::LibraryScanReport, String> {
+    rescan_anime_files_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
 pub async fn get_episode_files(
     anime_id: i64,
     state: tauri::State<'_, EngineState>,
@@ -1364,7 +2084,19 @@ pub async fn open_episode_file(path: String) -> Result<(), String> {
     open_episode_file_inner(path).await.map_err(command_error)
 }
 
+#[tauri::command]
+pub async fn open_containing_folder(path: String) -> Result<(), String> {
+    library_scanner::open_containing_folder(&path).map_err(command_error)
+}
+
 // ── Sonarr command wrappers ─────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_sonarr_series(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<crate::engine::storage::SonarrSeriesListRow>, String> {
+    state.storage.list_sonarr_series().await.map_err(command_error)
+}
 
 #[tauri::command]
 pub async fn connect_sonarr(
@@ -1458,6 +2190,23 @@ pub async fn set_launch_on_startup(
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
     set_launch_on_startup_inner(enabled, &state)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_start_in_tray(
+    state: tauri::State<'_, EngineState>,
+) -> Result<bool, String> {
+    get_start_in_tray_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn set_start_in_tray(
+    enabled: bool,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    set_start_in_tray_inner(enabled, &state)
         .await
         .map_err(command_error)
 }

@@ -59,6 +59,17 @@
     currentView = 'detail';
   }
 
+  function handleCalendarSelect(event: CustomEvent<{ anime_id: number }>) {
+    previousView = currentView;
+    detailAnimeId = event.detail.anime_id;
+    currentView = 'detail';
+  }
+
+  function handleDetailSelect(event: CustomEvent<{ anime_id: number }>) {
+    detailAnimeId = event.detail.anime_id;
+    currentView = 'detail';
+  }
+
   function handleDetailBack() {
     currentView = previousView;
   }
@@ -113,19 +124,19 @@
     {#if currentView === 'dashboard'}
       <DashboardView events={latestEvents} />
     {:else if currentView === 'library'}
-      <LibraryView on:select={handleLibrarySelect} />
+      <LibraryView events={latestEvents} on:select={handleLibrarySelect} />
     {:else if currentView === 'season'}
       <SeasonView on:select={handleSeasonSelect} />
     {:else if currentView === 'search'}
       <SearchView on:select={handleSearchSelect} />
     {:else if currentView === 'calendar'}
-      <CalendarView />
+      <CalendarView on:select={handleCalendarSelect} />
     {:else if currentView === 'history'}
       <HistoryView />
     {:else if currentView === 'stats'}
       <StatsView />
     {:else if currentView === 'detail' && detailAnimeId !== null}
-      <DetailView animeId={detailAnimeId} on:back={handleDetailBack} />
+      <DetailView animeId={detailAnimeId} events={latestEvents} on:back={handleDetailBack} on:select={handleDetailSelect} />
     {:else if currentView === 'settings'}
       <SettingsView />
     {/if}

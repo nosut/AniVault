@@ -69,12 +69,14 @@ export interface FileIndexEntry {
   episode: number | null;
   confidence: number;
   indexed_at: number;
+  ignored: boolean;
 }
 
 export interface LibraryScanReport {
   found: number;
   indexed: number;
   skipped: number;
+  removed: number;
   errors: string[];
 }
 
@@ -160,6 +162,8 @@ export interface LibraryEntry {
   episode_count: number | null;
   score: number | null;
   image_url: string | null;
+  season: string | null;
+  season_year: number | null;
 }
 
 export interface LibraryStats {
@@ -315,6 +319,59 @@ export function listKnownFiles(limit: number, invokeFn: InvokeFn = tauriInvoke):
   return invokeFn<FileIndexEntry[]>('list_known_files', { limit });
 }
 
+export function rematchUnmappedFiles(invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('rematch_unmapped_files');
+}
+
+export function setKnownFileIgnored(filePath: string, ignored: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_known_file_ignored', { filePath, ignored });
+}
+
+export function deleteKnownFile(filePath: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('delete_known_file', { filePath });
+}
+
+export function setKnownFileMapping(filePath: string, animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_known_file_mapping', { filePath, animeId, episode });
+}
+
+export interface FileMappingInput {
+  file_path: string;
+  anime_id: number;
+  episode: number;
+}
+
+export function setKnownFileMappings(mappings: FileMappingInput[], invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('set_known_file_mappings', { mappings });
+}
+
+export function setKnownFilesIgnored(filePaths: string[], ignored: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('set_known_files_ignored', { filePaths, ignored });
+}
+
+export function deleteKnownFiles(filePaths: string[], invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('delete_known_files', { filePaths });
+}
+
+export function unmapKnownFiles(filePaths: string[], invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('unmap_known_files', { filePaths });
+}
+
+export function importAnilistAnime(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('import_anilist_anime', { animeId });
+}
+
+export interface DeepMatchReport {
+  groups_total: number;
+  groups_matched: number;
+  files_mapped: number;
+  unmatched: string[];
+}
+
+export function deepMatchViaAnilist(invokeFn: InvokeFn = tauriInvoke): Promise<DeepMatchReport> {
+  return invokeFn<DeepMatchReport>('deep_match_via_anilist');
+}
+
 export function connectAniListOauth(clientId: string, clientSecret: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('connect_anilist_oauth', { clientId, clientSecret });
 }
@@ -351,6 +408,14 @@ export function setLaunchOnStartup(enabled: boolean, invokeFn: InvokeFn = tauriI
   return invokeFn<void>('set_launch_on_startup', { enabled });
 }
 
+export function getStartInTray(invokeFn: InvokeFn = tauriInvoke): Promise<boolean> {
+  return invokeFn<boolean>('get_start_in_tray');
+}
+
+export function setStartInTray(enabled: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_start_in_tray', { enabled });
+}
+
 export function connectSonarr(
   url: string,
   apiKey: string,
@@ -369,6 +434,20 @@ export function getSonarrStatus(invokeFn: InvokeFn = tauriInvoke): Promise<Sonar
 
 export function importSonarrSeries(invokeFn: InvokeFn = tauriInvoke): Promise<SonarrImportReport> {
   return invokeFn<SonarrImportReport>('import_sonarr_series');
+}
+
+export interface SonarrSeriesListRow {
+  sonarr_id: number;
+  title: string;
+  poster_url: string | null;
+  episode_count: number;
+  anime_id: number | null;
+  confidence: number | null;
+  anime_title: string | null;
+}
+
+export function listSonarrSeries(invokeFn: InvokeFn = tauriInvoke): Promise<SonarrSeriesListRow[]> {
+  return invokeFn<SonarrSeriesListRow[]>('list_sonarr_series');
 }
 
 export function testSonarrConnection(url: string, apiKey: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
@@ -391,7 +470,7 @@ export function remapSonarr(
 }
 
 export interface CalendarEntry {
-  animeId: number;
+  anime_id: number;
   title: string;
   image_url: string | null;
   episode_count: number | null;
@@ -506,6 +585,16 @@ export function fetchAnimeDetail(animeId: number, invokeFn: InvokeFn = tauriInvo
   return invokeFn<AnimeDetail>('fetch_anime_detail', { animeId: animeId });
 }
 
+export interface NextAiring {
+  episode: number;
+  airing_at: number;
+  time_until_airing: number;
+}
+
+export function getNextAiring(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<NextAiring | null> {
+  return invokeFn<NextAiring | null>('get_next_airing', { animeId });
+}
+
 export interface RelationEntry {
   id: number;
   title: string;
@@ -517,6 +606,10 @@ export interface RelationEntry {
 
 export function getAnimeRelations(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<RelationEntry[]> {
   return invokeFn<RelationEntry[]>('get_anime_relations', { animeId });
+}
+
+export function deleteAnime(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('delete_anime', { animeId });
 }
 
 export function updateListEntry(
@@ -544,10 +637,26 @@ export function scanLibraryFolders(invokeFn: InvokeFn = tauriInvoke): Promise<Li
   return invokeFn<LibraryScanReport>('scan_library_folders');
 }
 
+export function rescanAnimeFiles(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<LibraryScanReport> {
+  return invokeFn<LibraryScanReport>('rescan_anime_files', { animeId });
+}
+
 export function getEpisodeFiles(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileIndexEntry[]> {
   return invokeFn<FileIndexEntry[]>('get_episode_files', { animeId });
 }
 
 export function openEpisodeFile(path: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('open_episode_file', { path });
+}
+
+export function openContainingFolder(path: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('open_containing_folder', { path });
+}
+
+export function pickFolder(invokeFn: InvokeFn = tauriInvoke): Promise<string | null> {
+  return invokeFn<string | null>('pick_folder');
+}
+
+export function mapFolderToAnime(folder: string, animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('map_folder_to_anime', { folder, animeId });
 }

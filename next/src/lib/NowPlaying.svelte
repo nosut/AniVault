@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { confirmIdentification, getTrackingStatus, startTracking, stopTracking, type TrackingStatus, type EngineEvent, type PlaybackDetectedEvent } from './api';
 
   export let events: EngineEvent[] = [];
@@ -12,6 +12,11 @@
   let lastPlaybackEvent: PlaybackDetectedEvent['PlaybackDetected'] | null = null;
   let playbackCandidates: PlaybackDetectedEvent['PlaybackDetected']['candidates'] | null = null;
   let confirming: number | null = null;
+
+  // High-confidence / already-mapped matches are auto-tracked by the engine, so
+  // no manual Confirm is needed.
+  $: topCandidate = playbackCandidates && playbackCandidates.length > 0 ? playbackCandidates[0] : null;
+  $: autoTracked = topCandidate ? (topCandidate.confidence >= 80 || topCandidate.match_source === 'file_index') : false;
 
   $: {
     const last = events.at(-1);
@@ -94,6 +99,8 @@
     }
   }
 
+  // Tracking auto-starts on the backend; poll immediately so the panel reflects it.
+  onMount(startPolling);
   onDestroy(stopPolling);
 </script>
 
@@ -112,32 +119,27 @@
   {/if}
 
   {#if status.watching}
-    <dl class="np-details">
-      <div>
-        <dt>Player</dt>
-        <dd>{status.watching.player_name}</dd>
-      </div>
-      {#if status.watching.window_title}
-        <div>
-          <dt>Title</dt>
-          <dd>{status.watching.window_title}</dd>
-        </div>
-      {/if}
-      {#if status.watching.file_path}
-        <div>
-          <dt>File</dt>
-          <dd class="file-path">{status.watching.file_path}</dd>
-        </div>
-      {/if}
+    <div class="np-meta">
+      <span class="np-chip">{status.watching.player_name}</span>
       {#if status.watching.episode_guess}
-        <div>
-          <dt>Episode</dt>
-          <dd>{status.watching.episode_guess}</dd>
-        </div>
+        <span class="np-chip accent">Ep {status.watching.episode_guess}</span>
       {/if}
-    </dl>
+    </div>
+    {#if status.watching.window_title || status.watching.file_path}
+      <p class="np-filename" title={status.watching.file_path ?? status.watching.window_title}>
+        {status.watching.window_title ?? status.watching.file_path}
+      </p>
+    {/if}
 
-    {#if playbackCandidates && playbackCandidates.length > 0}
+    {#if autoTracked && topCandidate}
+      <div class="np-autotrack">
+        <span class="np-autotrack-icon">✓</span>
+        <div class="np-autotrack-info">
+          <span class="np-autotrack-title">{topCandidate.title}</span>
+          <span class="np-autotrack-sub">Auto-tracking · {topCandidate.confidence}% match</span>
+        </div>
+      </div>
+    {:else if playbackCandidates && playbackCandidates.length > 0}
       <div class="np-candidates">
         <p class="np-candidates-label">Match candidates:</p>
         {#each playbackCandidates.slice(0, 5) as c}
@@ -171,10 +173,17 @@
   .now-playing-card {
     border: 1px solid rgba(143, 183, 255, 0.18);
     border-radius: var(--radius-card);
-    padding: 1.25rem;
+    padding: 1rem;
     background: rgba(255, 255, 255, 0.04);
     display: grid;
-    gap: 0.75rem;
+    gap: 0.6rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .now-playing-card * {
+    min-width: 0;
   }
 
   .np-header {
@@ -228,30 +237,39 @@
     outline-offset: 2px;
   }
 
-  .np-details {
-    display: grid;
-    gap: 0.5rem;
+  .np-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
   }
 
-  .np-details div {
-    display: grid;
-    grid-template-columns: 5rem 1fr;
-    gap: 0.25rem;
-  }
-
-  .np-details dt {
+  .np-chip {
+    font-size: 0.68rem;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
     color: var(--color-muted);
-    font-size: 0.78rem;
+    white-space: nowrap;
   }
 
-  .np-details dd {
+  .np-chip.accent {
+    background: rgba(143, 183, 255, 0.15);
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+
+  .np-filename {
     margin: 0;
-  }
-
-  .file-path {
+    font-size: 0.72rem;
+    color: var(--color-muted);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-    font-size: 0.75rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
     overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .np-idle, .np-event {
@@ -264,6 +282,21 @@
     font-size: 0.82rem;
   }
 
+  .np-autotrack {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid rgba(126, 232, 126, 0.3);
+    border-radius: 8px;
+    background: rgba(126, 232, 126, 0.08);
+  }
+  .np-autotrack-icon { color: #7ee87e; font-weight: 700; }
+  .np-autotrack-info { display: flex; flex-direction: column; min-width: 0; }
+  .np-autotrack-title { font-size: 0.82rem; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .np-autotrack-sub { font-size: 0.72rem; color: #7ee87e; }
+
   .np-candidates {
     margin-top: 0.25rem;
   }
@@ -275,24 +308,40 @@
   }
 
   .np-candidate {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'title conf'
+      'title btn';
     align-items: center;
-    padding: 0.4rem 0.6rem;
+    gap: 0.1rem 0.4rem;
+    padding: 0.4rem 0.5rem;
     border: 1px solid rgba(143, 183, 255, 0.2);
     border-radius: 6px;
     margin-bottom: 0.3rem;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
   }
 
   .candidate-title {
+    grid-area: title;
     color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.25;
   }
 
   .candidate-confidence {
+    grid-area: conf;
     color: var(--color-accent);
     font-weight: 600;
+    font-size: 0.72rem;
+    justify-self: end;
   }
+
+  .confirm-btn { grid-area: btn; justify-self: end; }
 
   .confirm-btn {
     border: 1px solid rgba(143, 183, 255, 0.35);

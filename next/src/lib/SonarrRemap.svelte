@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { remapSonarr, searchLibrary, type LibraryEntry } from './api';
 
-  const dispatch = createEventDispatcher<{ changed: void }>();
+  const dispatch = createEventDispatcher<{ changed: { animeId: number | null; title: string | null } }>();
 
   export let sonarrId: number;
   export let currentAnimeId: number | null;
@@ -40,8 +40,9 @@
     saving = true;
     try {
       await remapSonarr(sonarrId, selectedId);
+      const title = results.find((r) => r.anime_id === selectedId)?.title ?? null;
       open = false;
-      dispatch('changed');
+      dispatch('changed', { animeId: selectedId, title });
     } finally {
       saving = false;
     }
@@ -52,7 +53,7 @@
     try {
       await remapSonarr(sonarrId, null);
       open = false;
-      dispatch('changed');
+      dispatch('changed', { animeId: null, title: null });
     } finally {
       saving = false;
     }

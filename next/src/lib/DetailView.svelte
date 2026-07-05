@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, getEpisodeFiles, openEpisodeFile, getAnimeRelations, scanLibraryFolders, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type RelationEntry } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type RelationEntry, type NextAiring, type EngineEvent } from './api';
+  import { onDestroy } from 'svelte';
   import SonarrRemap from './SonarrRemap.svelte';
 
   export let animeId: number;
+  export let events: EngineEvent[] = [];
 
-  const dispatch = createEventDispatcher<{ back: void }>();
+  const dispatch = createEventDispatcher<{ back: void; select: { anime_id: number } }>();
 
   let detail: AnimeDetail | null = null;
   let loading = false;
@@ -60,9 +62,54 @@
     titles = parseTitles(detail.titles_json);
   }
 
+  let confirmingDelete = false;
+  let deleting = false;
+
+  let nextAiring: NextAiring | null = null;
+  let nowTs = Math.floor(Date.now() / 1000);
+  const airTicker = setInterval(() => { nowTs = Math.floor(Date.now() / 1000); }, 1000);
+  onDestroy(() => clearInterval(airTicker));
+
+  async function loadAiring() {
+    nextAiring = null;
+    try { nextAiring = await getNextAiring(animeId); }
+    catch { nextAiring = null; }
+  }
+
+  function formatCountdown(secs: number): string {
+    if (secs <= 0) return 'airing now';
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  $: airingLabel = nextAiring
+    ? `Ep ${nextAiring.episode} airs ${new Date(nextAiring.airing_at * 1000).toLocaleString()} · in ${formatCountdown(nextAiring.airing_at - nowTs)}`
+    : '';
+
+  async function handleDelete() {
+    if (!confirmingDelete) {
+      confirmingDelete = true;
+      return;
+    }
+    deleting = true;
+    try {
+      await deleteAnime(animeId);
+      dispatch('back');
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      confirmingDelete = false;
+    } finally {
+      deleting = false;
+    }
+  }
+
   function pickTitle(d: AnimeDetail): string {
     const titles = parseTitles(d.titles_json);
-    return titles.romaji || titles.english || titles.native || `Anime #${d.anime_id}`;
+    return titles.english || titles.romaji || titles.native || `Anime #${d.anime_id}`;
   }
 
   function formatStatus(status: string | null): string {
@@ -93,6 +140,28 @@
     draftProgress = d.watched_episodes ?? 0;
     draftStatus = d.list_status ?? '';
     draftScore = d.score ?? 0;
+  }
+
+  // Live-update progress when the engine advances it (auto-detected playback).
+  // Depends only on `events` so it won't loop on the writes below.
+  $: applyProgressEvents(events);
+  function applyProgressEvents(evs: EngineEvent[]) {
+    if (!detail || !evs || evs.length === 0) return;
+    for (const ev of evs) {
+      if ('ProgressAdvanced' in ev && ev.ProgressAdvanced.anime_id === animeId) {
+        const ne = ev.ProgressAdvanced.new_episode;
+        if (detail.watched_episodes == null || ne > detail.watched_episodes) {
+          const completed = detail.episode_count != null && ne >= detail.episode_count;
+          detail = {
+            ...detail,
+            watched_episodes: ne,
+            list_status: completed ? 'completed' : detail.list_status,
+          };
+          draftProgress = ne;
+          if (completed) draftStatus = 'completed';
+        }
+      }
+    }
   }
 
   async function load() {
@@ -138,15 +207,62 @@
     finally { relationsLoading = false; }
   }
 
+  let mappingFolder = false;
+  let mapFolderMsg: string | null = null;
+
   async function handleRescanFiles() {
     rescanning = true;
     try {
-      await scanLibraryFolders();
+      // Re-read this show's own folders from disk (picks up added files, drops
+      // deleted ones), then refresh the list.
+      await rescanAnimeFiles(animeId);
       await loadEpisodeFiles();
     } catch {
       // silent
     } finally {
       rescanning = false;
+    }
+  }
+
+  async function handleMapFolder() {
+    if (mappingFolder) return;
+    mapFolderMsg = null;
+    let folder: string | null = null;
+    try {
+      folder = await pickFolder();
+    } catch {
+      return;
+    }
+    if (!folder) return; // cancelled
+    mappingFolder = true;
+    try {
+      const n = await mapFolderToAnime(folder, animeId);
+      await loadEpisodeFiles();
+      mapFolderMsg = `Mapped ${n} file${n === 1 ? '' : 's'} from this folder`;
+    } catch (e) {
+      mapFolderMsg = e instanceof Error ? e.message : String(e);
+    } finally {
+      mappingFolder = false;
+    }
+  }
+
+  let unmappingAll = false;
+
+  async function handleUnmapFile(path: string) {
+    try {
+      await unmapKnownFiles([path]);
+      episodeFiles = episodeFiles.filter((f) => f.file_path !== path);
+    } catch { /* silent */ }
+  }
+
+  async function handleUnmapAll() {
+    if (unmappingAll || episodeFiles.length === 0) return;
+    unmappingAll = true;
+    try {
+      await unmapKnownFiles(episodeFiles.map((f) => f.file_path));
+      episodeFiles = [];
+    } catch { /* silent */ } finally {
+      unmappingAll = false;
     }
   }
 
@@ -161,6 +277,37 @@
   $: if (animeId) {
     // reactive reload when prop changes
     load();
+    loadAiring();
+  }
+
+  function seasonOf(path: string): number {
+    const m = path.match(/[\\/ ._-]S(\d{1,2})E\d{1,3}/i) ?? path.match(/[\\/ ]Season\s*(\d{1,2})[\\/ ]/i);
+    return m ? parseInt(m[1], 10) : 1;
+  }
+
+  // Sort files by (season, episode) so Season 1 always lists before Season 2.
+  $: sortedEpisodeFiles = [...episodeFiles].sort((a, b) => {
+    const sa = seasonOf(a.file_path);
+    const sb = seasonOf(b.file_path);
+    if (sa !== sb) return sa - sb;
+    return (a.episode ?? 0) - (b.episode ?? 0);
+  });
+
+  $: episodesBySeason = (() => {
+    const map = new Map<number, FileIndexEntry[]>();
+    for (const f of sortedEpisodeFiles) {
+      const s = seasonOf(f.file_path);
+      const arr = map.get(s);
+      if (arr) arr.push(f);
+      else map.set(s, [f]);
+    }
+    return [...map.entries()].sort((a, b) => a[0] - b[0]);
+  })();
+
+  $: multiSeason = episodesBySeason.length > 1;
+
+  function openFolder() {
+    if (episodeFiles.length > 0) openContainingFolder(episodeFiles[0].file_path);
   }
 
   function clearSaveOkSoon() {
@@ -239,14 +386,26 @@
 </script>
 
 <section class="detail-view" aria-label="Anime detail">
-  <button
-    class="back-btn"
-    type="button"
-    on:click={() => dispatch('back')}
-    aria-label="Back"
-  >
-    ← Back
-  </button>
+  <div class="detail-topbar">
+    <button
+      class="back-btn"
+      type="button"
+      on:click={() => dispatch('back')}
+      aria-label="Back"
+    >
+      ← Back
+    </button>
+    <button
+      class="delete-btn"
+      type="button"
+      on:click={handleDelete}
+      on:blur={() => (confirmingDelete = false)}
+      disabled={deleting}
+      aria-label="Delete from library"
+    >
+      {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete?' : '🗑 Delete from library'}
+    </button>
+  </div>
 
   {#if loading && !detail}
     <div class="skeleton-wrap" aria-busy="true" aria-label="Loading anime detail">
@@ -284,10 +443,17 @@
             <span class="meta-label">Episodes</span>
             <span class="meta-value">{detail.episode_count ?? '?'}</span>
           </p>
-          <p class="meta-item">
+          <p class="meta-item" title={airingLabel}>
             <span class="meta-label">Status</span>
             <span class="meta-value">{formatMediaStatus(detail.anime_status)}</span>
           </p>
+          {#if nextAiring}
+            <p class="meta-item airing" title={airingLabel}>
+              <span class="meta-label">Next episode</span>
+              <span class="meta-value">Ep {nextAiring.episode} · {new Date(nextAiring.airing_at * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+              <span class="airing-countdown">in {formatCountdown(nextAiring.airing_at - nowTs)}</span>
+            </p>
+          {/if}
           <p class="meta-item">
             <span class="meta-label">AniList</span>
             <span class="meta-value">{detail.tracker_id ? detail.tracker_id : 'Not mapped'}</span>
@@ -492,22 +658,44 @@
               <h3>Episode Files</h3>
               <div class="section-actions">
                 <span class="file-count">{episodeFiles.length} files</span>
+                {#if episodeFiles.length > 0}
+                  <button class="action-btn small" on:click={openFolder}>📂 Open folder</button>
+                  <button class="action-btn small danger" on:click={handleUnmapAll} disabled={unmappingAll}>
+                    {unmappingAll ? 'Unmapping…' : 'Unmap all'}
+                  </button>
+                {/if}
                 <button class="action-btn small" on:click={handleRescanFiles} disabled={rescanning}>
                   {rescanning ? 'Scanning…' : '↻ Rescan'}
                 </button>
               </div>
             </div>
 
+            <div class="manual-map">
+              <button class="action-btn small" on:click={handleMapFolder} disabled={mappingFolder}>
+                {mappingFolder ? 'Mapping…' : '📁 Map folder…'}
+              </button>
+              <span class="map-folder-hint">Pick this show's series or season folder to map its files here.</span>
+            </div>
+            {#if mapFolderMsg}
+              <p class="success-msg">{mapFolderMsg}</p>
+            {/if}
+
             {#if episodeFilesLoading}
               <p class="muted">Loading…</p>
             {:else if episodeFiles.length > 0}
               <div class="episode-file-list">
-                {#each episodeFiles as file}
-                  <div class="episode-file-row">
-                    <span class="ep-num">Ep {file.episode ?? '?'}</span>
-                    <span class="ep-path">{file.file_path}</span>
-                    <button class="action-btn small" on:click={() => handlePlayFile(file.file_path)}>▶ Play</button>
-                  </div>
+                {#each episodesBySeason as [season, files] (season)}
+                  {#if multiSeason}
+                    <div class="season-header">Season {season}</div>
+                  {/if}
+                  {#each files as file (file.file_path)}
+                    <div class="episode-file-row">
+                      <span class="ep-num">Ep {file.episode ?? '?'}</span>
+                      <span class="ep-path">{file.file_path}</span>
+                      <button class="action-btn small" on:click={() => handlePlayFile(file.file_path)}>▶ Play</button>
+                      <button class="action-btn small danger" on:click={() => handleUnmapFile(file.file_path)} title="Remove this file from this anime">Unmap</button>
+                    </div>
+                  {/each}
                 {/each}
               </div>
             {:else if !episodeFilesLoading}
@@ -526,7 +714,13 @@
             {:else}
               <div class="relations-list">
                 {#each relations as rel}
-                  <div class="relation-row">
+                  <div
+                    class="relation-row clickable"
+                    role="button"
+                    tabindex="0"
+                    on:click={() => dispatch('select', { anime_id: rel.id })}
+                    on:keydown={(e) => e.key === 'Enter' && dispatch('select', { anime_id: rel.id })}
+                  >
                     {#if rel.image_url}<img class="relation-thumb" src={rel.image_url} alt={rel.title} loading="lazy" />{/if}
                     <div class="relation-info">
                       <span class="relation-title">{rel.title}</span>
@@ -553,6 +747,13 @@
     overflow-x: hidden;
   }
 
+  .detail-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
   .back-btn {
     justify-self: start;
     border: 1px solid rgba(143, 183, 255, 0.35);
@@ -566,6 +767,25 @@
 
   .back-btn:hover {
     background: rgba(143, 183, 255, 0.22);
+  }
+
+  .delete-btn {
+    border: 1px solid rgba(255, 130, 130, 0.4);
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    background: rgba(255, 130, 130, 0.12);
+    color: #ffb0b0;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .delete-btn:hover:not(:disabled) {
+    background: rgba(255, 130, 130, 0.24);
+  }
+
+  .delete-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .back-btn:focus {
@@ -981,13 +1201,25 @@
   .section-header { display: flex; align-items: center; justify-content: space-between; }
   .section-actions { display: flex; align-items: center; gap: 0.5rem; }
   .file-count { font-size: 0.78rem; color: var(--color-muted); }
+  .manual-map { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap; }
+  .map-folder-hint { font-size: 0.72rem; color: var(--color-muted); }
+  .success-msg { color: #7ee87e; font-size: 0.8rem; margin: 0.3rem 0 0; }
   .episode-file-list { display: grid; gap: 0.35rem; margin-top: 0.5rem; }
   .episode-file-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 0.82rem; min-width: 0; }
   .ep-num { font-weight: 600; color: var(--color-accent); min-width: 2.5rem; }
   .ep-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); font-family: monospace; font-size: 0.75rem; }
   .action-btn.small { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
+  .action-btn.danger { border-color: rgba(255, 130, 130, 0.4); background: rgba(255, 130, 130, 0.12); color: #ffb0b0; }
+  .action-btn.danger:hover:not(:disabled) { background: rgba(255, 130, 130, 0.24); }
+  .meta-item.airing { flex-wrap: wrap; }
+  .airing-countdown { font-size: 0.75rem; color: var(--color-accent); font-weight: 600; width: 100%; text-align: right; }
+  .season-header { font-size: 0.75rem; font-weight: 700; color: var(--color-accent); text-transform: uppercase; letter-spacing: 0.06em; margin: 0.5rem 0 0.15rem; }
+  .season-header:first-child { margin-top: 0; }
   .relations-list { display: grid; gap: 0.4rem; margin-top: 0.5rem; }
   .relation-row { display: flex; gap: 0.6rem; align-items: center; padding: 0.4rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); min-width: 0; }
+  .relation-row.clickable { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  .relation-row.clickable:hover { border-color: rgba(143,183,255,0.3); background: rgba(143,183,255,0.06); }
+  .relation-row.clickable:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
   .relation-thumb { width: 2rem; height: 2.8rem; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
   .relation-info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
   .relation-title { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
