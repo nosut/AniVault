@@ -18,9 +18,15 @@
   <img src="https://img.shields.io/badge/frontend-Svelte%205-ff3e00?logo=svelte" alt="Svelte 5" />
   <img src="https://img.shields.io/badge/storage-SQLite-003B57?logo=sqlite" alt="SQLite" />
   <img src="https://img.shields.io/badge/license-GPLv3-blue" alt="GPLv3" />
+  <img src="https://img.shields.io/badge/built%20with-AI-8A63D2" alt="Built with AI" />
 </p>
 
 ---
+
+> [!IMPORTANT]
+> **This is an AI-generated project.** AniVault was designed, written, and is maintained with
+> the assistance of AI (Anthropic's Claude). Treat it accordingly — review the code before
+> relying on it, and expect the rough edges that come with automated development.
 
 ## What is AniVault?
 
