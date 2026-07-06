@@ -56,13 +56,15 @@ modern stack (Rust + Tauri 2 + Svelte 5 + SQLite).
 - Keeps the index honest — files deleted from disk are pruned on rescan (guarded so an offline
   drive never wipes your data).
 <img width="1282" height="852" alt="image" src="https://github.com/user-attachments/assets/01f2b77b-29c9-4b03-8e95-593b914434ce" />
+<img width="1282" height="852" alt="image" src="https://github.com/user-attachments/assets/090d18a8-25cb-44a9-96c9-88153ab2dde6" />
 
 ### 🔗 AniList integration
 - OAuth sign-in, one-click import of your existing list, and background two-way sync with retry
   and backoff.
 - Rich detail pages: cover art, synopsis, progress/score editing, watch history, related entries,
   and next-airing countdowns.
-<img width="1282" height="852" alt="image" src="https://github.com/user-attachments/assets/090d18a8-25cb-44a9-96c9-88153ab2dde6" />
+  <img width="1282" height="852" alt="image" src="https://github.com/user-attachments/assets/7294d339-38f7-4d7e-8d35-bd408ceafffc" />
+
 
 ### 📅 Airing calendar
 - Month grid **and** agenda views of upcoming episodes for the shows you follow.
