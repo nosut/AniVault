@@ -1,0 +1,6 @@
+# SQL migration files must stay byte-for-byte stable: sqlx verifies a checksum
+# of each migration against what was recorded when it was first applied, and an
+# EOL conversion (LF<->CRLF) changes the bytes, which makes the app panic on
+# startup with "migration N was previously applied but has been modified".
+# Freeze them so git never converts line endings.
+next/src-tauri/migrations/*.sql -text
