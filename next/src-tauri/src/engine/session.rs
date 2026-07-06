@@ -109,6 +109,24 @@ pub async fn process_scan_result(state: &EngineState, result: ScanResult) -> any
                     .storage
                     .upsert_list_entry_progress(anime_id, "watching", episode, now)
                     .await;
+                // Record the watch in history, mirroring the manual mark path.
+                // The `episode > old_episode` guard means this fires once per
+                // newly-watched episode, not once per scan tick.
+                let hist_path = if crate::engine::matcher::looks_like_path(fp) {
+                    Some(fp)
+                } else {
+                    None
+                };
+                let _ = state
+                    .storage
+                    .append_watch_history(
+                        anime_id,
+                        episode,
+                        hist_path,
+                        Some(result.player_name.as_str()),
+                        now,
+                    )
+                    .await;
                 // Auto-complete when playback reaches the episode cap.
                 let _ = state.storage.auto_complete_if_capped(anime_id).await;
                 // Push status + progress back to AniList.

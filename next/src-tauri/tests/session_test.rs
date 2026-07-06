@@ -78,3 +78,29 @@ async fn process_scan_result_auto_confirms_high_confidence() {
     assert_eq!(idx.episode, Some(1));
     assert_eq!(idx.confidence, 100);
 }
+
+#[tokio::test]
+async fn process_scan_result_records_watch_history_on_advance() {
+    let state = make_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Cowboy Bebop")
+        .await
+        .unwrap();
+
+    let result = make_scan_result("mpv.exe", "D:/Anime/Cowboy Bebop - 01.mkv", "Cowboy Bebop - 01");
+    process_scan_result(&state, result).await.unwrap();
+
+    let history = state.storage.list_recent_watch_history(10).await.unwrap();
+    assert_eq!(history.len(), 1, "auto-detected playback should record a watch-history row");
+    assert_eq!(history[0].anime_id, 1);
+    assert_eq!(history[0].episode, 1);
+    assert_eq!(history[0].player.as_deref(), Some("mpv.exe"));
+
+    // Re-detecting the same episode (a later scan tick of the same file) must not
+    // create a duplicate row — history advances once per newly-watched episode.
+    let again = make_scan_result("mpv.exe", "D:/Anime/Cowboy Bebop - 01.mkv", "Cowboy Bebop - 01");
+    process_scan_result(&state, again).await.unwrap();
+    let history = state.storage.list_recent_watch_history(10).await.unwrap();
+    assert_eq!(history.len(), 1, "re-detecting the same episode must not duplicate history");
+}
