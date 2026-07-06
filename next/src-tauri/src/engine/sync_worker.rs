@@ -117,13 +117,35 @@ pub async fn enqueue_anilist_sync(state: &EngineState, anime_id: i64) {
         .await;
 }
 
-/// Spawn a background task that polls the sync queue every 30 seconds.
+/// Backfill missing episode counts / airing status from AniList (best-effort,
+/// only when connected). Called on the sync worker's first pass and periodically.
+async fn run_meta_backfill(state: &EngineState) {
+    let token = match load_token(&state.storage).await {
+        Ok(Some(t)) => t,
+        _ => return, // not connected
+    };
+    let client = AniListClient::new(token);
+    match crate::engine::anilist::import::backfill_anime_meta(&state.storage, &client, 100).await {
+        Ok(n) if n > 0 => tracing::info!("Backfilled episode metadata for {n} anime"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("episode metadata backfill failed: {e}"),
+    }
+}
+
+/// Spawn a background task that polls the sync queue every 30 seconds and, on the
+/// first pass then roughly every 10 minutes, backfills unknown episode counts.
 pub fn spawn_sync_worker(state: &EngineState) -> tauri::async_runtime::JoinHandle<()> {
     let state = state.clone();
     tauri::async_runtime::spawn(async move {
         tracing::debug!("Sync worker started for service: anilist");
+        let mut cycle: u64 = 0;
         loop {
             let _ = drain_queue(&state).await;
+            // First pass covers "on startup"; every 20th pass (~10 min) refreshes.
+            if cycle % 20 == 0 {
+                run_meta_backfill(&state).await;
+            }
+            cycle += 1;
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
     })

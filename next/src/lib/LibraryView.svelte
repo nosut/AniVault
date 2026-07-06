@@ -92,6 +92,39 @@
     try { stats = await getLibraryStats(); } catch { /* non-fatal */ }
   }
 
+  // Effective episode count for the download bar when the real count is unknown:
+  // a single cour (13), stepping up by a cour once a still-airing show passes it
+  // (26, 39, …). Never less than what's already watched. Used only for the
+  // *visual* bar — the label still shows the real total (or "?").
+  function effectiveCount(e: LibraryEntry): number {
+    if (e.episode_count && e.episode_count > 0) return e.episode_count;
+    const airing = e.airing_status === 'RELEASING';
+    let n = 13;
+    if (airing && e.watched_episodes > 13) n = Math.ceil(e.watched_episodes / 13) * 13;
+    return Math.max(n, e.watched_episodes || 0);
+  }
+  // Label total: the real count when known, otherwise "?" (never "0").
+  function totalLabel(e: LibraryEntry): string | number {
+    return e.episode_count && e.episode_count > 0 ? e.episode_count : '?';
+  }
+  function progressPct(e: LibraryEntry): number {
+    const c = effectiveCount(e);
+    return c > 0 ? Math.min(100, (e.watched_episodes / c) * 100) : 0;
+  }
+
+  // Does an entry still belong under the active status tab?
+  function matchesActiveFilter(e: LibraryEntry): boolean {
+    if (!statusFilter) return true; // "All"
+    if (statusFilter === 'unlisted') return !e.status || e.status === 'unlisted';
+    return e.status === statusFilter;
+  }
+  // Re-commit `entries`, dropping any that no longer match the active tab (e.g. a
+  // show that just completed while viewing "Watching"). While searching, results
+  // span every category, so nothing is pruned.
+  function commitEntries() {
+    entries = query.trim() ? [...entries] : entries.filter(matchesActiveFilter);
+  }
+
   // Live-update rows when the engine advances progress (auto-detected playback).
   // Depends only on `events` so it won't loop on the writes below.
   $: applyProgressEvents(events);
@@ -111,7 +144,7 @@
       }
     }
     if (changed) {
-      entries = [...entries];
+      commitEntries();
       void loadStats();
     }
   }
@@ -251,11 +284,12 @@
     try {
       await updateListEntry(entry.anime_id, { watched_episodes: newEp });
       entry.watched_episodes = newEp;
-      // Auto-complete when the cap is reached (mirrors the backend).
+      // Auto-complete when the cap is reached (mirrors the backend), and drop it
+      // from the current tab if it no longer matches (e.g. Watching → Completed).
       if (entry.episode_count && newEp >= entry.episode_count) {
         entry.status = 'completed';
       }
-      entries = [...entries];
+      commitEntries();
     } catch (e) {
       // revert on error handled by refresh
     } finally {
@@ -312,7 +346,7 @@
       }
       selectedIds.clear(); allSelected = false;
       selectedIds = new Set(selectedIds);
-      entries = [...entries];
+      commitEntries();
       void loadStats();
       batchUpdating = false;
     };
@@ -336,7 +370,7 @@
     }
     selectedIds.clear(); allSelected = false;
     selectedIds = new Set(selectedIds);
-    entries = [...entries];
+    commitEntries();
     batchUpdating = false;
   }
 
@@ -563,16 +597,16 @@
             <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
             <span class="badge">{formatStatus(entry.status)}</span>
             <div class="progress-wrap poster-progress">
-              <div class="progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
+              <div class="progress-bar" style="width: {progressPct(entry)}%" />
               <div class="progress-inner">
                 <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
-                <span class="progress-text">{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
+                <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
                 <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
               </div>
             </div>
-            {#if episodeFilesMap.has(entry.anime_id) && entry.episode_count && entry.episode_count > 0}
+            {#if episodeFilesMap.has(entry.anime_id)}
               <div class="ep-download-bar">
-                {#each Array(Math.min(entry.episode_count, 50)) as _, i}
+                {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
                   {@const ep = i + 1}
                   {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
                   {@const watched = ep <= entry.watched_episodes}
@@ -585,8 +619,8 @@
                     style="cursor: {hasFile ? 'pointer' : 'default'}"
                   />
                 {/each}
-                {#if entry.episode_count > 50}
-                  <span class="ep-more">+{entry.episode_count - 50}</span>
+                {#if effectiveCount(entry) > 50}
+                  <span class="ep-more">+{effectiveCount(entry) - 50}</span>
                 {/if}
               </div>
             {/if}
@@ -733,16 +767,16 @@
                 {/if}
                 <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
                   <div class="progress-wrap">
-                    <div class="progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
+                    <div class="progress-bar" style="width: {progressPct(entry)}%" />
                     <div class="progress-inner">
                       <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
-                      <span class="progress-text">{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
+                      <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
                       <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
                     </div>
                   </div>
-                  {#if episodeFilesMap.has(entry.anime_id) && entry.episode_count && entry.episode_count > 0}
+                  {#if episodeFilesMap.has(entry.anime_id)}
                     <div class="ep-download-bar">
-                      {#each Array(Math.min(entry.episode_count, 50)) as _, i}
+                      {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
                         {@const ep = i + 1}
                         {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
                         {@const watched = ep <= entry.watched_episodes}
@@ -755,8 +789,8 @@
                           style="cursor: {hasFile ? 'pointer' : 'default'}"
                         />
                       {/each}
-                      {#if entry.episode_count > 50}
-                        <span class="ep-more">+{entry.episode_count - 50}</span>
+                      {#if effectiveCount(entry) > 50}
+                        <span class="ep-more">+{effectiveCount(entry) - 50}</span>
                       {/if}
                     </div>
                   {/if}

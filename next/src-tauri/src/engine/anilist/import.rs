@@ -9,6 +9,36 @@ pub struct ImportReport {
     pub skipped: u64,
 }
 
+/// Backfill episode counts and airing status for library anime that are still
+/// missing them, fetching from AniList. Best-effort; returns rows updated. Values
+/// already present are preserved (only unknown fields are filled).
+pub async fn backfill_anime_meta(
+    storage: &Storage,
+    client: &AniListClient,
+    limit: i64,
+) -> anyhow::Result<usize> {
+    let ids = storage.library_anime_missing_meta(limit).await?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let metas = client.fetch_media_meta(&ids).await?;
+    let mut updated = 0usize;
+    for (id, episodes, status) in metas {
+        if episodes.is_some() || status.is_some() {
+            storage
+                .update_anime_episode_meta(id, episodes, status.as_deref(), now)
+                .await?;
+            updated += 1;
+        }
+    }
+    tracing::info!(candidates = ids.len(), updated, "episode-count backfill");
+    Ok(updated)
+}
+
 /// Merge one list entry from AniList.
 ///
 /// Compares `anilist_updated_at` against the greater of `local_updated` and

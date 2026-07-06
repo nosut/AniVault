@@ -91,6 +91,42 @@ async fn anime_detail_returns_full_row() {
 }
 
 #[tokio::test]
+async fn episode_meta_backfill_storage() {
+    let storage = Tests::new_in_memory().await;
+
+    // Anime 1: in the library but with unknown episode count / airing status.
+    storage.insert_minimal_anime(1, "Show A").await.unwrap();
+    storage
+        .update_list_entry_partial(1, Some("watching"), Some(3), None)
+        .await
+        .unwrap();
+    // Anime 2: known count + status — should NOT be a backfill candidate.
+    storage
+        .upsert_anime_full(2, r#"{"romaji":"Show B"}"#, 12, None, None, None, Some("FINISHED"), 1000)
+        .await
+        .unwrap();
+    storage
+        .update_list_entry_partial(2, Some("watching"), Some(1), None)
+        .await
+        .unwrap();
+
+    let missing = storage.library_anime_missing_meta(50).await.unwrap();
+    assert_eq!(missing, vec![1], "only the anime with unknown metadata is a candidate");
+
+    storage
+        .update_anime_episode_meta(1, Some(13), Some("RELEASING"), 2000)
+        .await
+        .unwrap();
+
+    assert!(
+        storage.library_anime_missing_meta(50).await.unwrap().is_empty(),
+        "a backfilled anime is no longer a candidate"
+    );
+    let detail = storage.anime_detail(1).await.unwrap();
+    assert_eq!(detail.episode_count, Some(13));
+}
+
+#[tokio::test]
 async fn update_list_entry_partial_changes_only_status() {
     let storage = Tests::new_in_memory().await;
 

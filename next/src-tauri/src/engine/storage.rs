@@ -83,6 +83,9 @@ pub struct LibraryRow {
     pub image_url: Option<String>,
     pub season: Option<String>,
     pub season_year: Option<i32>,
+    /// AniList media airing status (e.g. RELEASING, FINISHED) — used to guess a
+    /// download-bar length when the episode count is still unknown.
+    pub airing_status: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1089,7 +1092,8 @@ impl Storage {
             "SELECT a.id as anime_id, COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji')) as title, \
              COALESCE(le.status, 'unlisted') as status, \
              COALESCE(le.watched_episodes, 0) as watched_episodes, \
-             a.episode_count, le.score, a.image_url, a.season, a.season_year \
+             a.episode_count, le.score, a.image_url, a.season, a.season_year, \
+             a.status as airing_status \
              FROM anime a \
              LEFT JOIN list_entry le ON a.id = le.anime_id \
              WHERE a.titles_json LIKE ?",
@@ -1133,6 +1137,7 @@ impl Storage {
                 image_url: row.get("image_url"),
                 season: row.get("season"),
                 season_year: row.get("season_year"),
+                airing_status: row.get("airing_status"),
             })
             .collect())
     }
@@ -1637,6 +1642,46 @@ impl Storage {
         .fetch_all(&self.pool)
         .await?;
         Ok(rows.iter().map(|r| r.get::<i64, _>("anime_id")).collect())
+    }
+
+    /// Library anime (in the user's list) whose episode count or airing status is
+    /// still unknown — candidates for a metadata backfill from AniList.
+    pub async fn library_anime_missing_meta(&self, limit: i64) -> anyhow::Result<Vec<i64>> {
+        let rows = sqlx::query(
+            "SELECT a.id FROM anime a \
+             JOIN list_entry le ON a.id = le.anime_id \
+             WHERE a.episode_count IS NULL OR a.episode_count = 0 OR a.status IS NULL \
+             ORDER BY a.id LIMIT ?1",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get::<i64, _>("id")).collect())
+    }
+
+    /// Fill in an anime's episode count / airing status without clobbering values
+    /// that are already set (COALESCE keeps existing when the fetched value is None).
+    pub async fn update_anime_episode_meta(
+        &self,
+        id: i64,
+        episode_count: Option<i32>,
+        status: Option<&str>,
+        now: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE anime SET \
+               episode_count = COALESCE(?2, episode_count), \
+               status = COALESCE(?3, status), \
+               last_modified = ?4 \
+             WHERE id = ?1",
+        )
+        .bind(id)
+        .bind(episode_count)
+        .bind(status)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 
     /// Word-wildcard search: builds %word1%word2%word3% pattern for LIKE.

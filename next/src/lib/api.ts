@@ -164,6 +164,7 @@ export interface LibraryEntry {
   image_url: string | null;
   season: string | null;
   season_year: number | null;
+  airing_status: string | null;
 }
 
 export interface LibraryStats {

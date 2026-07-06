@@ -459,6 +459,49 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
         Ok(items)
     }
 
+    /// Fetch episode count and airing status for a set of media ids. Used to
+    /// backfill anime whose episode count is still unknown. Returns
+    /// `(id, episodes, status)` tuples; chunked by 50 to respect AniList's page cap.
+    pub async fn fetch_media_meta(
+        &self,
+        ids: &[i64],
+    ) -> anyhow::Result<Vec<(i64, Option<i32>, Option<String>)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut out = Vec::new();
+        for chunk in ids.chunks(50) {
+            let id_list = chunk.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
+            let query_str = format!(
+                "query {{ Page(page: 1, perPage: 50) {{ media(id_in: [{id_list}], type: ANIME) {{ id episodes status }} }} }}"
+            );
+            let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+            if let Some(errors) = raw.get("errors").and_then(|e| e.as_array()) {
+                if !errors.is_empty() {
+                    let msgs: Vec<String> = errors
+                        .iter()
+                        .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(String::from))
+                        .collect();
+                    return Err(anyhow::anyhow!("AniList error: {}", msgs.join("; ")));
+                }
+            }
+            let media = raw
+                .get("data")
+                .and_then(|d| d.get("Page"))
+                .and_then(|p| p.get("media"))
+                .and_then(|m| m.as_array())
+                .cloned()
+                .unwrap_or_default();
+            for m in &media {
+                let Some(id) = m.get("id").and_then(|v| v.as_i64()) else { continue };
+                let episodes = m.get("episodes").and_then(|v| v.as_i64()).map(|n| n as i32);
+                let status = m.get("status").and_then(|v| v.as_str()).map(String::from);
+                out.push((id, episodes, status));
+            }
+        }
+        Ok(out)
+    }
+
     /// Fetch anime from a specific season with optional genre filter.
     /// season: "WINTER", "SPRING", "SUMMER", "FALL"
     pub async fn fetch_season_anime(
