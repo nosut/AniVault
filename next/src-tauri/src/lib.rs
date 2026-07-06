@@ -13,6 +13,16 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 pub fn run() {
     tauri::Builder::default()
+        // Single-instance MUST be the first plugin registered. When a second
+        // launch is attempted, this callback runs in the already-running instance
+        // and brings its window forward instead of opening a duplicate.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .on_window_event(|window, event| {
