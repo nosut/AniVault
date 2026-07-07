@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { searchAnime, searchLibrary, updateListEntry, queueAniListSync, type SeasonAnimeEntry } from './api';
+  import { searchAnime, searchLibrary, updateListEntry, importAnilistAnime, type SeasonAnimeEntry } from './api';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
@@ -30,11 +30,14 @@
 
   async function handleAddToList(animeId: number) {
     try {
+      // Import the anime locally first — list_entry has a foreign key to the
+      // anime table, so adding a show straight from AniList would otherwise fail.
+      await importAnilistAnime(animeId);
+      // updateListEntry also queues the AniList push with this status.
       await updateListEntry(animeId, { status: 'plan_to_watch' });
-      await queueAniListSync(animeId, 0);
       libraryIds.add(animeId);
       libraryIds = new Set(libraryIds);
-    } catch(e) {}
+    } catch(e) { error = e instanceof Error ? e.message : String(e); }
   }
 
   function scoreColor(score: number | null): string {
