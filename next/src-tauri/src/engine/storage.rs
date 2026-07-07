@@ -478,6 +478,34 @@ impl Storage {
             .collect())
     }
 
+    /// Recent watch history for a single anime (newest first) — powers the
+    /// detail page's per-show history list.
+    pub async fn list_recent_watch_history_for_anime(
+        &self,
+        anime_id: i64,
+        limit: i64,
+    ) -> anyhow::Result<Vec<WatchHistoryRow>> {
+        let rows = sqlx::query(
+            "SELECT id, anime_id, episode, file_path, player, watched_at
+             FROM watch_history WHERE anime_id = ?1 ORDER BY watched_at DESC LIMIT ?2",
+        )
+        .bind(anime_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|row| WatchHistoryRow {
+                id: row.get("id"),
+                anime_id: row.get("anime_id"),
+                episode: row.get("episode"),
+                file_path: row.get("file_path"),
+                player: row.get("player"),
+                watched_at: row.get("watched_at"),
+            })
+            .collect())
+    }
+
     pub async fn search_anime_by_title(&self, query: &str, limit: i64) -> anyhow::Result<Vec<AnimeRow>> {
         // Tokenize the query into significant words and match anime whose titles_json
         // contains ANY of them. A single full-title LIKE is too brittle: punctuation
@@ -978,11 +1006,15 @@ impl Storage {
             .unwrap_or_default()
             .as_secs() as i64;
 
+        // retry_count >= 3 is "blocked" (see sync_status_counts / drain_queue):
+        // those rows are excluded here so a permanently failing push isn't
+        // retried on every worker pass forever.
         let rows = sqlx::query(
             "SELECT id, anime_id, service, operation, payload_json,
                     created_at, retry_count, next_retry_at
              FROM sync_queue
              WHERE service = ?1
+               AND retry_count < 3
                AND (next_retry_at IS NULL OR next_retry_at <= ?2)
              ORDER BY created_at ASC
              LIMIT ?3",

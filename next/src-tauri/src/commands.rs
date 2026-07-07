@@ -408,7 +408,7 @@ pub async fn mark_episode_watched_inner(
 
     state
         .storage
-        .upsert_list_entry_progress(anime_id, "Watching", episode, unix_now()?)
+        .upsert_list_entry_progress(anime_id, "watching", episode, unix_now()?)
         .await
         .map_err(command_error)?;
 
@@ -423,6 +423,11 @@ pub async fn mark_episode_watched_inner(
             }
         }
     }
+
+    // Push status + progress back to AniList (best-effort, queued), mirroring
+    // the auto-detect path. After the auto-complete above so the queued status
+    // is the final one.
+    crate::engine::sync_worker::enqueue_anilist_sync(state, anime_id).await;
 
     state.events.publish(EngineEvent::ProgressAdvanced {
         anime_id,
@@ -647,7 +652,10 @@ pub async fn fetch_anime_detail_inner(
         }
     }
 
-    let recent_history = state.storage.list_recent_watch_history(10).await?;
+    let recent_history = state
+        .storage
+        .list_recent_watch_history_for_anime(anime_id, 10)
+        .await?;
     Ok(AnimeDetailResponse {
         anime_id: detail.anime_id,
         titles_json: detail.titles_json,
