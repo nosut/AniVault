@@ -40,51 +40,72 @@ pub async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
 
     // Dedup: rows are ordered by created_at ASC, so the last row per anime_id is
     // the newest — push its status + progress (captures both category and episode).
+    // One API call per anime; every queued row for that anime is settled by it.
     let mut latest: HashMap<i64, (Option<String>, i32)> = HashMap::new();
+    let mut anime_rows: HashMap<i64, Vec<(i64, i32)>> = HashMap::new(); // anime_id -> (row id, retry_count)
     for row in &rows {
         let payload: serde_json::Value =
             serde_json::from_str(&row.payload_json).unwrap_or_default();
         let episode = payload["episode"].as_i64().unwrap_or(0) as i32;
         let status = payload["status"].as_str().map(|s| s.to_string());
         latest.insert(row.anime_id, (status, episode));
+        anime_rows
+            .entry(row.anime_id)
+            .or_default()
+            .push((row.id, row.retry_count));
     }
 
-    for row in &rows {
-        let (status, episode) = latest
-            .get(&row.anime_id)
-            .cloned()
-            .unwrap_or((None, 0));
-
+    let mut any_success = false;
+    for (anime_id, (status, episode)) in &latest {
         match client
-            .push_list_entry(row.anime_id, status.as_deref(), episode)
+            .push_list_entry(*anime_id, status.as_deref(), *episode)
             .await
         {
             Ok(()) => {
-                state.storage.delete_sync_row(row.id).await?;
+                any_success = true;
+                for (row_id, _) in &anime_rows[anime_id] {
+                    state.storage.delete_sync_row(*row_id).await?;
+                }
             }
             Err(err) => {
-                let new_count = row.retry_count + 1;
-                let delay = backoff_delay(row.retry_count) as i64;
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs() as i64;
-                let next_retry = now + delay;
 
-                if new_count >= 3 {
+                let mut newly_blocked = false;
+                for (row_id, retry_count) in &anime_rows[anime_id] {
+                    let new_count = retry_count + 1;
+                    if new_count >= 3 {
+                        newly_blocked = true;
+                    }
+                    let next_retry = now + backoff_delay(*retry_count) as i64;
+                    state
+                        .storage
+                        .update_sync_retry(*row_id, new_count, next_retry)
+                        .await?;
+                }
+                if newly_blocked {
                     state.events.publish(EngineEvent::SyncFailed {
                         service: "anilist".to_string(),
-                        anime_id: row.anime_id,
+                        anime_id: *anime_id,
                         message: format!("max retries: {err}"),
                     });
                 }
-
-                state
-                    .storage
-                    .update_sync_retry(row.id, new_count, next_retry)
-                    .await?;
             }
         }
+    }
+
+    // Record when a push last went through, for the Sync card.
+    if any_success {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let _ = state
+            .storage
+            .set_setting("anilist.last_sync_at", &now.to_string(), now)
+            .await;
     }
 
     Ok(())

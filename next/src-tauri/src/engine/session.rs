@@ -20,13 +20,15 @@ pub struct WatchSession {
 }
 
 pub fn guess_episode(file_path: Option<&str>, window_title: Option<&str>) -> Option<i32> {
-    let text = window_title.unwrap_or("").to_string()
-        + " "
-        + file_path.unwrap_or("");
+    // Search and slice the same lowercased string: lowercasing can change byte
+    // lengths for some Unicode characters, so an offset found in the lowercased
+    // text must never be used to index the original.
+    let text = (window_title.unwrap_or("").to_string() + " " + file_path.unwrap_or(""))
+        .to_lowercase();
 
     // Simple heuristic: find " - " or " S01E" or " EP" patterns
     for pattern in &[" - ", " s01e", " ep", " episode "] {
-        if let Some(pos) = text.to_lowercase().find(pattern) {
+        if let Some(pos) = text.find(pattern) {
             let after = &text[pos + pattern.len()..];
             let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
             if let Ok(num) = digits.parse::<i32>() {

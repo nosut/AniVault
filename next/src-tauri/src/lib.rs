@@ -11,6 +11,19 @@ use tauri::{
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
+/// Handle to the tray's "Pause Tracking" menu item so the label can be kept in
+/// sync when tracking is paused/resumed from the UI rather than the tray.
+pub struct TrayPauseItem(pub tauri::menu::MenuItem<tauri::Wry>);
+
+/// Update the tray pause/resume label to match the current paused state.
+/// No-op when the tray isn't set up (e.g. tests).
+pub fn update_tray_pause_label(app: &tauri::AppHandle, paused: bool) {
+    if let Some(item) = app.try_state::<TrayPauseItem>() {
+        let label = if paused { "Resume Tracking" } else { "Pause Tracking" };
+        let _ = item.0.set_text(label);
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         // Single-instance MUST be the first plugin registered. When a second
@@ -106,7 +119,9 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
-            let pause_handle = pause_item.clone();
+            // Expose the pause item so UI-driven toggles can update its label too.
+            app.manage(TrayPauseItem(pause_item.clone()));
+
             let _tray = TrayIconBuilder::new()
                 // Crisp 32px tray icon (extracted from the multi-size icon.ico).
                 // Using the full-size PNG here made Windows downscale it to tray
@@ -131,12 +146,7 @@ pub fn run() {
                             state
                                 .tracking_paused
                                 .store(!current, std::sync::atomic::Ordering::Relaxed);
-                            let label = if current {
-                                "Resume Tracking"
-                            } else {
-                                "Pause Tracking"
-                            };
-                            let _ = pause_handle.set_text(label);
+                            update_tray_pause_label(app, !current);
                         }
                         "quit" => {
                             let confirmed = app

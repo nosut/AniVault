@@ -229,20 +229,22 @@ impl AniListClient {
         &self,
         user_name: Option<&str>,
     ) -> anyhow::Result<MediaListCollectionRaw> {
+        // Scores are requested in POINT_100 regardless of the account's score
+        // format, so local storage always holds a 0-100 value (matches the
+        // stats buckets and the detail editor).
+        const ENTRY_FIELDS: &str = "media { id title { romaji english native } episodes type status coverImage { large } description season seasonYear } \
+             status score(format: POINT_100) progress updatedAt notes \
+             startedAt { year month day } \
+             completedAt { year month day }";
+
         // When no user_name specified, get the authenticated user's ID first
-        let query_str: String = if let Some(name) = user_name {
-            format!(r#"
-query {{
-  MediaListCollection(userName: "{}", type: ANIME) {{
-    lists {{ entries {{
-      media {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description season seasonYear }}
-      status score progress updatedAt notes
-      startedAt {{ year month day }}
-      completedAt {{ year month day }}
-    }}}}
-  }}
-}}
-"#, name)
+        let (query_str, variables) = if let Some(name) = user_name {
+            (
+                format!(
+                    "query ($userName: String) {{ MediaListCollection(userName: $userName, type: ANIME) {{ lists {{ entries {{ {ENTRY_FIELDS} }} }} }} }}"
+                ),
+                serde_json::json!({ "userName": name }),
+            )
         } else {
             // Query Viewer to get authenticated user ID
             let viewer_raw: serde_json::Value = self.query(
@@ -256,17 +258,13 @@ query {{
                 .and_then(|id| id.as_i64())
                 .ok_or_else(|| anyhow::anyhow!("Could not get authenticated user ID"))?;
 
-            format!(
-                "query {{ MediaListCollection(userId: {}, type: ANIME) {{ lists {{ entries {{ \
-                 media {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description season seasonYear }} \
-                 status score progress updatedAt notes \
-                 startedAt {{ year month day }} \
-                 completedAt {{ year month day }} \
-                 }}}} }}}}",
-                user_id
+            (
+                format!(
+                    "query {{ MediaListCollection(userId: {user_id}, type: ANIME) {{ lists {{ entries {{ {ENTRY_FIELDS} }} }} }} }}"
+                ),
+                serde_json::json!({}),
             )
         };
-        let variables = serde_json::json!({});
         self.query(&query_str, variables).await
     }
 
@@ -510,17 +508,18 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
         year: i32,
         genre: Option<&str>,
     ) -> anyhow::Result<Vec<SeasonAnime>> {
-        let genre_filter = if let Some(g) = genre {
-            format!("genre: \"{}\", ", g)
-        } else {
-            String::new()
-        };
-        let query_str = format!(
-            "query {{ Page(page: 1, perPage: 50) {{ media(season: {}, seasonYear: {}, {}type: ANIME, sort: POPULARITY_DESC) {{ id title {{ romaji english }} coverImage {{ large }} episodes status format averageScore popularity }} }} }}",
-            season, year, genre_filter
-        );
+        // $genre is declared but only provided when set — per GraphQL spec an
+        // unprovided nullable variable makes the argument act as if omitted.
+        let query_str = "query ($season: MediaSeason, $seasonYear: Int, $genre: String) { \
+             Page(page: 1, perPage: 50) { \
+             media(season: $season, seasonYear: $seasonYear, genre: $genre, type: ANIME, sort: POPULARITY_DESC) { \
+             id title { romaji english } coverImage { large } episodes status format averageScore popularity } } }";
+        let mut variables = serde_json::json!({ "season": season, "seasonYear": year });
+        if let Some(g) = genre {
+            variables["genre"] = serde_json::Value::String(g.to_string());
+        }
 
-        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let raw: serde_json::Value = self.query(query_str, variables).await?;
         let media_list = raw.get("data").and_then(|d| d.get("Page")).and_then(|p| p.get("media")).and_then(|m| m.as_array()).cloned().unwrap_or_default();
         let entries: Vec<SeasonAnime> = media_list.into_iter().filter_map(|m| serde_json::from_value::<SeasonAnime>(m).ok()).collect();
         Ok(entries)
@@ -528,14 +527,13 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
 
     /// Search anime by title.
     pub async fn search_anime(&self, query: &str) -> anyhow::Result<Vec<SearchAnimeResult>> {
-        let escaped = query.replace('"', "\\\"");
-        let query_str = format!(
-            "query {{ Page(page: 1, perPage: 20) {{ media(search: \"{}\", type: ANIME) {{ \
-             id title {{ romaji english native }} coverImage {{ large }} \
-             episodes status format averageScore }} }} }}",
-            escaped
-        );
-        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let query_str = "query ($search: String) { Page(page: 1, perPage: 20) { \
+             media(search: $search, type: ANIME) { \
+             id title { romaji english native } coverImage { large } \
+             episodes status format averageScore } } }";
+        let raw: serde_json::Value = self
+            .query(query_str, serde_json::json!({ "search": query }))
+            .await?;
         let media_list = raw.get("data").and_then(|d| d.get("Page")).and_then(|p| p.get("media")).and_then(|m| m.as_array()).cloned().unwrap_or_default();
         Ok(media_list.into_iter().filter_map(|m| serde_json::from_value::<SearchAnimeResult>(m).ok()).collect())
     }
@@ -552,16 +550,21 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
             return Ok(vec![]);
         }
         let mut fields = String::new();
+        let mut var_defs: Vec<String> = Vec::with_capacity(titles.len());
+        let mut variables = serde_json::Map::new();
         for (i, title) in titles.iter().enumerate() {
-            let escaped = title.replace('\\', "\\\\").replace('"', "\\\"");
+            var_defs.push(format!("$s{i}: String"));
+            variables.insert(format!("s{i}"), serde_json::Value::String(title.clone()));
             fields.push_str(&format!(
-                "a{i}: Page(page: 1, perPage: 5) {{ media(search: \"{escaped}\", type: ANIME) {{ \
+                "a{i}: Page(page: 1, perPage: 5) {{ media(search: $s{i}, type: ANIME) {{ \
                  id title {{ romaji english native }} coverImage {{ large }} \
                  episodes status format averageScore }} }} ",
             ));
         }
-        let query_str = format!("query {{ {fields}}}");
-        let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+        let query_str = format!("query ({}) {{ {fields}}}", var_defs.join(", "));
+        let raw: serde_json::Value = self
+            .query(&query_str, serde_json::Value::Object(variables))
+            .await?;
         let data = raw.get("data");
 
         let mut out = Vec::with_capacity(titles.len());

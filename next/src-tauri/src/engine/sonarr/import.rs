@@ -113,11 +113,18 @@ pub fn score_match_series(
     best
 }
 
-fn parse_sonarr_date(s: &str) -> Option<i64> {
-    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ")
-        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d"))
-        .or_else(|_| chrono::DateTime::parse_from_rfc3339(s).map(|d| d.naive_utc()))
+/// Parse the date strings Sonarr returns (RFC 3339 with or without fractional
+/// seconds, or a bare `YYYY-MM-DD`). Shared with the calendar command.
+pub(crate) fn parse_sonarr_date(s: &str) -> Option<i64> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.timestamp());
+    }
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ") {
+        return Some(dt.and_utc().timestamp());
+    }
+    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
         .ok()
+        .and_then(|d| d.and_hms_opt(0, 0, 0))
         .map(|dt| dt.and_utc().timestamp())
 }
 
@@ -154,9 +161,20 @@ fn pick_poster_url(raw: &SonarrSeriesRaw) -> Option<String> {
         .and_then(|img| img.remote_url.clone())
 }
 
-/// Tag labels that mark a series as "one I care about". Only series carrying one
-/// of these Sonarr tags are imported.
+/// Default tag labels that mark a series as "one I care about". Overridable via
+/// the `sonarr.wanted_tags` setting (a JSON array of tag labels).
 const WANTED_TAGS: &[&str] = &["1 - nosut", "mine"];
+
+/// Tag labels used to filter the Sonarr import: the `sonarr.wanted_tags`
+/// setting when present, else the built-in default.
+async fn wanted_tag_labels(storage: &Storage) -> Vec<String> {
+    if let Ok(Some(raw)) = storage.get_setting("sonarr.wanted_tags").await {
+        if let Ok(labels) = serde_json::from_str::<Vec<String>>(&raw) {
+            return labels;
+        }
+    }
+    WANTED_TAGS.iter().map(|s| s.to_string()).collect()
+}
 
 pub async fn import_sonarr_series(
     client: &SonarrClient,
@@ -165,21 +183,33 @@ pub async fn import_sonarr_series(
     let all_series = client.fetch_series().await?;
 
     // Resolve which tag ids correspond to the wanted labels, then keep only series
-    // carrying at least one of them.
+    // carrying at least one of them. When none of the wanted labels exist in this
+    // Sonarr instance (e.g. a fresh install without the tags set up), import
+    // everything instead of silently importing nothing.
+    let wanted_labels = wanted_tag_labels(storage).await;
     let tags = client.fetch_tags().await.unwrap_or_default();
     let wanted_ids: std::collections::HashSet<i64> = tags
         .iter()
         .filter(|t| {
-            WANTED_TAGS
+            wanted_labels
                 .iter()
                 .any(|w| w.eq_ignore_ascii_case(t.label.trim()))
         })
         .map(|t| t.id)
         .collect();
-    let raw_series: Vec<&SonarrSeriesRaw> = all_series
-        .iter()
-        .filter(|s| s.tags.iter().any(|id| wanted_ids.contains(id)))
-        .collect();
+    let raw_series: Vec<&SonarrSeriesRaw> = if wanted_ids.is_empty() {
+        tracing::info!(
+            "No Sonarr tags match {:?} — importing all series (set the \
+             sonarr.wanted_tags setting to filter)",
+            wanted_labels
+        );
+        all_series.iter().collect()
+    } else {
+        all_series
+            .iter()
+            .filter(|s| s.tags.iter().any(|id| wanted_ids.contains(id)))
+            .collect()
+    };
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

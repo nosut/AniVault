@@ -147,11 +147,16 @@ pub async fn get_anilist_connection_status_inner(state: &EngineState) -> anyhow:
 
 pub async fn get_sync_status_inner(state: &EngineState) -> anyhow::Result<SyncStatus> {
     let (pending, failed, blocked) = state.storage.sync_status_counts("anilist").await?;
+    let last_sync_at = state
+        .storage
+        .get_setting("anilist.last_sync_at")
+        .await?
+        .and_then(|v| v.parse::<i64>().ok());
     Ok(SyncStatus {
         pending,
         failed,
         blocked,
-        last_sync_at: None,
+        last_sync_at,
     })
 }
 
@@ -1218,16 +1223,10 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                             continue;
                         }
 
-                        let air_ts = e.air_date_utc.as_ref().and_then(|d| {
-                            chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%dT%H:%M:%SZ")
-                                .ok()
-                                .map(|dt| dt.and_utc().timestamp())
-                                .or_else(|| {
-                                    chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok().and_then(
-                                        |nd| nd.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp()),
-                                    )
-                                })
-                        });
+                        let air_ts = e
+                            .air_date_utc
+                            .as_deref()
+                            .and_then(crate::engine::sonarr::import::parse_sonarr_date);
                         result.push(CalendarEntry {
                             anime_id,
                             title: e
@@ -1373,9 +1372,13 @@ pub async fn preview_migration(
 #[tauri::command]
 pub async fn restore_database(
     backup_path: String,
+    app: tauri::AppHandle,
     state: tauri::State<'_, EngineState>,
 ) -> Result<String, String> {
-    restore_database_inner(&state, backup_path).await
+    restore_database_inner(&state, backup_path).await?;
+    // The pool is closed after a restore; relaunch so the app comes back up on
+    // the restored database instead of erroring until a manual restart.
+    app.restart()
 }
 
 #[tauri::command]
@@ -2180,9 +2183,13 @@ pub async fn get_session_state(
 
 #[tauri::command]
 pub async fn toggle_pause_tracking(
+    app: tauri::AppHandle,
     state: tauri::State<'_, EngineState>,
 ) -> Result<SessionState, String> {
-    toggle_pause_tracking_inner(&state).await.map_err(command_error)
+    let session = toggle_pause_tracking_inner(&state).await.map_err(command_error)?;
+    // Keep the tray menu's pause label in sync when toggled from the UI.
+    crate::update_tray_pause_label(&app, session.paused);
+    Ok(session)
 }
 
 #[tauri::command]

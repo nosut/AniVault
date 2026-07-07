@@ -74,14 +74,14 @@
   function prevSeason() {
     const idx = seasons.indexOf(season);
     if (idx === 0) { season = 'FALL'; year--; }
-    else { season = seasons[idx - 1]; }
+    else { season = seasons[idx - 1] ?? 'WINTER'; }
     load();
   }
 
   function nextSeason() {
     const idx = seasons.indexOf(season);
     if (idx === 3) { season = 'WINTER'; year++; }
-    else { season = seasons[idx + 1]; }
+    else { season = seasons[idx + 1] ?? 'WINTER'; }
     load();
   }
 

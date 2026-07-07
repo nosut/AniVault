@@ -42,8 +42,11 @@ pub async fn restore_database(
     storage.wal_checkpoint().await?;
     storage.close().await;
 
-    // Replace DB file
+    // Replace DB file. Remove stale WAL/SHM sidecars so leftover journal pages
+    // from the old database can't be replayed over the restored file.
     std::fs::copy(backup_path, &db_path)?;
+    let _ = std::fs::remove_file(format!("{db_path}-wal"));
+    let _ = std::fs::remove_file(format!("{db_path}-shm"));
 
     Ok(format!(
         "Database restored from {}. Restart required.",

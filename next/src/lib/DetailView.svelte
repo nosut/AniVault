@@ -133,7 +133,8 @@
       cancelled: 'Cancelled',
       hiatus: 'Hiatus',
     };
-    return map[status] || status;
+    // AniList stores these uppercase (FINISHED, RELEASING, …).
+    return map[status.toLowerCase()] || status;
   }
 
   function setDraftsFromDetail(d: AnimeDetail) {
@@ -581,11 +582,11 @@
                 class="num-input"
                 type="number"
                 min={0}
-                max={10}
+                max={100}
                 step={1}
                 bind:value={draftScore}
                 disabled={savingField === 'score'}
-                aria-label="Score out of 10"
+                aria-label="Score out of 100"
               />
               <button
                 class="action-btn"

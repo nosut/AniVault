@@ -196,8 +196,12 @@ impl Storage {
     pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
         let opts = SqliteConnectOptions::from_str(database_url)?
             .create_if_missing(true);
+        // Each `sqlite::memory:` connection is a separate empty database, so an
+        // in-memory pool must stay at 1 connection or queries can land on a
+        // connection that never ran the migrations.
+        let max_connections = if database_url.contains(":memory:") { 1 } else { 5 };
         let pool = SqlitePoolOptions::new()
-            .max_connections(5)
+            .max_connections(max_connections)
             .connect_with(opts)
             .await?;
         let db_path = database_url.strip_prefix("sqlite:").unwrap_or(database_url).to_string();
@@ -432,7 +436,10 @@ impl Storage {
              wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
              FROM watch_history wh \
              LEFT JOIN anime a ON wh.anime_id = a.id \
-             WHERE a.titles_json LIKE ?1 \
+             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ?1 \
+                OR json_extract(a.titles_json, '$.english') LIKE ?1 \
+                OR json_extract(a.titles_json, '$.japanese') LIKE ?1 \
+                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?1)) \
              ORDER BY wh.watched_at DESC \
              LIMIT ?2 OFFSET ?3",
         )
@@ -1128,7 +1135,10 @@ impl Storage {
              a.status as airing_status \
              FROM anime a \
              LEFT JOIN list_entry le ON a.id = le.anime_id \
-             WHERE a.titles_json LIKE ?",
+             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ?1 \
+                OR json_extract(a.titles_json, '$.english') LIKE ?1 \
+                OR json_extract(a.titles_json, '$.japanese') LIKE ?1 \
+                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?1))",
         );
 
         let use_filter = status_filter.is_some_and(|s| !s.is_empty());
