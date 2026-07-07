@@ -6,11 +6,16 @@
     backupDatabase, restoreDatabase, exportDatabase, importDatabase,
     type V1DataPaths, type MigrationReport,
   } from './api';
+  import { getVersion } from '@tauri-apps/api/app';
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
   import FileManager from './FileManager.svelte';
   import SonarrRemap from './SonarrRemap.svelte';
   import { listSonarrSeries, type SonarrSeriesListRow } from './api';
+
+  // Real app version from the Tauri bundle, so About never drifts from the build.
+  let appVersion = '';
+  getVersion().then((v) => { appVersion = v; }).catch(() => {});
 
   type Tab = 'general' | 'tracking' | 'library' | 'files' | 'anilist' | 'sonarr' | 'migration' | 'about';
   let activeTab: Tab = 'general';
@@ -918,8 +923,8 @@
             </div>
           {:else}
             <dl class="info-list">
-              <div><dt>App</dt><dd>Taiga</dd></div>
-              <div><dt>Version</dt><dd>0.1.0</dd></div>
+              <div><dt>App</dt><dd>AniVault</dd></div>
+              <div><dt>Version</dt><dd>{appVersion || '—'}</dd></div>
               <div><dt>Database path</dt><dd>{engineStatus?.database_path ?? '—'}</dd></div>
               <div><dt>Migrations</dt><dd>{engineStatus?.migration_count ?? '—'}</dd></div>
             </dl>

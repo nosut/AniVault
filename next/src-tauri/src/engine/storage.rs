@@ -242,15 +242,17 @@ impl Storage {
         episode: i32,
         file_path: Option<&str>,
         player: Option<&str>,
+        source: &str,
         watched_at: i64,
     ) -> anyhow::Result<i64> {
         let result = sqlx::query(
-            "INSERT INTO watch_history (anime_id, episode, file_path, player, watched_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO watch_history (anime_id, episode, file_path, player, source, watched_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         )
         .bind(anime_id)
         .bind(episode)
         .bind(file_path)
         .bind(player)
+        .bind(source)
         .bind(watched_at)
         .execute(&self.pool)
         .await?;
@@ -436,13 +438,16 @@ impl Storage {
              wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
              FROM watch_history wh \
              LEFT JOIN anime a ON wh.anime_id = a.id \
-             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ?1 \
-                OR json_extract(a.titles_json, '$.english') LIKE ?1 \
-                OR json_extract(a.titles_json, '$.japanese') LIKE ?1 \
-                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?1)) \
+             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? \
+                OR json_extract(a.titles_json, '$.english') LIKE ? \
+                OR json_extract(a.titles_json, '$.japanese') LIKE ? \
+                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?)) \
              ORDER BY wh.watched_at DESC \
-             LIMIT ?2 OFFSET ?3",
+             LIMIT ? OFFSET ?",
         )
+        .bind(&pattern)
+        .bind(&pattern)
+        .bind(&pattern)
         .bind(&pattern)
         .bind(limit)
         .bind(offset)
@@ -1135,10 +1140,10 @@ impl Storage {
              a.status as airing_status \
              FROM anime a \
              LEFT JOIN list_entry le ON a.id = le.anime_id \
-             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ?1 \
-                OR json_extract(a.titles_json, '$.english') LIKE ?1 \
-                OR json_extract(a.titles_json, '$.japanese') LIKE ?1 \
-                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?1))",
+             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? \
+                OR json_extract(a.titles_json, '$.english') LIKE ? \
+                OR json_extract(a.titles_json, '$.japanese') LIKE ? \
+                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?))",
         );
 
         let use_filter = status_filter.is_some_and(|s| !s.is_empty());
@@ -1154,7 +1159,14 @@ impl Storage {
 
         sql.push_str(" ORDER BY a.id LIMIT ? OFFSET ?");
 
-        let mut query_builder = sqlx::query(&sql).bind(&pattern);
+        // Bind the LIKE pattern once per placeholder (4×). All placeholders are
+        // anonymous `?` — mixing reused `?1` with anonymous `?` makes sqlx bind
+        // the pattern into the integer LIMIT slot (SQLITE_MISMATCH / code 20).
+        let mut query_builder = sqlx::query(&sql)
+            .bind(&pattern)
+            .bind(&pattern)
+            .bind(&pattern)
+            .bind(&pattern);
 
         if use_filter {
             let sf = status_filter.unwrap();

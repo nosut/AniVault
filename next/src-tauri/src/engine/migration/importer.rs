@@ -256,6 +256,7 @@ pub async fn live_import(
                     ep,
                     None,
                     Some("taiga_v1"),
+                    "import",
                     entry.last_updated,
                 )
                 .await?;
@@ -291,6 +292,7 @@ pub async fn live_import(
                             item.episode,
                             None,
                             Some("taiga_v1"),
+                            "import",
                             ts,
                         )
                         .await?;

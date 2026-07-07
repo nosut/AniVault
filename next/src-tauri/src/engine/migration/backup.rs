@@ -172,6 +172,7 @@ pub async fn import_database(
                 wh.episode,
                 wh.file_path.as_deref(),
                 wh.player.as_deref(),
+                &wh.source,
                 wh.watched_at,
             )
             .await?;
@@ -205,7 +206,7 @@ mod tests {
         let titles = serde_json::json!({"romaji": "Test", "english": null, "japanese": null, "synonyms": []}).to_string();
         storage.upsert_anime(1, &titles, 12, None, 1000).await.unwrap();
         storage.upsert_list_entry_full(1, "watching", 5, Some(80), "", 2000, 0).await.unwrap();
-        storage.append_watch_history(1, 1, None, Some("test"), 3000).await.unwrap();
+        storage.append_watch_history(1, 1, None, Some("test"), "manual", 3000).await.unwrap();
 
         // Export
         let json = export_database(&storage).await.unwrap();

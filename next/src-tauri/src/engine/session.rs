@@ -126,6 +126,7 @@ pub async fn process_scan_result(state: &EngineState, result: ScanResult) -> any
                         episode,
                         hist_path,
                         Some(result.player_name.as_str()),
+                        "auto-detect",
                         now,
                     )
                     .await;

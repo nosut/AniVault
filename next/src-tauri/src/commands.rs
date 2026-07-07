@@ -407,7 +407,7 @@ pub async fn mark_episode_watched_inner(
 ) -> Result<(), String> {
     state
         .storage
-        .append_watch_history(anime_id, episode, None, Some("manual"), unix_now()?)
+        .append_watch_history(anime_id, episode, None, Some("manual"), "manual", unix_now()?)
         .await
         .map_err(command_error)?;
 
