@@ -770,6 +770,52 @@ impl Storage {
         Ok(rows.iter().map(|r| r.get::<String, _>("file_path")).collect())
     }
 
+    /// Mapped, non-ignored rows under `dir`: `(file_path, anime_id)` for rows
+    /// with a real match (`confidence > 0`). `dir` must include a trailing path
+    /// separator (see `file_paths_under`). Used for folder-inheritance matching.
+    pub async fn mapped_files_under(&self, dir: &str) -> anyhow::Result<Vec<(String, i64)>> {
+        // Escape LIKE metacharacters so paths with % or _ match literally.
+        let escaped = dir
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("{escaped}%");
+        let rows = sqlx::query(
+            "SELECT file_path, anime_id FROM file_index
+             WHERE file_path LIKE ?1 ESCAPE '\\'
+               AND anime_id IS NOT NULL AND ignored = 0 AND confidence > 0
+             ORDER BY file_path",
+        )
+        .bind(pattern)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| (r.get::<String, _>("file_path"), r.get::<i64, _>("anime_id")))
+            .collect())
+    }
+
+    /// Non-ignored rows under `dir` that have no anime match at all. `dir` must
+    /// include a trailing path separator. Used to re-match siblings after a
+    /// manual mapping.
+    pub async fn unmatched_files_under(&self, dir: &str) -> anyhow::Result<Vec<String>> {
+        let escaped = dir
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("{escaped}%");
+        let rows = sqlx::query(
+            "SELECT file_path FROM file_index
+             WHERE file_path LIKE ?1 ESCAPE '\\'
+               AND anime_id IS NULL AND ignored = 0
+             ORDER BY file_path",
+        )
+        .bind(pattern)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get::<String, _>("file_path")).collect())
+    }
+
     /// Batch delete of file-index rows in a single transaction.
     pub async fn delete_file_indexes(&self, file_paths: &[String]) -> anyhow::Result<()> {
         if file_paths.is_empty() {
