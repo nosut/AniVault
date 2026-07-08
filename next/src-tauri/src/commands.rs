@@ -1516,9 +1516,26 @@ pub async fn delete_known_file(
         .map_err(command_error)
 }
 
-/// Manually map a known file to an anime + episode at full confidence. Unlike
-/// `confirm_identification`, this is a side-effect-free management write and does
-/// not emit a playback identification event.
+/// Manually map a known file to an anime + episode at full confidence, then
+/// re-match the unmatched files in the same folder so siblings inherit the
+/// mapping immediately. Unlike `confirm_identification`, this is a management
+/// write and does not emit a playback identification event.
+pub async fn set_known_file_mapping_inner(
+    state: &EngineState,
+    file_path: &str,
+    anime_id: i64,
+    episode: i32,
+) -> anyhow::Result<()> {
+    let now = unix_now_inner()?;
+    state
+        .storage
+        .upsert_file_index(file_path, Some(anime_id), episode, 100, now)
+        .await?;
+    let dirs = crate::engine::library_scanner::parent_dirs(&[file_path.to_string()]);
+    crate::engine::library_scanner::rematch_unmatched_in_dirs(&state.storage, &dirs).await?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn set_known_file_mapping(
     file_path: String,
@@ -1526,10 +1543,7 @@ pub async fn set_known_file_mapping(
     episode: i32,
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
-    let now = unix_now_inner().map_err(command_error)?;
-    state
-        .storage
-        .upsert_file_index(&file_path, Some(anime_id), episode, 100, now)
+    set_known_file_mapping_inner(&state, &file_path, anime_id, episode)
         .await
         .map_err(command_error)
 }
@@ -1543,24 +1557,32 @@ pub struct FileMappingInput {
 }
 
 /// Bulk manual mapping — map many files to anime + episode at once (one
-/// transaction). Used by the bulk file manager to fix a whole series in one go.
-#[tauri::command]
-pub async fn set_known_file_mappings(
+/// transaction), then sweep unmatched siblings in the affected folders.
+pub async fn set_known_file_mappings_inner(
+    state: &EngineState,
     mappings: Vec<FileMappingInput>,
-    state: tauri::State<'_, EngineState>,
-) -> Result<usize, String> {
-    let now = unix_now_inner().map_err(command_error)?;
+) -> anyhow::Result<usize> {
+    let now = unix_now_inner()?;
     let tuples: Vec<(String, i64, i32)> = mappings
         .into_iter()
         .map(|m| (m.file_path, m.anime_id, m.episode))
         .collect();
     let count = tuples.len();
-    state
-        .storage
-        .upsert_file_mappings(&tuples, now)
-        .await
-        .map_err(command_error)?;
+    state.storage.upsert_file_mappings(&tuples, now).await?;
+    let paths: Vec<String> = tuples.into_iter().map(|(p, _, _)| p).collect();
+    let dirs = crate::engine::library_scanner::parent_dirs(&paths);
+    crate::engine::library_scanner::rematch_unmatched_in_dirs(&state.storage, &dirs).await?;
     Ok(count)
+}
+
+#[tauri::command]
+pub async fn set_known_file_mappings(
+    mappings: Vec<FileMappingInput>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<usize, String> {
+    set_known_file_mappings_inner(&state, mappings)
+        .await
+        .map_err(command_error)
 }
 
 /// Bulk ignore / un-ignore.

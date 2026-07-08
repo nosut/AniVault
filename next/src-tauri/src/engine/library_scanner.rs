@@ -149,6 +149,44 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
     Ok((anime_id, confidence, episode))
 }
 
+/// Distinct parent directories of a set of file paths, in first-seen order.
+pub fn parent_dirs(paths: &[String]) -> Vec<String> {
+    let mut dirs: Vec<String> = Vec::new();
+    for p in paths {
+        if let Some(d) = Path::new(p).parent().and_then(|d| d.to_str()) {
+            if !d.is_empty() && !dirs.iter().any(|x| x == d) {
+                dirs.push(d.to_string());
+            }
+        }
+    }
+    dirs
+}
+
+/// Re-run matching for the unmatched, non-ignored files under the given
+/// directories. Called after a manual mapping so siblings of the newly mapped
+/// file inherit it immediately (see `unanimous_dir_anime`) instead of waiting
+/// for the next scan. Only rows that gain a match are written; returns how many.
+pub async fn rematch_unmatched_in_dirs(
+    storage: &Storage,
+    dirs: &[String],
+) -> anyhow::Result<usize> {
+    let now = unix_now();
+    let mut updated = 0usize;
+    for dir in dirs {
+        let prefix = dir_prefix(dir);
+        for path in storage.unmatched_files_under(&prefix).await? {
+            let (anime_id, confidence, episode) = match_file(storage, Path::new(&path)).await?;
+            if anime_id.is_some() {
+                storage
+                    .upsert_file_index(&path, anime_id, episode.unwrap_or(0), confidence, now)
+                    .await?;
+                updated += 1;
+            }
+        }
+    }
+    Ok(updated)
+}
+
 /// Current Unix time in seconds.
 fn unix_now() -> i64 {
     std::time::SystemTime::now()
