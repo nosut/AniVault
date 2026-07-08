@@ -1,14 +1,19 @@
 use anivault_core::engine::migration::{live_import, DuplicateStrategy, V1DataPaths};
 use anivault_core::engine::storage::Storage;
 
-fn create_v1_sqlite(rows: &[(i64, &str, i64)]) -> String {
+// Async (no nested runtime — building one inside #[tokio::test] panics) and
+// tagged per test so parallel tests don't race on a shared temp file.
+async fn create_v1_sqlite(tag: &str, rows: &[(i64, &str, i64)]) -> String {
     use sqlx::sqlite::SqliteConnectOptions;
     use std::str::FromStr;
 
-    let tmp = std::env::temp_dir().join(format!("test_migration_{}.sqlite", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!(
+        "test_migration_{}_{}.sqlite",
+        tag,
+        std::process::id()
+    ));
     let _ = std::fs::remove_file(&tmp);
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
+    {
         let db_url = format!("sqlite:{}", tmp.to_string_lossy());
         let opts = SqliteConnectOptions::from_str(&db_url)
             .unwrap()
@@ -30,11 +35,16 @@ fn create_v1_sqlite(rows: &[(i64, &str, i64)]) -> String {
         .await
         .unwrap();
 
+        // Match the real v1 schema that v1_read.rs expects (media_id/progress/
+        // last_updated…); with wrong column names every row parses as anime_id 0
+        // and is skipped.
         sqlx::query(
             "CREATE TABLE anime_list (
-                list_id INTEGER PRIMARY KEY, anime_id INTEGER, watched_episodes INTEGER,
-                my_score INTEGER, my_status INTEGER, my_start_date TEXT, my_finish_date TEXT,
-                modified INTEGER, tags TEXT
+                media_id INTEGER PRIMARY KEY,
+                progress INTEGER, score INTEGER, status INTEGER,
+                date_start TEXT, date_end TEXT, notes TEXT,
+                last_updated INTEGER, rewatched_times INTEGER,
+                rewatching INTEGER, rewatching_ep INTEGER
             )",
         )
         .execute(&pool)
@@ -50,17 +60,20 @@ fn create_v1_sqlite(rows: &[(i64, &str, i64)]) -> String {
                 .unwrap();
 
             if *watched > 0 {
-                sqlx::query("INSERT INTO anime_list (anime_id, watched_episodes, my_status, modified) VALUES (?, ?, 1, 1000)")
-                    .bind(id)
-                    .bind(watched)
-                    .execute(&pool)
-                    .await
-                    .unwrap();
+                sqlx::query(
+                    "INSERT INTO anime_list (media_id, progress, score, status, date_start, date_end, notes, last_updated, rewatched_times, rewatching, rewatching_ep)
+                     VALUES (?, ?, 0, 1, '', '', '', 1000, 0, 0, 0)",
+                )
+                .bind(id)
+                .bind(watched)
+                .execute(&pool)
+                .await
+                .unwrap();
             }
         }
 
         pool.close().await;
-    });
+    }
     tmp.to_string_lossy().to_string()
 }
 
@@ -69,7 +82,7 @@ async fn import_snapshot_reports_imported_and_skipped_records() {
     let storage = Storage::connect("sqlite::memory:").await.unwrap();
     storage.migrate().await.unwrap();
 
-    let db_path = create_v1_sqlite(&[(10, "Frieren", 12), (0, "Broken", 1)]);
+    let db_path = create_v1_sqlite("report", &[(10, "Frieren", 12), (0, "Broken", 1)]).await;
 
     let paths = V1DataPaths {
         sqlite_path: Some(db_path.clone()),
@@ -90,7 +103,7 @@ async fn import_snapshot_does_not_duplicate_watch_history_when_rerun() {
     let storage = Storage::connect("sqlite::memory:").await.unwrap();
     storage.migrate().await.unwrap();
 
-    let db_path = create_v1_sqlite(&[(10, "Frieren", 12)]);
+    let db_path = create_v1_sqlite("rerun", &[(10, "Frieren", 12)]).await;
 
     let paths = V1DataPaths {
         sqlite_path: Some(db_path.clone()),

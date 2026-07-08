@@ -250,6 +250,11 @@ pub async fn live_import(
         // For each watched episode ≤ watched_episodes, create a history row
         // (v1 doesn't have per-episode timestamps, so we use entry.last_updated)
         for ep in 1..=entry.watched_episodes {
+            // Idempotency: re-running the import must not duplicate history
+            // rows (append_watch_history is a plain INSERT).
+            if storage.watch_history_count(entry.anime_id, ep).await? > 0 {
+                continue;
+            }
             storage
                 .append_watch_history(
                     entry.anime_id,
@@ -286,6 +291,11 @@ pub async fn live_import(
                     // Parse timestamp
                     let ts = parse_datetime_to_unix(&item.timestamp).unwrap_or(now);
 
+                    // Idempotency: same guard as the progress-derived history
+                    // above — re-running the import must not duplicate rows.
+                    if storage.watch_history_count(item.anime_id, item.episode).await? > 0 {
+                        continue;
+                    }
                     storage
                         .append_watch_history(
                             item.anime_id,
