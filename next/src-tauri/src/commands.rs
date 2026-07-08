@@ -772,7 +772,10 @@ pub async fn set_library_folders_inner(
 ) -> anyhow::Result<()> {
     library_scanner::set_library_folders(&state.storage, folders).await?;
     // Wake the filesystem watcher so it re-watches the new folder set.
-    state.library_folders_changed.notify_waiters();
+    // notify_one() stores a permit when no task is waiting, ensuring a signal
+    // is not lost while the watcher is busy scanning or rebuilding. Multiple
+    // missed signals coalesce into one rebuild (which re-reads folders fresh).
+    state.library_folders_changed.notify_one();
     Ok(())
 }
 
