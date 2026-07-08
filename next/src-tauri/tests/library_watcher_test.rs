@@ -1,8 +1,10 @@
 use anivault_core::engine::events::EngineEvent;
 use anivault_core::engine::library_scanner::set_library_folders;
 use anivault_core::engine::library_watcher::run_auto_scan;
-use anivault_core::engine::library_watcher::{affected_dirs, take_quiet_dirs};
+use anivault_core::engine::library_watcher::{affected_dirs, dirs_to_rescan, take_quiet_dirs};
 use anivault_core::engine::runtime::fresh_test_state;
+use notify::event::{CreateKind, ModifyKind, RemoveKind, RenameMode};
+use notify::EventKind;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -64,6 +66,44 @@ fn affected_dirs_filters_to_video_parents() {
         PathBuf::from("C:\\Lib\\ShowC\\ep1.mkv.part"), // in-progress download
     ];
     let dirs = affected_dirs(&paths);
+    assert_eq!(dirs, vec![PathBuf::from("C:\\Lib\\ShowA")]);
+}
+
+#[test]
+fn dirs_to_rescan_queues_parent_of_removed_folder() {
+    // Deleting a whole show/season folder: the event path IS the directory
+    // (no video extension) — must queue its parent so the prune pass runs
+    // from the surviving ancestor.
+    let paths = vec![PathBuf::from("C:\\Lib\\ShowA\\Season 1")];
+    let dirs = dirs_to_rescan(&EventKind::Remove(RemoveKind::Folder), &paths);
+    assert_eq!(dirs, vec![PathBuf::from("C:\\Lib\\ShowA")]);
+}
+
+#[test]
+fn dirs_to_rescan_ignores_non_video_non_removal_events() {
+    // A non-removal event (e.g. file creation reported at a non-video path,
+    // such as a partial/temp file with no extension) must not queue anything.
+    let paths = vec![PathBuf::from("C:\\Lib\\ShowA\\newfile")];
+    let dirs = dirs_to_rescan(&EventKind::Create(CreateKind::File), &paths);
+    assert!(dirs.is_empty());
+}
+
+#[test]
+fn dirs_to_rescan_does_not_double_queue_video_file_parent_on_remove() {
+    // A remove event whose path is a video file is already handled by
+    // affected_dirs (queues the file's own parent) — must not also push that
+    // same parent a second time via the removal-like branch.
+    let paths = vec![PathBuf::from("C:\\Lib\\ShowA\\ep1.mkv")];
+    let dirs = dirs_to_rescan(&EventKind::Remove(RemoveKind::File), &paths);
+    assert_eq!(dirs, vec![PathBuf::from("C:\\Lib\\ShowA")]);
+}
+
+#[test]
+fn dirs_to_rescan_queues_parent_of_renamed_folder() {
+    // Renaming a whole show/season folder shows up as Modify(Name(_)) with a
+    // directory path — must also queue its parent.
+    let paths = vec![PathBuf::from("C:\\Lib\\ShowA\\Old Season Name")];
+    let dirs = dirs_to_rescan(&EventKind::Modify(ModifyKind::Name(RenameMode::Both)), &paths);
     assert_eq!(dirs, vec![PathBuf::from("C:\\Lib\\ShowA")]);
 }
 

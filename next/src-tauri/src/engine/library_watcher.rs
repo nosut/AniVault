@@ -72,6 +72,32 @@ pub fn affected_dirs(paths: &[PathBuf]) -> Vec<PathBuf> {
     dirs
 }
 
+/// Directories to rescan for one filesystem event. Video-file paths always
+/// queue their parent. For remove/rename events, a non-video path is usually
+/// a directory (deleted/renamed folder): queue ITS parent, so the prune pass
+/// runs from the surviving ancestor and clears the vanished rows.
+pub fn dirs_to_rescan(kind: &notify::EventKind, paths: &[PathBuf]) -> Vec<PathBuf> {
+    use notify::event::ModifyKind;
+    use notify::EventKind;
+
+    let mut dirs = affected_dirs(paths);
+    let removal_like = matches!(kind, EventKind::Remove(_))
+        || matches!(kind, EventKind::Modify(ModifyKind::Name(_)));
+    if removal_like {
+        for p in paths {
+            if library_scanner::is_video_file(p) {
+                continue; // already handled by affected_dirs
+            }
+            if let Some(parent) = p.parent() {
+                if !parent.as_os_str().is_empty() && !dirs.contains(&parent.to_path_buf()) {
+                    dirs.push(parent.to_path_buf());
+                }
+            }
+        }
+    }
+    dirs
+}
+
 /// Remove and return the pending directories whose last event is at least
 /// `quiet` ago — they're ready to scan. Recently-busy directories stay pending.
 pub fn take_quiet_dirs(
@@ -137,7 +163,7 @@ pub fn spawn_library_watcher(state: &EngineState) -> tauri::async_runtime::JoinH
                     ev = rx.recv() => {
                         match ev {
                             Some(event) => {
-                                for d in affected_dirs(&event.paths) {
+                                for d in dirs_to_rescan(&event.kind, &event.paths) {
                                     pending.insert(d, Instant::now());
                                 }
                             }

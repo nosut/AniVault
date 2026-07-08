@@ -175,6 +175,12 @@ pub async fn rematch_unmatched_in_dirs(
     for dir in dirs {
         let prefix = dir_prefix(dir);
         for path in storage.unmatched_files_under(&prefix).await? {
+            // Sweep only direct siblings — inheritance is per-directory, and a
+            // recursive sweep from a library root could stall the save command.
+            match path.strip_prefix(&prefix) {
+                Some(rest) if !rest.contains(['\\', '/']) => {}
+                _ => continue,
+            }
             let (anime_id, confidence, episode) = match_file(storage, Path::new(&path)).await?;
             if anime_id.is_some() {
                 storage

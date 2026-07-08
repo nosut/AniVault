@@ -220,6 +220,54 @@ pub async fn live_import(
         report.imported_anime += 1;
     }
 
+    // Import watch history from XML — MUST run before the list-entries loop
+    // below. Both loops guard on the same idempotency check
+    // (watch_history_count(anime_id, ep) > 0 → skip), and the progress-derived
+    // loop can only stamp a synthetic timestamp (entry.last_updated) for a
+    // given episode. If it ran first, its synthetic rows would satisfy the
+    // guard for every episode the XML also covers, permanently discarding the
+    // real per-episode timestamps. Importing the XML first means the guard
+    // instead protects the real rows, and the progress-derived loop only
+    // fills in episodes the XML didn't cover.
+    if let Some(ref history_path) = paths.history_xml_path {
+        match super::v1_read::read_v1_history_xml(history_path) {
+            Ok(history_items) => {
+                for item in &history_items {
+                    if item.anime_id <= 0 {
+                        continue;
+                    }
+                    // Parse timestamp
+                    let ts = parse_datetime_to_unix(&item.timestamp).unwrap_or(now);
+
+                    // Idempotency: same guard as the progress-derived history
+                    // below — re-running the import must not duplicate rows.
+                    if storage.watch_history_count(item.anime_id, item.episode).await? > 0 {
+                        continue;
+                    }
+                    storage
+                        .append_watch_history(
+                            item.anime_id,
+                            item.episode,
+                            None,
+                            Some("taiga_v1"),
+                            "import",
+                            ts,
+                        )
+                        .await?;
+
+                    report.imported_history += 1;
+                }
+            }
+            Err(e) => {
+                report.warnings.push(MigrationWarning {
+                    source: "v1_history".into(),
+                    source_id: history_path.clone(),
+                    message: format!("Failed to import history: {}", e),
+                });
+            }
+        }
+    }
+
     // Import list entries
     for entry in &v1_entries {
         if entry.anime_id <= 0 || !v1_anime_ids.contains(&entry.anime_id) {
@@ -246,12 +294,13 @@ pub async fn live_import(
             )
             .await?;
 
-        // Create watch history entries from progress
-        // For each watched episode ≤ watched_episodes, create a history row
-        // (v1 doesn't have per-episode timestamps, so we use entry.last_updated)
+        // Create watch history entries from progress for any episode the XML
+        // import above didn't already cover (v1 doesn't have per-episode
+        // timestamps here, so we fall back to entry.last_updated).
         for ep in 1..=entry.watched_episodes {
             // Idempotency: re-running the import must not duplicate history
-            // rows (append_watch_history is a plain INSERT).
+            // rows (append_watch_history is a plain INSERT). This also means
+            // an episode the XML import already wrote is left untouched.
             if storage.watch_history_count(entry.anime_id, ep).await? > 0 {
                 continue;
             }
@@ -278,46 +327,6 @@ pub async fn live_import(
             .await?;
 
         report.imported_entries += 1;
-    }
-
-    // Import watch history from XML
-    if let Some(ref history_path) = paths.history_xml_path {
-        match super::v1_read::read_v1_history_xml(history_path) {
-            Ok(history_items) => {
-                for item in &history_items {
-                    if item.anime_id <= 0 {
-                        continue;
-                    }
-                    // Parse timestamp
-                    let ts = parse_datetime_to_unix(&item.timestamp).unwrap_or(now);
-
-                    // Idempotency: same guard as the progress-derived history
-                    // above — re-running the import must not duplicate rows.
-                    if storage.watch_history_count(item.anime_id, item.episode).await? > 0 {
-                        continue;
-                    }
-                    storage
-                        .append_watch_history(
-                            item.anime_id,
-                            item.episode,
-                            None,
-                            Some("taiga_v1"),
-                            "import",
-                            ts,
-                        )
-                        .await?;
-
-                    report.imported_history += 1;
-                }
-            }
-            Err(e) => {
-                report.warnings.push(MigrationWarning {
-                    source: "v1_history".into(),
-                    source_id: history_path.clone(),
-                    message: format!("Failed to import history: {}", e),
-                });
-            }
-        }
     }
 
     Ok(report)

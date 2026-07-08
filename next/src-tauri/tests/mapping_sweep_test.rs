@@ -78,6 +78,52 @@ async fn sweep_leaves_ignored_files_alone() {
 }
 
 #[tokio::test]
+async fn sweep_does_not_recurse_into_subdirectories() {
+    let state = fresh_test_state().await;
+    // A show folder with a "Specials" subdirectory — `unmatched_files_under`
+    // is a prefix query, so without the direct-child guard the sweep would
+    // also visit (and can auto-match by title score) files nested below the
+    // mapped file's directory.
+    let wrapper = unique_temp_dir("recurse");
+    let dir = wrapper.join("Zzqx Qwpv");
+    let sub_dir = dir.join("Specials");
+    fs::create_dir_all(&sub_dir).unwrap();
+
+    let ep1 = dir.join("Zzqx Qwpv - 01.mkv");
+    // Bare filename: no title of its own, so it can only be matched via its
+    // grandparent directory name ("Zzqx Qwpv") — which exactly matches a
+    // *different* anime (id 8) than the one manually mapped for ep1 (id 7).
+    let sub_ep = sub_dir.join("01.mkv");
+    fs::write(&ep1, b"x").unwrap();
+    fs::write(&sub_ep, b"x").unwrap();
+
+    state.storage.insert_minimal_anime(7, "Completely Unrelated Title").await.unwrap();
+    state.storage.insert_minimal_anime(8, "Zzqx Qwpv").await.unwrap();
+    // Both start unmatched, as a failed scan would leave them.
+    state.storage.upsert_file_index(&ep1.to_string_lossy(), None, 0, 0, now()).await.unwrap();
+    state.storage.upsert_file_index(&sub_ep.to_string_lossy(), None, 0, 0, now()).await.unwrap();
+
+    // Manually map the top-level episode to anime 7 — the file in the
+    // SUBDIRECTORY must NOT be swept (it isn't a direct sibling), even though
+    // it's still "unmatched under" the mapped file's directory by prefix, and
+    // even though it would title-match anime 8 if visited.
+    set_known_file_mapping_inner(&state, &ep1.to_string_lossy(), 7, 1)
+        .await
+        .unwrap();
+
+    let ep1_row = state.storage.get_file_index(&ep1.to_string_lossy()).await.unwrap().unwrap();
+    assert_eq!(ep1_row.anime_id, Some(7));
+
+    let sub_row = state.storage.get_file_index(&sub_ep.to_string_lossy()).await.unwrap().unwrap();
+    assert_eq!(
+        sub_row.anime_id, None,
+        "a file in a subdirectory must not be swept by a mapping in the parent directory"
+    );
+
+    fs::remove_dir_all(&wrapper).ok();
+}
+
+#[tokio::test]
 async fn bulk_mapping_sweeps_siblings_too() {
     let state = fresh_test_state().await;
     let dir = unique_temp_dir("bulk");
