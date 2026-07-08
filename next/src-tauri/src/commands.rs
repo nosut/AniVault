@@ -770,7 +770,10 @@ pub async fn set_library_folders_inner(
     state: &EngineState,
     folders: Vec<String>,
 ) -> anyhow::Result<()> {
-    library_scanner::set_library_folders(&state.storage, folders).await
+    library_scanner::set_library_folders(&state.storage, folders).await?;
+    // Wake the filesystem watcher so it re-watches the new folder set.
+    state.library_folders_changed.notify_waiters();
+    Ok(())
 }
 
 pub async fn scan_library_folders_inner(

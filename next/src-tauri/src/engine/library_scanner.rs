@@ -203,6 +203,16 @@ pub async fn scan_library_folders(storage: &Storage) -> anyhow::Result<LibrarySc
     scan_dirs(storage, &folders, true).await
 }
 
+/// Scan a specific set of directories: index new/changed files and prune
+/// deleted ones under each. Used by the filesystem watcher for targeted scans;
+/// a directory that no longer exists is silently skipped (never pruned under).
+pub async fn scan_specific_dirs(
+    storage: &Storage,
+    dirs: &[String],
+) -> anyhow::Result<LibraryScanReport> {
+    scan_dirs(storage, dirs, false).await
+}
+
 /// Rescan only the folders that contain a single anime's indexed files — the
 /// fast path behind the detail-page "Rescan" button. Picks up episodes added to
 /// the show's folders and prunes ones deleted from disk, without walking the
@@ -438,6 +448,16 @@ pub async fn get_episode_files(
     storage.file_index_by_anime(anime_id).await
 }
 
+/// Does this path have a recognized video-file extension?
+pub fn is_video_file(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    VIDEO_EXTENSIONS.contains(&ext.as_str())
+}
+
 /// Recursively find video files under a directory.
 /// Collects errors for unreadable directories instead of silently skipping.
 pub fn find_video_files(dir: &Path, files: &mut Vec<std::path::PathBuf>, errors: &mut Vec<String>) {
@@ -447,15 +467,8 @@ pub fn find_video_files(dir: &Path, files: &mut Vec<std::path::PathBuf>, errors:
                 let path = entry.path();
                 if path.is_dir() {
                     find_video_files(&path, files, errors);
-                } else if path.is_file() {
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_lowercase();
-                    if VIDEO_EXTENSIONS.contains(&ext.as_str()) {
-                        files.push(path);
-                    }
+                } else if path.is_file() && is_video_file(&path) {
+                    files.push(path);
                 }
             }
         }

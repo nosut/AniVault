@@ -17,6 +17,7 @@ pub async fn fresh_test_state() -> EngineState {
         tracking: Arc::new(std::sync::Mutex::new(TrackingControl::default())),
         tracking_paused: Arc::new(AtomicBool::new(false)),
         app_handle: None,
+        library_folders_changed: Arc::new(tokio::sync::Notify::new()),
     }
 }
 
@@ -28,6 +29,9 @@ pub struct EngineState {
     pub tracking: Arc<std::sync::Mutex<TrackingControl>>,
     pub tracking_paused: Arc<AtomicBool>,
     pub app_handle: Option<AppHandle>,
+    /// Notified whenever the configured library folders change, so the
+    /// filesystem watcher can rebuild its watch list.
+    pub library_folders_changed: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,5 +82,6 @@ pub async fn initialize_engine_at(
         tracking: Arc::new(std::sync::Mutex::new(TrackingControl::default())),
         tracking_paused: Arc::new(AtomicBool::new(false)),
         app_handle,
+        library_folders_changed: Arc::new(tokio::sync::Notify::new()),
     })
 }

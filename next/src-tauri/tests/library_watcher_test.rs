@@ -1,10 +1,12 @@
 use anivault_core::engine::events::EngineEvent;
 use anivault_core::engine::library_scanner::set_library_folders;
 use anivault_core::engine::library_watcher::run_auto_scan;
+use anivault_core::engine::library_watcher::{affected_dirs, take_quiet_dirs};
 use anivault_core::engine::runtime::fresh_test_state;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 fn unique_temp_dir(tag: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -50,4 +52,31 @@ async fn auto_scan_without_folders_is_a_no_op() {
     let state = fresh_test_state().await;
     run_auto_scan(&state).await;
     assert!(state.events.drain().is_empty());
+}
+
+#[test]
+fn affected_dirs_filters_to_video_parents() {
+    let paths = vec![
+        PathBuf::from("C:\\Lib\\ShowA\\ep1.mkv"),
+        PathBuf::from("C:\\Lib\\ShowA\\ep1.mkv"), // duplicate event
+        PathBuf::from("C:\\Lib\\ShowA\\ep2.MP4"), // extension is case-insensitive
+        PathBuf::from("C:\\Lib\\ShowB\\notes.txt"), // not a video
+        PathBuf::from("C:\\Lib\\ShowC\\ep1.mkv.part"), // in-progress download
+    ];
+    let dirs = affected_dirs(&paths);
+    assert_eq!(dirs, vec![PathBuf::from("C:\\Lib\\ShowA")]);
+}
+
+#[test]
+fn take_quiet_dirs_respects_debounce() {
+    let base = Instant::now();
+    let mut pending: HashMap<PathBuf, Instant> = HashMap::new();
+    pending.insert(PathBuf::from("C:\\Lib\\Quiet"), base);
+    pending.insert(PathBuf::from("C:\\Lib\\Busy"), base + Duration::from_secs(4));
+
+    // 5 seconds after `base`: Quiet has been silent 5s (ready), Busy only 1s.
+    let ready = take_quiet_dirs(&mut pending, base + Duration::from_secs(5), Duration::from_secs(5));
+    assert_eq!(ready, vec![PathBuf::from("C:\\Lib\\Quiet")]);
+    assert!(pending.contains_key(&PathBuf::from("C:\\Lib\\Busy")));
+    assert!(!pending.contains_key(&PathBuf::from("C:\\Lib\\Quiet")));
 }
