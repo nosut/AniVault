@@ -16,7 +16,7 @@ async fn storage_appends_history_and_queues_sync() {
     storage.insert_minimal_anime(1, "Cowboy Bebop").await.unwrap();
 
     let history_id = storage
-        .append_watch_history(1, 7, Some("D:/Anime/Cowboy Bebop 07.mkv"), Some("mpv"), 1_782_769_008)
+        .append_watch_history(1, 7, Some("D:/Anime/Cowboy Bebop 07.mkv"), Some("mpv"), "manual", 1_782_769_008)
         .await
         .unwrap();
     assert!(history_id > 0);

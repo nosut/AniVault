@@ -58,11 +58,11 @@ async fn list_recent_watch_history_returns_most_recent_first() {
     storage.insert_minimal_anime(1, "Cowboy Bebop").await.unwrap();
 
     storage
-        .append_watch_history(1, 1, None, Some("mpv"), 1_782_769_000)
+        .append_watch_history(1, 1, None, Some("mpv"), "manual", 1_782_769_000)
         .await
         .unwrap();
     storage
-        .append_watch_history(1, 2, None, Some("mpv"), 1_782_769_100)
+        .append_watch_history(1, 2, None, Some("mpv"), "manual", 1_782_769_100)
         .await
         .unwrap();
 
