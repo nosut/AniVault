@@ -138,7 +138,7 @@
     {:else if currentView === 'detail' && detailAnimeId !== null}
       <DetailView animeId={detailAnimeId} events={latestEvents} on:back={handleDetailBack} on:select={handleDetailSelect} />
     {:else if currentView === 'settings'}
-      <SettingsView />
+      <SettingsView events={latestEvents} />
     {/if}
   </section>
 </main>

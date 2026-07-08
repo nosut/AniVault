@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getEngineStatus, getLaunchOnStartup, getStartInTray, setStartInTray, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport } from './api';
+  import { getEngineStatus, getLaunchOnStartup, getStartInTray, setStartInTray, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport, type EngineEvent } from './api';
   import {
     discoverV1Data, previewMigration, runMigration,
     backupDatabase, restoreDatabase, exportDatabase, importDatabase,
@@ -12,6 +12,8 @@
   import FileManager from './FileManager.svelte';
   import SonarrRemap from './SonarrRemap.svelte';
   import { listSonarrSeries, type SonarrSeriesListRow } from './api';
+
+  export let events: EngineEvent[] = [];
 
   // Real app version from the Tauri bundle, so About never drifts from the build.
   let appVersion = '';
@@ -558,7 +560,7 @@
 
     {#if activeTab === 'files'}
       <div class="panel" role="tabpanel" id="panel-files" aria-labelledby="tab-files">
-        <FileManager />
+        <FileManager {events} />
       </div>
     {/if}
 

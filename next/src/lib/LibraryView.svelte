@@ -149,6 +149,15 @@
     }
   }
 
+  // Refresh stats and episode-file lists when an automatic scan changes the
+  // index (new episode downloaded, file deleted, …).
+  $: applyLibraryUpdated(events);
+  function applyLibraryUpdated(evs: EngineEvent[]) {
+    if (!evs || !evs.some((e) => 'LibraryUpdated' in e)) return;
+    void loadStats();
+    if (entries.length > 0) void loadEpisodeFiles(entries);
+  }
+
   function tabCount(value: string | null): number | null {
     if (!stats) return null;
     switch (value) {

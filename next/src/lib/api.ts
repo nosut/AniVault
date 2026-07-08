@@ -146,13 +146,21 @@ export interface SyncFailedEvent {
   };
 }
 
+export interface LibraryUpdatedEvent {
+  LibraryUpdated: {
+    indexed: number;
+    removed: number;
+  };
+}
+
 export type EngineEvent =
   | MediaDetectedEvent
   | PlaybackDetectedEvent
   | AnimeIdentifiedEvent
   | ProgressAdvancedEvent
   | SyncQueuedEvent
-  | SyncFailedEvent;
+  | SyncFailedEvent
+  | LibraryUpdatedEvent;
 
 export interface LibraryEntry {
   anime_id: number;

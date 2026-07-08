@@ -157,6 +157,20 @@ describe('api wrappers', () => {
     }
   });
 
+  it('passes through LibraryUpdated events', async () => {
+    const events = [{ LibraryUpdated: { indexed: 2, removed: 1 } }];
+    const invoke = vi.fn().mockResolvedValue(events);
+    const result = await drainEngineEvents(invoke);
+    expect(result).toEqual(events);
+    const ev = result[0]!;
+    if ('LibraryUpdated' in ev) {
+      expect(ev.LibraryUpdated.indexed).toBe(2);
+      expect(ev.LibraryUpdated.removed).toBe(1);
+    } else {
+      throw new Error('expected LibraryUpdated event');
+    }
+  });
+
   it('gets tracking status', async () => {
     const status = { active: false, watching: null };
     const invoke = vi.fn().mockResolvedValue(status);

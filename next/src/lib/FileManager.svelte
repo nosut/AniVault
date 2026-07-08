@@ -13,6 +13,7 @@
     importAnilistAnime,
     deepMatchViaAnilist,
     type FileIndexEntry,
+    type EngineEvent,
   } from './api';
 
   type Filter = 'all' | 'unmapped' | 'mapped' | 'ignored';
@@ -30,6 +31,15 @@
   let entries: FileIndexEntry[] = [];
   let loading = true;
   let error: string | null = null;
+
+  export let events: EngineEvent[] = [];
+
+  // Refresh when an automatic scan (watcher / hourly) changed the index, so
+  // newly detected files appear without pressing anything.
+  $: applyLibraryUpdated(events);
+  function applyLibraryUpdated(evs: EngineEvent[]) {
+    if (!loading && evs.some((e) => 'LibraryUpdated' in e)) void load();
+  }
 
   let search = '';
   let filter: Filter = 'all';
