@@ -430,24 +430,24 @@
               <span class="label">Launch AniVault when Windows starts</span>
               <button
                 type="button"
-                class="toggle-btn"
-                class:active={startupEnabled}
-                aria-pressed={startupEnabled}
+                role="switch"
+                aria-checked={startupEnabled}
+                class="switch"
                 on:click={handleStartupToggle}
               >
-                {startupEnabled ? 'Enabled' : 'Disabled'}
+                <span class="switch-thumb" />
               </button>
             </div>
             <div class="toggle-row">
               <span class="label">Start minimized to the system tray</span>
               <button
                 type="button"
-                class="toggle-btn"
-                class:active={startInTray}
-                aria-pressed={startInTray}
+                role="switch"
+                aria-checked={startInTray}
+                class="switch"
                 on:click={handleStartInTrayToggle}
               >
-                {startInTray ? 'Enabled' : 'Disabled'}
+                <span class="switch-thumb" />
               </button>
             </div>
             <p class="hint">When enabled, launching on Windows startup opens AniVault directly to the tray (no window). Open it any time from the tray icon.</p>
@@ -1094,32 +1094,6 @@
 
   .switch[aria-checked='true'] .switch-thumb {
     transform: translateX(20px);
-  }
-
-  .toggle-btn {
-    border: 1px solid rgba(143, 183, 255, 0.35);
-    border-radius: 999px;
-    padding: 0.45rem 0.9rem;
-    font-size: 0.78rem;
-    cursor: pointer;
-    background: rgba(143, 183, 255, 0.18);
-    color: #e9eefc;
-    font-family: inherit;
-    transition: background 0.15s ease, border-color 0.15s ease;
-  }
-
-  .toggle-btn:hover {
-    background: rgba(143, 183, 255, 0.28);
-  }
-
-  .toggle-btn.active {
-    background: rgba(143, 183, 255, 0.45);
-    border-color: rgba(143, 183, 255, 0.6);
-  }
-
-  .toggle-btn:focus-visible {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
-    outline-offset: 2px;
   }
 
   .hint {
