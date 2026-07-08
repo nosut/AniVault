@@ -1,0 +1,11 @@
+# Delay-load comctl32.dll so cargo-test binaries can start.
+#
+# tauri-plugin-dialog imports TaskDialogIndirect, which only exists in
+# comctl32 v6. The packaged app resolves v6 through the manifest tauri-build
+# embeds, but bare test executables have no manifest, so the loader binds
+# them to System32's comctl32 v5.82 and aborts with STATUS_ENTRYPOINT_NOT_FOUND
+# (0xc0000139) before any test runs. Delay-loading defers the bind to the
+# first actual call: tests never show dialogs, and the real app resolves it
+# under its manifest's activation context exactly as before.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/DELAYLOAD:comctl32.dll", "-C", "link-arg=delayimp.lib"]
