@@ -32,6 +32,11 @@ pub async fn set_library_folders(storage: &Storage, folders: Vec<String>) -> any
 /// manual mapping instead of asserting a bad guess.
 const MATCH_THRESHOLD: u8 = 40;
 
+/// Confidence recorded when a file inherits its anime from unanimous mapped
+/// siblings in the same folder — below manual (100) so manual wins on display,
+/// well above the title threshold so the scanner treats it as a real match.
+const INHERITED_CONFIDENCE: i32 = 85;
+
 /// Best-match result for a single file: (anime_id, confidence, episode).
 pub type FileMatch = (Option<i64>, i32, Option<i32>);
 
@@ -109,10 +114,25 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
         }
     }
 
-    // Require a minimum confidence to auto-attach; below that, leave unmatched (0)
-    // so the file resurfaces on the next re-scan and can be corrected manually.
+    // Require a minimum confidence to auto-attach. Below the threshold, fall
+    // back to folder inheritance: if every mapped file in this directory agrees
+    // on one anime and we parsed an episode number, adopt that anime — one
+    // manual mapping then fixes the whole series. Otherwise leave unmatched (0)
+    // so the file resurfaces on the next re-scan.
     let (anime_id, confidence) = if best_score >= MATCH_THRESHOLD {
         (best_id, best_score as i32)
+    } else if let (Some(_), Some(dir)) = (
+        episode,
+        file_path.parent().and_then(|p| p.to_str()).filter(|d| !d.is_empty()),
+    ) {
+        let prefix = dir_prefix(dir);
+        let mut rows = storage.mapped_files_under(&prefix).await?;
+        // Never inherit from this file's own (stale) row.
+        rows.retain(|(p, _)| p != &file_path_str);
+        match unanimous_dir_anime(&rows, &prefix) {
+            Some(id) => (Some(id), INHERITED_CONFIDENCE),
+            None => (None, 0),
+        }
     } else {
         (None, 0)
     };
@@ -341,6 +361,25 @@ async fn scan_dirs(
 fn dir_prefix(dir: &str) -> String {
     let trimmed = dir.trim_end_matches(['\\', '/']);
     format!("{trimmed}{}", std::path::MAIN_SEPARATOR)
+}
+
+/// If every mapped file directly inside the directory `prefix` (which must end
+/// with a path separator) agrees on one anime, return it. Rows in
+/// subdirectories are ignored; disagreement or no direct siblings → None.
+pub fn unanimous_dir_anime(rows: &[(String, i64)], prefix: &str) -> Option<i64> {
+    let mut found: Option<i64> = None;
+    for (path, anime_id) in rows {
+        let Some(rest) = path.strip_prefix(prefix) else { continue };
+        if rest.contains(['\\', '/']) {
+            continue; // lives in a subdirectory, not a direct sibling
+        }
+        match found {
+            None => found = Some(*anime_id),
+            Some(a) if a == *anime_id => {}
+            Some(_) => return None,
+        }
+    }
+    found
 }
 
 /// Get all episode files for a specific anime, ordered by episode number.
