@@ -51,4 +51,11 @@ pub enum EngineEvent {
         anime_id: AnimeId,
         message: String,
     },
+    /// An automatic scan (watcher or timer) changed the file index — the UI
+    /// should refresh library/file views. Not emitted for manual scans, which
+    /// already return their report to the caller.
+    LibraryUpdated {
+        indexed: i64,
+        removed: i64,
+    },
 }

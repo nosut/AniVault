@@ -68,6 +68,7 @@ pub fn run() {
             )
             .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
             sync_worker::spawn_sync_worker(&state);
+            engine::library_watcher::spawn_library_scan_worker(&state);
 
             // Auto-start playback tracking on launch unless the user disabled it.
             {

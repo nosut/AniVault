@@ -14,5 +14,6 @@ pub mod secrets;
 pub mod sync_worker;
 pub mod storage;
 pub mod library_scanner;
+pub mod library_watcher;
 pub mod log;
 pub mod tracker;

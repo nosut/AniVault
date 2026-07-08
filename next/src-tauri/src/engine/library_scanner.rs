@@ -324,14 +324,24 @@ async fn index_new_files_in_dir(
 
         // Skip if already indexed with a valid match; re-evaluate if unmatched
         // (confidence 0). Ignored files are tombstoned — never re-index them.
-        if let Some(existing) = storage.get_file_index(&file_path_str).await? {
-            if existing.ignored || existing.confidence > 0 {
+        let existing = storage.get_file_index(&file_path_str).await?;
+        if let Some(ref ex) = existing {
+            if ex.ignored || ex.confidence > 0 {
                 report.skipped += 1;
                 continue;
             }
         }
 
         let (anime_id, confidence, episode) = match_file(storage, file_path).await?;
+
+        // An already-indexed unmatched file that stays unmatched isn't a change —
+        // don't rewrite it, so `indexed` reports only real changes and periodic
+        // auto-scans stay silent when nothing happened.
+        if existing.is_some() && anime_id.is_none() {
+            report.skipped += 1;
+            continue;
+        }
+
         storage
             .upsert_file_index(&file_path_str, anime_id, episode.unwrap_or(0), confidence, now)
             .await?;
