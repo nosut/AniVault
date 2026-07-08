@@ -49,9 +49,22 @@ async fn process_scan_result_auto_confirms_high_confidence() {
 
     process_scan_result(&state, result).await.unwrap();
 
-    // Events: AnimeIdentified (auto-confirm) + PlaybackDetected
+    // Events: AnimeIdentified (auto-confirm) + ProgressAdvanced (history
+    // recording, since 7fc141c8) + PlaybackDetected
     let events = state.events.drain();
-    assert_eq!(events.len(), 2, "should emit both AnimeIdentified and PlaybackDetected");
+    assert_eq!(
+        events.len(),
+        3,
+        "should emit AnimeIdentified, ProgressAdvanced and PlaybackDetected"
+    );
+
+    let has_progress = events.iter().any(|e| {
+        matches!(
+            e,
+            EngineEvent::ProgressAdvanced { anime_id: 1, new_episode: 1, .. }
+        )
+    });
+    assert!(has_progress, "should emit ProgressAdvanced for the auto-recorded episode");
 
     let has_identified = events.iter().any(|e| {
         matches!(
