@@ -3,6 +3,7 @@
   import { confirmIdentification, getTrackingStatus, startTracking, stopTracking, type TrackingStatus, type EngineEvent, type PlaybackDetectedEvent } from './api';
 
   export let events: EngineEvent[] = [];
+  export let collapsed = false;
 
   let status: TrackingStatus = { active: false, watching: null };
   let lastEvent: string | null = null;
@@ -32,6 +33,13 @@
       }
     }
   }
+
+  $: dotActive = status.active && status.watching !== null;
+  $: dotTitle = status.watching
+    ? (lastEvent ?? `Tracking ${status.watching.player_name}`)
+    : status.active
+      ? 'Waiting for playback…'
+      : 'Tracking stopped';
 
   async function poll() {
     if (loading) return;
@@ -104,6 +112,11 @@
   onDestroy(stopPolling);
 </script>
 
+{#if collapsed}
+  <div class="np-dot-wrap" title={dotTitle}>
+    <span class="np-dot" class:active={dotActive}></span>
+  </div>
+{:else}
 <section class="now-playing-card">
   <div class="np-header">
     <p class="eyebrow">Now Playing</p>
@@ -168,6 +181,7 @@
     <p class="np-event" aria-live="polite">{lastEvent}</p>
   {/if}
 </section>
+{/if}
 
 <style>
   .now-playing-card {
@@ -184,6 +198,24 @@
 
   .now-playing-card * {
     min-width: 0;
+  }
+
+  .np-dot-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 0.4rem 0;
+  }
+
+  .np-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-muted);
+  }
+
+  .np-dot.active {
+    background: #7ee87e;
+    box-shadow: 0 0 6px rgba(126, 232, 126, 0.6);
   }
 
   .np-header {
