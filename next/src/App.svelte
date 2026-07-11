@@ -12,6 +12,18 @@
   import SeasonView from './lib/SeasonView.svelte';
   import SearchView from './lib/SearchView.svelte';
   import bannerUrl from './assets/banner.png';
+  import {
+    LayoutDashboard,
+    Library,
+    CalendarRange,
+    Search,
+    Calendar,
+    History,
+    BarChart3,
+    Settings as SettingsIcon,
+    ChevronLeft,
+    ChevronRight,
+  } from 'lucide-svelte';
 
   type View = 'dashboard' | 'library' | 'season' | 'search' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
 
@@ -26,11 +38,40 @@
     { id: 'settings' as View, label: 'Settings' },
   ];
 
+  const navIcons: Partial<Record<View, typeof LayoutDashboard>> = {
+    dashboard: LayoutDashboard,
+    library: Library,
+    season: CalendarRange,
+    search: Search,
+    calendar: Calendar,
+    history: History,
+    stats: BarChart3,
+    settings: SettingsIcon,
+  };
+
   let currentView: View = 'dashboard';
   let previousView: View = 'dashboard';
   let detailAnimeId: number | null = null;
   let latestEvents: EngineEvent[] = [];
   let eventIntervalId: ReturnType<typeof setInterval> | null = null;
+
+  const RAIL_COLLAPSED_KEY = 'anivault-rail-collapsed';
+
+  function loadCollapsed(): boolean {
+    try { return localStorage.getItem(RAIL_COLLAPSED_KEY) === 'true'; }
+    catch { return false; }
+  }
+
+  function persistCollapsed(value: boolean) {
+    try { localStorage.setItem(RAIL_COLLAPSED_KEY, String(value)); } catch {}
+  }
+
+  let collapsed = loadCollapsed();
+
+  function toggleCollapse() {
+    collapsed = !collapsed;
+    persistCollapsed(collapsed);
+  }
 
   async function pollEvents() {
     try {
@@ -97,10 +138,21 @@
 </script>
 
 <main class="shell">
-  <aside class="rail" aria-label="Main navigation">
-    <div class="brand-block">
-      <img class="brand-banner" src={bannerUrl} alt="AniVault" />
-      <div class="brand-label">AniVault</div>
+  <aside class="rail" class:collapsed aria-label="Main navigation">
+    <div class="rail-top">
+      <div class="brand-block">
+        <img class="brand-banner" src={bannerUrl} alt="AniVault" />
+        <div class="brand-label">AniVault</div>
+      </div>
+      <button
+        type="button"
+        class="collapse-toggle"
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        on:click={toggleCollapse}
+      >
+        <svelte:component this={collapsed ? ChevronRight : ChevronLeft} size={16} />
+      </button>
     </div>
     <nav class="nav-list">
       {#each navItems as item}
@@ -109,14 +161,17 @@
           class="nav-item"
           class:active={isNavActive(item.id)}
           class:subtle-active={currentView === 'detail' && item.id === 'library'}
+          title={item.label}
+          aria-label={item.label}
           on:click={() => setView(item.id)}
         >
-          {item.label}
+          <svelte:component this={navIcons[item.id]} class="nav-icon" size={18} />
+          <span class="nav-label">{item.label}</span>
         </button>
       {/each}
     </nav>
     <div class="now-playing-sidebar">
-      <NowPlaying events={latestEvents} />
+      <NowPlaying events={latestEvents} {collapsed} />
     </div>
   </aside>
 
@@ -146,7 +201,7 @@
 <style>
   .shell {
     display: grid;
-    grid-template-columns: 16rem 1fr;
+    grid-template-columns: auto 1fr;
     min-height: 100vh;
   }
 
@@ -158,6 +213,62 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    width: 16rem;
+    transition: width 0.2s ease, padding 0.2s ease;
+  }
+
+  .rail.collapsed {
+    width: 4.5rem;
+    padding: 1.5rem 0.75rem;
+  }
+
+  .rail-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .rail.collapsed .rail-top {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .rail.collapsed .brand-banner {
+    width: 32px;
+    height: 32px;
+    max-width: none;
+    object-fit: cover;
+    border-radius: 8px;
+  }
+
+  .rail.collapsed .brand-label {
+    display: none;
+  }
+
+  .collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 1px solid rgb(255 255 255 / 12%);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+  }
+
+  .collapse-toggle:hover {
+    color: var(--color-text);
+    background: rgb(255 255 255 / 8%);
+  }
+
+  .collapse-toggle:focus-visible {
+    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline-offset: 2px;
   }
 
   .brand {
@@ -195,7 +306,9 @@
   }
 
   .nav-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
     width: 100%;
     border: 0;
     border-radius: 999px;
@@ -207,6 +320,25 @@
     font-family: inherit;
     font-size: 0.9rem;
     transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .nav-icon {
+    flex-shrink: 0;
+  }
+
+  .nav-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rail.collapsed .nav-item {
+    justify-content: center;
+    padding: 0.8rem 0;
+  }
+
+  .rail.collapsed .nav-label {
+    display: none;
   }
 
   .nav-item:hover {
@@ -263,6 +395,40 @@
     .nav-item {
       width: auto;
       padding: 0.6rem 0.9rem;
+    }
+
+    .collapse-toggle {
+      display: none;
+    }
+
+    .rail.collapsed {
+      width: auto;
+      padding: 1rem;
+    }
+
+    .rail.collapsed .rail-top {
+      flex-direction: row;
+    }
+
+    .rail.collapsed .brand-banner {
+      width: 100%;
+      height: auto;
+      max-width: 10rem;
+      object-fit: contain;
+      border-radius: 12px;
+    }
+
+    .rail.collapsed .brand-label {
+      display: block;
+    }
+
+    .rail.collapsed .nav-item {
+      justify-content: flex-start;
+      padding: 0.6rem 0.9rem;
+    }
+
+    .rail.collapsed .nav-label {
+      display: inline;
     }
 
   .now-playing-sidebar {
