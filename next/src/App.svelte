@@ -12,6 +12,7 @@
   import SeasonView from './lib/SeasonView.svelte';
   import SearchView from './lib/SearchView.svelte';
   import bannerUrl from './assets/banner.png';
+  import iconUrl from '../src-tauri/icons/icon.png';
   import {
     LayoutDashboard,
     Library,
@@ -141,7 +142,7 @@
   <aside class="rail" class:collapsed aria-label="Main navigation">
     <div class="rail-top">
       <div class="brand-block">
-        <img class="brand-banner" src={bannerUrl} alt="AniVault" />
+        <img class="brand-banner" src={collapsed ? iconUrl : bannerUrl} alt="AniVault" />
         <div class="brand-label">AniVault</div>
       </div>
       <button
