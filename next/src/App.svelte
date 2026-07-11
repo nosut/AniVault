@@ -385,6 +385,7 @@
       flex-direction: row;
       align-items: center;
       padding: 1rem;
+      width: auto;
     }
 
     .nav-list {
@@ -408,6 +409,7 @@
 
     .rail.collapsed .rail-top {
       flex-direction: row;
+      gap: 0.5rem;
     }
 
     .rail.collapsed .brand-banner {
