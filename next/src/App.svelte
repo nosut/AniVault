@@ -74,6 +74,13 @@
     persistCollapsed(collapsed);
   }
 
+  let isDesktopRail = true;
+  let railMediaQuery: MediaQueryList | null = null;
+
+  function updateIsDesktopRail() {
+    isDesktopRail = railMediaQuery ? railMediaQuery.matches : true;
+  }
+
   async function pollEvents() {
     try {
       const events = await drainEngineEvents();
@@ -131,10 +138,14 @@
 
   onMount(() => {
     eventIntervalId = setInterval(pollEvents, 3000);
+    railMediaQuery = window.matchMedia('(min-width: 769px)');
+    updateIsDesktopRail();
+    railMediaQuery.addEventListener('change', updateIsDesktopRail);
   });
 
   onDestroy(() => {
     if (eventIntervalId) clearInterval(eventIntervalId);
+    railMediaQuery?.removeEventListener('change', updateIsDesktopRail);
   });
 </script>
 
@@ -172,7 +183,7 @@
       {/each}
     </nav>
     <div class="now-playing-sidebar">
-      <NowPlaying events={latestEvents} {collapsed} />
+      <NowPlaying events={latestEvents} collapsed={collapsed && isDesktopRail} />
     </div>
   </aside>
 
