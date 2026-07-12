@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import { remapSonarr, searchLibrary, type LibraryEntry } from './api';
+  import { Pencil } from 'lucide-svelte';
 
   const dispatch = createEventDispatcher<{ changed: { animeId: number | null; title: string | null } }>();
 
@@ -48,7 +49,20 @@
     }
   }
 
+  let confirmingUnmap = false;
+  let confirmUnmapTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Armed state auto-expires so a stray click minutes later can't land on a
+  // still-armed unmap button.
+  function armUnmap() {
+    confirmingUnmap = true;
+    if (confirmUnmapTimer) clearTimeout(confirmUnmapTimer);
+    confirmUnmapTimer = setTimeout(() => { confirmingUnmap = false; }, 4000);
+  }
+
   async function unmap() {
+    confirmingUnmap = false;
+    if (confirmUnmapTimer) clearTimeout(confirmUnmapTimer);
     saving = true;
     try {
       await remapSonarr(sonarrId, null);
@@ -58,11 +72,15 @@
       saving = false;
     }
   }
+
+  onDestroy(() => {
+    if (confirmUnmapTimer) clearTimeout(confirmUnmapTimer);
+  });
 </script>
 
 <div class="remap-wrap">
   <button type="button" class="remap-toggle" on:click={toggle}>
-    {open ? 'Close' : '✎ remap'}
+    {#if open}Close{:else}<Pencil size={11} /> remap{/if}
   </button>
 
   {#if open}
@@ -110,14 +128,20 @@
           {saving ? 'Saving…' : 'Confirm'}
         </button>
         {#if currentAnimeId}
-          <button
-            type="button"
-            class="remap-unmap"
-            disabled={saving}
-            on:click={unmap}
-          >
-            Unmap
-          </button>
+          {#if confirmingUnmap}
+            <button type="button" class="remap-unmap" disabled={saving} on:click={unmap}>
+              {saving ? 'Saving…' : 'Confirm unmap?'}
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="remap-unmap"
+              disabled={saving}
+              on:click={armUnmap}
+            >
+              Unmap
+            </button>
+          {/if}
         {/if}
       </div>
     </div>
@@ -130,17 +154,20 @@
   }
 
   .remap-toggle {
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 6px;
     padding: 0.25rem 0.6rem;
-    background: rgba(143, 183, 255, 0.08);
+    background: rgba(var(--color-accent-rgb), 0.08);
     color: var(--color-muted);
     cursor: pointer;
     font-size: 0.72rem;
   }
 
   .remap-toggle:hover {
-    background: rgba(143, 183, 255, 0.16);
+    background: rgba(var(--color-accent-rgb), 0.16);
     color: #e9eefc;
   }
 
@@ -152,7 +179,7 @@
     width: 320px;
     max-height: 360px;
     overflow-y: auto;
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 12px;
     background: #171e2b;
     padding: 0.75rem;
@@ -163,7 +190,7 @@
   }
 
   .remap-search {
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 8px;
     padding: 0.5rem 0.7rem;
     background: rgba(255, 255, 255, 0.06);
@@ -174,7 +201,7 @@
   }
 
   .remap-search:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.4);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.4);
     outline-offset: 1px;
   }
 
@@ -205,12 +232,12 @@
   }
 
   .remap-option:hover {
-    background: rgba(143, 183, 255, 0.1);
+    background: rgba(var(--color-accent-rgb), 0.1);
   }
 
   .remap-option.selected {
-    background: rgba(143, 183, 255, 0.18);
-    border-color: rgba(143, 183, 255, 0.35);
+    background: rgba(var(--color-accent-rgb), 0.18);
+    border-color: rgba(var(--color-accent-rgb), 0.35);
   }
 
   .remap-title {
@@ -230,17 +257,17 @@
   }
 
   .remap-confirm {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 6px;
     padding: 0.35rem 0.8rem;
-    background: rgba(143, 183, 255, 0.15);
+    background: rgba(var(--color-accent-rgb), 0.15);
     color: #e9eefc;
     cursor: pointer;
     font-size: 0.78rem;
   }
 
   .remap-confirm:hover:not(:disabled) {
-    background: rgba(143, 183, 255, 0.25);
+    background: rgba(var(--color-accent-rgb), 0.25);
   }
 
   .remap-confirm:disabled {
@@ -249,16 +276,16 @@
   }
 
   .remap-unmap {
-    border: 1px solid rgba(255, 130, 130, 0.3);
+    border: 1px solid rgba(var(--color-danger-rgb), 0.3);
     border-radius: 6px;
     padding: 0.35rem 0.8rem;
     background: transparent;
-    color: #ffb0b0;
+    color: var(--color-danger-text);
     cursor: pointer;
     font-size: 0.78rem;
   }
 
   .remap-unmap:hover:not(:disabled) {
-    background: rgba(255, 130, 130, 0.12);
+    background: rgba(var(--color-danger-rgb), 0.12);
   }
 </style>

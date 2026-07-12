@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { getCalendar, getLibraryStats, type CalendarEntry, type LibraryStats } from './api';
+  import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
@@ -140,9 +141,9 @@
 <div class="calendar-view">
   <div class="cal-nav">
     {#if viewMode === 'month'}
-      <button on:click={prevMonth} aria-label="Previous month">◀</button>
+      <button on:click={prevMonth} aria-label="Previous month"><ChevronLeft size={16} /></button>
       <h2>{monthNames[month]} {year}</h2>
-      <button on:click={nextMonth} aria-label="Next month">▶</button>
+      <button on:click={nextMonth} aria-label="Next month"><ChevronRight size={16} /></button>
     {:else}
       <h2>Agenda</h2>
     {/if}
@@ -263,23 +264,25 @@
   .cal-nav { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
   .cal-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; flex-shrink: 0; }
   .cal-nav h2 { font-size: 1.3rem; font-weight: 700; min-width: 9rem; }
-  .cal-nav button { border: 1px solid rgba(143,183,255,0.2); border-radius: 999px; padding: 0.35rem 0.65rem; background: transparent; color: var(--color-muted); cursor: pointer; }
-  .cal-nav button:hover { background: rgba(143,183,255,0.1); color: var(--color-text); }
+  .cal-nav button { display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(var(--color-accent-rgb),0.2); border-radius: 999px; padding: 0.35rem 0.65rem; background: transparent; color: var(--color-muted); cursor: pointer; }
+  .cal-nav button:hover { background: rgba(var(--color-accent-rgb),0.1); color: var(--color-text); }
   .cal-subtitle { color: var(--color-muted); font-size: 0.85rem; }
 
-  .view-toggle { margin-left: auto; display: inline-flex; border: 1px solid rgba(143,183,255,0.2); border-radius: 999px; overflow: hidden; }
+  .view-toggle { margin-left: auto; display: inline-flex; border: 1px solid rgba(var(--color-accent-rgb),0.2); border-radius: 999px; overflow: hidden; }
   .view-toggle button { border: none; border-radius: 0; padding: 0.35rem 0.9rem; background: transparent; color: var(--color-muted); font-size: 0.8rem; }
   .view-toggle button.active { background: var(--color-accent); color: #06121f; font-weight: 600; }
 
-  .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: minmax(4.5rem, 1fr); gap: 1px; background: rgba(143,183,255,0.1); border-radius: 8px; overflow: hidden; flex: 1 1 auto; min-height: 0; }
-  .cal-day-header { padding: 0.4rem; text-align: center; font-size: 0.72rem; color: var(--color-muted); font-weight: 600; text-transform: uppercase; background: rgba(143,183,255,0.06); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: minmax(4.5rem, 1fr); gap: 1px; background: rgba(var(--color-accent-rgb),0.1); border-radius: 8px; overflow: hidden; flex: 1 1 auto; min-height: 0; }
+  .cal-day-header { padding: 0.4rem; text-align: center; font-size: 0.72rem; color: var(--color-muted); font-weight: 600; text-transform: uppercase; background: rgba(var(--color-accent-rgb),0.06); }
   .cal-day-cell { min-width: 0; overflow-y: auto; min-height: 0; padding: 0.25rem 0.3rem; background: rgba(10,13,20,0.9); font-size: 0.72rem; }
   .cal-day-cell.empty { background: rgba(10,13,20,0.5); }
-  .cal-day-cell.today { background: rgba(143,183,255,0.08); }
+  .cal-day-cell.has-entries { background: rgba(var(--color-accent-rgb),0.05); }
+  .cal-day-cell.has-entries .cal-day-num { color: var(--color-text); }
+  .cal-day-cell.today { background: rgba(var(--color-accent-rgb),0.08); }
   .cal-day-cell.today .cal-day-num { color: var(--color-accent); font-weight: 700; }
   .cal-day-num { display: block; margin-bottom: 0.15rem; color: var(--color-muted); }
   .cal-day-entry { display: flex; justify-content: space-between; font-size: 0.65rem; padding: 0.1rem 0; overflow: hidden; cursor: pointer; }
-  .cal-day-entry:hover { background: rgba(143,183,255,0.1); border-radius: 2px; }
+  .cal-day-entry:hover { background: rgba(var(--color-accent-rgb),0.1); border-radius: 2px; }
   .cal-entry-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
   .cal-entry-ep { color: var(--color-accent); flex-shrink: 0; margin-left: 0.2rem; }
 
@@ -288,19 +291,19 @@
   .agenda-empty { color: var(--color-muted); padding: 1.5rem 0.5rem; text-align: center; }
   .agenda-group { display: flex; flex-direction: column; gap: 0.35rem; }
   .agenda-date { position: sticky; top: 0; z-index: 1; font-size: 0.8rem; font-weight: 700; color: var(--color-text); padding: 0.3rem 0.1rem; background: var(--color-bg, #0a0d14); text-transform: uppercase; letter-spacing: 0.03em; }
-  .agenda-row { display: flex; align-items: center; gap: 0.7rem; width: 100%; text-align: left; padding: 0.4rem 0.5rem; border: 1px solid rgba(143,183,255,0.1); border-radius: 10px; background: rgba(143,183,255,0.03); color: var(--color-text); cursor: pointer; }
-  .agenda-row:hover { background: rgba(143,183,255,0.1); }
+  .agenda-row { display: flex; align-items: center; gap: 0.7rem; width: 100%; text-align: left; padding: 0.4rem 0.5rem; border: 1px solid rgba(var(--color-accent-rgb),0.1); border-radius: 10px; background: rgba(var(--color-accent-rgb),0.03); color: var(--color-text); cursor: pointer; }
+  .agenda-row:hover { background: rgba(var(--color-accent-rgb),0.1); }
   .agenda-poster { width: 34px; height: 48px; object-fit: cover; border-radius: 5px; flex-shrink: 0; background: rgba(255,255,255,0.05); }
   .agenda-poster.placeholder { display: block; }
   .agenda-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
   .agenda-title { font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .agenda-sub { font-size: 0.78rem; color: var(--color-muted); }
-  .agenda-countdown { flex-shrink: 0; font-size: 0.78rem; font-variant-numeric: tabular-nums; color: var(--color-muted); padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid rgba(143,183,255,0.15); }
+  .agenda-countdown { flex-shrink: 0; font-size: 0.78rem; font-variant-numeric: tabular-nums; color: var(--color-muted); padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid rgba(var(--color-accent-rgb),0.15); }
   .agenda-countdown.soon { color: #06121f; background: var(--color-accent); border-color: transparent; font-weight: 700; }
   .agenda-countdown.aired { opacity: 0.55; }
 
   /* Hover tooltip */
-  .cal-tooltip { position: fixed; z-index: 50; display: flex; gap: 0.6rem; max-width: 320px; padding: 0.6rem; border-radius: 10px; background: rgba(14,18,28,0.98); border: 1px solid rgba(143,183,255,0.25); box-shadow: 0 8px 24px rgba(0,0,0,0.5); pointer-events: none; }
+  .cal-tooltip { position: fixed; z-index: 50; display: flex; gap: 0.6rem; max-width: 320px; padding: 0.6rem; border-radius: 10px; background: rgba(14,18,28,0.98); border: 1px solid rgba(var(--color-accent-rgb),0.25); box-shadow: 0 8px 24px rgba(0,0,0,0.5); pointer-events: none; }
   .tip-poster { width: 56px; height: 80px; object-fit: cover; border-radius: 6px; flex-shrink: 0; }
   .tip-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
   .tip-title { font-size: 0.9rem; font-weight: 700; color: var(--color-text); }
@@ -311,8 +314,8 @@
   .cal-skeleton { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
   .skeleton-card { height: 3rem; border-radius: 8px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.7} }
-  .message.error { color: #ff9d9d; padding: 1rem; border: 1px solid rgba(255,157,157,0.2); border-radius: 10px; background: rgba(255,157,157,0.06); }
-  .action-btn { border: 1px solid rgba(143,183,255,0.3); border-radius: 999px; padding: 0.35rem 0.75rem; background: rgba(143,183,255,0.1); color: var(--color-text); cursor: pointer; margin-top: 0.5rem; }
+  .message.error { color: var(--color-error); padding: 1rem; border: 1px solid rgba(var(--color-error-rgb),0.2); border-radius: 10px; background: rgba(var(--color-error-rgb),0.06); }
+  .action-btn { border: 1px solid rgba(var(--color-accent-rgb),0.3); border-radius: 999px; padding: 0.35rem 0.75rem; background: rgba(var(--color-accent-rgb),0.1); color: var(--color-text); cursor: pointer; margin-top: 0.5rem; }
 
   @media (max-width: 900px) {
     .cal-grid { font-size: 0.65rem; }

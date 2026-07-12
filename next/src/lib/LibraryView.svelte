@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent } from './api';
+  import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2 } from 'lucide-svelte';
 
   export let events: EngineEvent[] = [];
 
@@ -384,11 +385,25 @@
   }
 
   let confirmingDelete = false;
+  let confirmDeleteTimer: ReturnType<typeof setTimeout> | null = null;
 
-  async function batchDelete() {
-    if (batchUpdating) return;
-    if (!confirmingDelete) { confirmingDelete = true; return; }
+  // Armed state auto-expires so a stray click minutes later can't land on a
+  // still-armed delete button.
+  function armBatchDelete() {
+    confirmingDelete = true;
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
+    confirmDeleteTimer = setTimeout(() => { confirmingDelete = false; }, 4000);
+  }
+
+  function cancelBatchDelete() {
     confirmingDelete = false;
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
+  }
+
+  async function confirmBatchDelete() {
+    if (batchUpdating) return;
+    confirmingDelete = false;
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
     batchUpdating = true;
     const ids = [...selectedIds];
     for (const id of ids) {
@@ -537,6 +552,10 @@
     void load();
     void loadStats();
   });
+
+  onDestroy(() => {
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
+  });
 </script>
 
 <div class="library-view">
@@ -551,7 +570,11 @@
       aria-label="Search library"
     />
     <button class="view-toggle" on:click={() => viewMode = viewMode === 'table' ? 'grid' : 'table'} aria-label="Toggle view">
-      {viewMode === 'table' ? '▦ Grid' : '☰ Table'}
+      {#if viewMode === 'table'}
+        <LayoutGrid size={14} /> Grid
+      {:else}
+        <List size={14} /> Table
+      {/if}
     </button>
     {#if viewMode === 'table'}
       <button class="view-toggle" on:click={() => compact = !compact} aria-pressed={compact} title="Toggle compact list density">
@@ -662,7 +685,9 @@
               >
                 Title
                 {#if sortKey === 'title'}
-                  <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                  <span aria-hidden="true" class="sort-arrow">
+                    {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                  </span>
                 {/if}
               </button>
             </th>
@@ -680,7 +705,9 @@
               >
                 Status
                 {#if sortKey === 'status'}
-                  <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                  <span aria-hidden="true" class="sort-arrow">
+                    {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                  </span>
                 {/if}
               </button>
             </th>
@@ -694,7 +721,11 @@
                   on:click={() => setSort('season')}
                 >
                   Season
-                  {#if sortKey === 'season'}<span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>{/if}
+                  {#if sortKey === 'season'}
+                    <span aria-hidden="true" class="sort-arrow">
+                      {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                    </span>
+                  {/if}
                 </button>
               </th>
             {/if}
@@ -712,7 +743,9 @@
               >
                 Progress
                 {#if sortKey === 'progress'}
-                  <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
+                  <span aria-hidden="true" class="sort-arrow">
+                    {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                  </span>
                 {/if}
               </button>
             </th>
@@ -830,9 +863,12 @@
         <button class="action-btn" on:click={batchSetStatus('dropped')}>Dropped</button>
         <button class="action-btn" on:click={batchSetStatus('plan_to_watch')}>Plan to Watch</button>
         <button class="action-btn" on:click={batchIncrementProgress}>+1 Ep</button>
-        <button class="action-btn danger" on:click={batchDelete} on:blur={() => confirmingDelete = false}>
-          {confirmingDelete ? `Delete ${selectedIds.size}? Click again` : 'Delete'}
-        </button>
+        {#if confirmingDelete}
+          <button class="action-btn danger" on:click={confirmBatchDelete}>Confirm delete {selectedIds.size}</button>
+          <button class="action-btn" on:click={cancelBatchDelete}>Cancel</button>
+        {:else}
+          <button class="action-btn danger" on:click={armBatchDelete}>Delete</button>
+        {/if}
       </div>
     {/if}
   {/if}
@@ -841,14 +877,14 @@
     <div class="ctx-backdrop" on:click={closeContextMenu} on:contextmenu|preventDefault={closeContextMenu} role="presentation"></div>
     <div class="ctx-menu" style="left: {ctxMenu.x}px; top: {ctxMenu.y}px;" role="menu">
       <button class="ctx-item" role="menuitem" disabled={ctxNextEp() === null} on:click={() => playCtxEp(ctxNextEp())}>
-        ▶ Play next{#if ctxNextEp() !== null} <span class="ctx-dim">Ep {ctxNextEp()}</span>{/if}
+        <Play size={13} /> Play next{#if ctxNextEp() !== null} <span class="ctx-dim">Ep {ctxNextEp()}</span>{/if}
       </button>
       <button class="ctx-item" role="menuitem" disabled={ctxPrevEp() === null} on:click={() => playCtxEp(ctxPrevEp())}>
-        ◀ Play previous{#if ctxPrevEp() !== null} <span class="ctx-dim">Ep {ctxPrevEp()}</span>{/if}
+        <ChevronLeft size={13} /> Play previous{#if ctxPrevEp() !== null} <span class="ctx-dim">Ep {ctxPrevEp()}</span>{/if}
       </button>
 
       <div class="ctx-sub">
-        <button class="ctx-item has-sub" role="menuitem" disabled={ctxFiles().length === 0}>Play episode <span class="ctx-arrow">▸</span></button>
+        <button class="ctx-item has-sub" role="menuitem" disabled={ctxFiles().length === 0}>Play episode <ChevronRight size={13} class="ctx-arrow" /></button>
         {#if ctxFiles().length > 0}
           <div class="ctx-submenu">
             {#each ctxFiles() as f (f.path)}
@@ -859,9 +895,9 @@
       </div>
 
       <div class="ctx-sep"></div>
-      <button class="ctx-item" role="menuitem" disabled={ctxFiles().length === 0} on:click={ctxOpenFolder}>📂 Open folder</button>
-      <button class="ctx-item" role="menuitem" on:click={ctxRescan}>↻ Rescan episodes</button>
-      <button class="ctx-item danger" role="menuitem" on:click={ctxDelete}>🗑 Delete from library</button>
+      <button class="ctx-item" role="menuitem" disabled={ctxFiles().length === 0} on:click={ctxOpenFolder}><FolderOpen size={13} /> Open folder</button>
+      <button class="ctx-item" role="menuitem" on:click={ctxRescan}><RotateCw size={13} /> Rescan episodes</button>
+      <button class="ctx-item danger" role="menuitem" on:click={ctxDelete}><Trash2 size={13} /> Delete from library</button>
     </div>
   {/if}
 </div>
@@ -900,14 +936,14 @@
     font-size: 0.9rem;
     outline: none;
     background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     min-width: 16rem;
     flex: 1 1 16rem;
   }
 
   .search:focus {
     border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px rgba(143, 183, 255, 0.25);
+    box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.25);
   }
 
   .status-tabs {
@@ -918,7 +954,7 @@
   }
 
   .status-tab {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: 999px;
     padding: 0.35rem 0.8rem;
     background: transparent;
@@ -931,18 +967,18 @@
   }
 
   .status-tab:hover {
-    background: rgba(143, 183, 255, 0.08);
+    background: rgba(var(--color-accent-rgb), 0.08);
     color: var(--color-text);
   }
 
   .status-tab.active {
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: var(--color-accent);
-    border-color: rgba(143, 183, 255, 0.35);
+    border-color: rgba(var(--color-accent-rgb), 0.35);
   }
 
   .status-tab.dragover {
-    background: rgba(143, 183, 255, 0.25);
+    background: rgba(var(--color-accent-rgb), 0.25);
     border-color: var(--color-accent);
   }
 
@@ -964,13 +1000,13 @@
     left: 0;
     top: 0;
     height: 100%;
-    background: rgba(143, 183, 255, 0.25);
+    background: rgba(var(--color-accent-rgb), 0.25);
     border-radius: 4px;
     transition: width 0.3s ease;
   }
 
   .progress-cell.completed .progress-bar {
-    background: rgba(126, 232, 126, 0.25);
+    background: rgba(var(--color-success-rgb), 0.25);
   }
 
   .progress-inner {
@@ -992,9 +1028,9 @@
   }
 
   .progress-btn {
-    border: 1px solid rgba(143, 183, 255, 0.2);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.2);
     border-radius: 4px;
-    background: rgba(143, 183, 255, 0.06);
+    background: rgba(var(--color-accent-rgb), 0.06);
     color: var(--color-muted);
     width: 1.4rem;
     height: 1.4rem;
@@ -1009,12 +1045,12 @@
   }
 
   .progress-btn:hover {
-    background: rgba(143, 183, 255, 0.2);
+    background: rgba(var(--color-accent-rgb), 0.2);
     color: var(--color-text);
   }
 
   .table-wrap {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     background: rgba(255, 255, 255, 0.04);
     overflow-x: auto;
@@ -1035,7 +1071,7 @@
     font-size: 0.78rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    border-bottom: 1px solid rgba(143, 183, 255, 0.18);
+    border-bottom: 1px solid rgba(var(--color-accent-rgb), 0.18);
     white-space: nowrap;
   }
 
@@ -1057,6 +1093,11 @@
   .sort-btn:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+  }
+
+  .sort-arrow {
+    display: inline-flex;
+    align-items: center;
   }
 
   tbody td {
@@ -1086,7 +1127,7 @@
 
   .data-row:hover,
   .data-row:focus {
-    background: rgba(143, 183, 255, 0.08);
+    background: rgba(var(--color-accent-rgb), 0.08);
   }
 
   .data-row:focus-visible {
@@ -1118,7 +1159,7 @@
 
   .badge {
     display: inline-block;
-    background: rgba(143, 183, 255, 0.12);
+    background: rgba(var(--color-accent-rgb), 0.12);
     color: var(--color-accent);
     border-radius: 999px;
     padding: 0.15rem 0.55rem;
@@ -1147,9 +1188,9 @@
   }
 
   .message {
-    border: 1px solid rgba(255, 157, 157, 0.35);
+    border: 1px solid rgba(var(--color-error-rgb), 0.35);
     border-radius: var(--radius-card);
-    background: rgba(255, 157, 157, 0.08);
+    background: rgba(var(--color-error-rgb), 0.08);
     padding: 1rem 1.25rem;
     display: flex;
     align-items: center;
@@ -1164,9 +1205,9 @@
   }
 
   .retry {
-    border: 1px solid rgba(255, 157, 157, 0.45);
+    border: 1px solid rgba(var(--color-error-rgb), 0.45);
     border-radius: 999px;
-    background: rgba(255, 157, 157, 0.14);
+    background: rgba(var(--color-error-rgb), 0.14);
     color: var(--color-error);
     padding: 0.5rem 1rem;
     cursor: pointer;
@@ -1176,7 +1217,7 @@
   }
 
   .retry:hover {
-    background: rgba(255, 157, 157, 0.22);
+    background: rgba(var(--color-error-rgb), 0.22);
   }
 
   .skeleton-row td {
@@ -1212,10 +1253,13 @@
   }
 
   .view-toggle {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: 999px;
     padding: 0.45rem 0.8rem;
-    background: rgba(143, 183, 255, 0.06);
+    background: rgba(var(--color-accent-rgb), 0.06);
     color: var(--color-muted);
     cursor: pointer;
     font-size: 0.82rem;
@@ -1223,7 +1267,7 @@
   }
 
   .view-toggle:hover {
-    background: rgba(143, 183, 255, 0.15);
+    background: rgba(var(--color-accent-rgb), 0.15);
     color: var(--color-text);
   }
 
@@ -1235,7 +1279,7 @@
 
   .poster-card {
     position: relative;
-    border: 1px solid rgba(143, 183, 255, 0.1);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.1);
     border-radius: 10px;
     overflow: hidden;
     background: rgba(255, 255, 255, 0.03);
@@ -1244,7 +1288,7 @@
   }
 
   .poster-card:hover {
-    border-color: rgba(143, 183, 255, 0.3);
+    border-color: rgba(var(--color-accent-rgb), 0.3);
     transform: translateY(-2px);
   }
 
@@ -1256,7 +1300,7 @@
   }
 
   .poster-thumb.placeholder {
-    background: rgba(143, 183, 255, 0.08);
+    background: rgba(var(--color-accent-rgb), 0.08);
   }
 
   .poster-info {
@@ -1308,7 +1352,7 @@
     min-width: 11rem;
     max-width: 16rem;
     background: rgba(16, 21, 32, 0.98);
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 10px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     padding: 0.35rem;
@@ -1317,7 +1361,9 @@
   }
 
   .ctx-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     width: 100%;
     text-align: left;
     border: none;
@@ -1332,7 +1378,7 @@
   }
 
   .ctx-item:hover:not(:disabled) {
-    background: rgba(143, 183, 255, 0.15);
+    background: rgba(var(--color-accent-rgb), 0.15);
   }
 
   .ctx-item:disabled {
@@ -1340,15 +1386,15 @@
     cursor: default;
   }
 
-  .ctx-item.danger { color: #ffb0b0; }
-  .ctx-item.danger:hover:not(:disabled) { background: rgba(255, 130, 130, 0.15); }
+  .ctx-item.danger { color: var(--color-danger-text); }
+  .ctx-item.danger:hover:not(:disabled) { background: rgba(var(--color-danger-rgb), 0.15); }
 
   .ctx-dim { color: var(--color-muted); font-size: 0.75rem; }
-  .ctx-arrow { float: right; color: var(--color-muted); }
+  .ctx-arrow { margin-left: auto; color: var(--color-muted); flex-shrink: 0; }
 
   .ctx-sep {
     height: 1px;
-    background: rgba(143, 183, 255, 0.15);
+    background: rgba(var(--color-accent-rgb), 0.15);
     margin: 0.25rem 0.3rem;
   }
 
@@ -1364,7 +1410,7 @@
     max-height: 18rem;
     overflow-y: auto;
     background: rgba(16, 21, 32, 0.99);
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 10px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     padding: 0.35rem;
@@ -1415,7 +1461,7 @@
     gap: 0.5rem;
     padding: 0.6rem 1rem;
     background: rgba(10,13,20,0.95);
-    border: 1px solid rgba(143,183,255,0.2);
+    border: 1px solid rgba(var(--color-accent-rgb),0.2);
     border-radius: 10px;
     margin-top: 0.5rem;
     backdrop-filter: blur(8px);
@@ -1429,10 +1475,10 @@
   }
 
   .action-btn {
-    border: 1px solid rgba(143, 183, 255, 0.2);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.2);
     border-radius: 999px;
     padding: 0.35rem 0.7rem;
-    background: rgba(143, 183, 255, 0.08);
+    background: rgba(var(--color-accent-rgb), 0.08);
     color: var(--color-text);
     font-family: var(--font-ui);
     font-size: 0.78rem;
@@ -1442,17 +1488,17 @@
   }
 
   .action-btn:hover {
-    background: rgba(143, 183, 255, 0.2);
+    background: rgba(var(--color-accent-rgb), 0.2);
   }
 
   .action-btn.danger {
-    border-color: rgba(255, 130, 130, 0.4);
-    background: rgba(255, 130, 130, 0.12);
-    color: #ffb0b0;
+    border-color: rgba(var(--color-danger-rgb), 0.4);
+    background: rgba(var(--color-danger-rgb), 0.12);
+    color: var(--color-danger-text);
   }
 
   .action-btn.danger:hover {
-    background: rgba(255, 130, 130, 0.24);
+    background: rgba(var(--color-danger-rgb), 0.24);
   }
 
   .col-files {
@@ -1462,7 +1508,7 @@
 
   .play-inline-btn {
     border: none;
-    background: rgba(143,183,255,0.15);
+    background: rgba(var(--color-accent-rgb),0.15);
     color: var(--color-accent);
     cursor: pointer;
     border-radius: 4px;
@@ -1472,7 +1518,7 @@
   }
 
   .play-inline-btn:hover {
-    background: rgba(143,183,255,0.3);
+    background: rgba(var(--color-accent-rgb),0.3);
   }
 
   .poster-check {
@@ -1504,15 +1550,15 @@
   }
 
   .ep-segment.downloaded {
-    background: rgba(126, 232, 126, 0.4);
+    background: rgba(var(--color-success-rgb), 0.4);
   }
 
   .ep-segment.watched.downloaded {
-    background: rgba(143, 183, 255, 0.5);
+    background: rgba(var(--color-accent-rgb), 0.5);
   }
 
   .ep-segment.watched:not(.downloaded) {
-    background: rgba(143, 183, 255, 0.25);
+    background: rgba(var(--color-accent-rgb), 0.25);
   }
 
   .ep-segment:hover {
@@ -1527,11 +1573,22 @@
   }
 
   .title-cell.has-new {
-    color: var(--color-accent, #8fb7ff);
+    color: var(--color-accent);
     font-weight: 600;
   }
 
   .poster-title.has-new {
     color: var(--color-accent);
+  }
+
+  /* .lib-header's sticky offset cancels out .content's padding (App.svelte) so the
+     header sits flush with the viewport edge instead of leaving a gap above it.
+     .content's padding shrinks at this breakpoint, so the offset must match. */
+  @media (max-width: 768px) {
+    .lib-header {
+      top: -1rem;
+      padding: 1rem 0 0.5rem;
+      margin: -1rem 0 -0.25rem;
+    }
   }
 </style>

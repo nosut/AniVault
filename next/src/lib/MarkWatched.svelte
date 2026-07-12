@@ -73,7 +73,7 @@
 
 <style>
   .mark-watched-card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     padding: 1.25rem;
     background: rgba(255, 255, 255, 0.04);
@@ -104,7 +104,7 @@
 
   .mw-form input {
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 8px;
     padding: 0.5rem 0.65rem;
     color: var(--color-text);
@@ -112,26 +112,26 @@
   }
 
   .mw-form input:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
   .mw-btn {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.5rem 0.85rem;
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
     cursor: pointer;
     font-size: 0.82rem;
   }
 
   .mw-btn:hover {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .mw-btn:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -141,7 +141,7 @@
   }
 
   .error {
-    color: var(--color-error, #ff9d9d);
+    color: var(--color-error);
     font-size: 0.82rem;
   }
 

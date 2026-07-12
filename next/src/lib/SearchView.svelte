@@ -42,9 +42,9 @@
 
   function scoreColor(score: number | null): string {
     if (!score) return 'var(--color-muted)';
-    if (score >= 80) return '#7ee87e';
-    if (score >= 60) return '#f0c040';
-    return '#ff9d9d';
+    if (score >= 80) return 'var(--color-success)';
+    if (score >= 60) return 'var(--color-warning)';
+    return 'var(--color-error)';
   }
 
   onMount(loadLibraryIds);
@@ -102,17 +102,17 @@
   .search-view { display: flex; flex-direction: column; gap: 1.25rem; }
   h2 { font-size: 1.3rem; font-weight: 700; }
   .controls { display: flex; gap: 0.5rem; }
-  .search-input { flex: 1; border: 1px solid rgba(143,183,255,0.18); border-radius: 999px; padding: 0.5rem 1rem; background: rgba(255,255,255,0.04); color: var(--color-text); font-size: 0.9rem; outline: none; }
+  .search-input { flex: 1; border: 1px solid rgba(var(--color-accent-rgb),0.18); border-radius: 999px; padding: 0.5rem 1rem; background: rgba(255,255,255,0.04); color: var(--color-text); font-size: 0.9rem; outline: none; }
   .search-input:focus { border-color: var(--color-accent); }
-  .action-btn { border: 1px solid rgba(143,183,255,0.35); border-radius: 999px; padding: 0.45rem 0.9rem; background: rgba(143,183,255,0.12); color: #e9eefc; cursor: pointer; font-size: 0.85rem; white-space: nowrap; }
+  .action-btn { border: 1px solid rgba(var(--color-accent-rgb),0.35); border-radius: 999px; padding: 0.45rem 0.9rem; background: rgba(var(--color-accent-rgb),0.12); color: #e9eefc; cursor: pointer; font-size: 0.85rem; white-space: nowrap; }
   .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem; }
-  .poster-card { position: relative; border: 1px solid rgba(143,183,255,0.1); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
-  .poster-card:hover { border-color: rgba(143,183,255,0.3); transform: translateY(-2px); }
-  .in-library-badge { position: absolute; top: 0.3rem; left: 0.3rem; font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(126,232,126,0.25); color: #7ee87e; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; z-index: 1; }
-  .add-btn { position: absolute; top: 0.3rem; right: 0.3rem; border: 1px solid rgba(143,183,255,0.3); border-radius: 4px; padding: 0.1rem 0.4rem; background: rgba(143,183,255,0.15); color: var(--color-accent); cursor: pointer; font-size: 0.85rem; line-height: 1.2; z-index: 1; }
-  .add-btn:hover { background: rgba(143,183,255,0.3); }
+  .poster-card { position: relative; border: 1px solid rgba(var(--color-accent-rgb),0.1); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
+  .poster-card:hover { border-color: rgba(var(--color-accent-rgb),0.3); transform: translateY(-2px); }
+  .in-library-badge { position: absolute; top: 0.3rem; left: 0.3rem; font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(var(--color-success-rgb),0.25); color: var(--color-success); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; z-index: 1; }
+  .add-btn { position: absolute; top: 0.3rem; right: 0.3rem; border: 1px solid rgba(var(--color-accent-rgb),0.3); border-radius: 4px; padding: 0.1rem 0.4rem; background: rgba(var(--color-accent-rgb),0.15); color: var(--color-accent); cursor: pointer; font-size: 0.85rem; line-height: 1.2; z-index: 1; }
+  .add-btn:hover { background: rgba(var(--color-accent-rgb),0.3); }
   .poster-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
-  .poster-img.placeholder { background: rgba(143,183,255,0.08); }
+  .poster-img.placeholder { background: rgba(var(--color-accent-rgb),0.08); }
   .poster-info { padding: 0.5rem 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }
   .poster-title { font-size: 0.82rem; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .poster-meta { display: flex; gap: 0.5rem; font-size: 0.75rem; align-items: center; }
@@ -121,5 +121,5 @@
   .skeleton-poster { aspect-ratio: 3/4; border-radius: 10px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.7} }
   .empty { color: var(--color-muted); text-align: center; padding: 2rem; }
-  .message.error { color: #ff9d9d; padding: 1rem; border: 1px solid rgba(255,157,157,0.2); border-radius: 10px; background: rgba(255,157,157,0.06); }
+  .message.error { color: var(--color-error); padding: 1rem; border: 1px solid rgba(var(--color-error-rgb),0.2); border-radius: 10px; background: rgba(var(--color-error-rgb),0.06); }
 </style>

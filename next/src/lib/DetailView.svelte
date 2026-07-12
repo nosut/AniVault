@@ -4,6 +4,7 @@
   import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { onDestroy } from 'svelte';
   import SonarrRemap from './SonarrRemap.svelte';
+  import { ArrowLeft, ExternalLink, FolderOpen, FolderInput, RotateCw, Play, Trash2 } from 'lucide-svelte';
 
   export let animeId: number;
   export let events: EngineEvent[] = [];
@@ -64,11 +65,15 @@
 
   let confirmingDelete = false;
   let deleting = false;
+  let confirmDeleteTimer: ReturnType<typeof setTimeout> | null = null;
 
   let nextAiring: NextAiring | null = null;
   let nowTs = Math.floor(Date.now() / 1000);
   const airTicker = setInterval(() => { nowTs = Math.floor(Date.now() / 1000); }, 1000);
-  onDestroy(() => clearInterval(airTicker));
+  onDestroy(() => {
+    clearInterval(airTicker);
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
+  });
 
   async function loadAiring() {
     nextAiring = null;
@@ -90,18 +95,28 @@
     ? `Ep ${nextAiring.episode} airs ${new Date(nextAiring.airing_at * 1000).toLocaleString()} · in ${formatCountdown(nextAiring.airing_at - nowTs)}`
     : '';
 
+  // Armed state auto-expires so a stray click minutes later can't land on a
+  // still-armed delete button.
+  function armDelete() {
+    confirmingDelete = true;
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
+    confirmDeleteTimer = setTimeout(() => { confirmingDelete = false; }, 4000);
+  }
+
+  function cancelDelete() {
+    confirmingDelete = false;
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
+  }
+
   async function handleDelete() {
-    if (!confirmingDelete) {
-      confirmingDelete = true;
-      return;
-    }
+    confirmingDelete = false;
+    if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
     deleting = true;
     try {
       await deleteAnime(animeId);
       dispatch('back');
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
-      confirmingDelete = false;
     } finally {
       deleting = false;
     }
@@ -394,18 +409,25 @@
       on:click={() => dispatch('back')}
       aria-label="Back"
     >
-      ← Back
+      <ArrowLeft size={15} /> Back
     </button>
-    <button
-      class="delete-btn"
-      type="button"
-      on:click={handleDelete}
-      on:blur={() => (confirmingDelete = false)}
-      disabled={deleting}
-      aria-label="Delete from library"
-    >
-      {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete?' : '🗑 Delete from library'}
-    </button>
+    {#if confirmingDelete}
+      <div class="delete-confirm-group">
+        <button class="delete-btn" type="button" on:click={handleDelete} disabled={deleting} aria-label="Confirm delete from library">
+          {deleting ? 'Deleting…' : 'Confirm delete?'}
+        </button>
+        <button class="cancel-btn" type="button" on:click={cancelDelete} disabled={deleting}>Cancel</button>
+      </div>
+    {:else}
+      <button
+        class="delete-btn"
+        type="button"
+        on:click={armDelete}
+        aria-label="Delete from library"
+      >
+        <Trash2 size={14} /> Delete from library
+      </button>
+    {/if}
   </div>
 
   {#if loading && !detail}
@@ -472,7 +494,7 @@
         <div class="detail-header">
           <h1 class="title">
             {pickTitle(detail)}
-            <button class="anilist-link" on:click={() => openEpisodeFile(`https://anilist.co/anime/${detail.anime_id}`)} title="View on AniList">↗</button>
+            <button class="anilist-link" on:click={() => openEpisodeFile(`https://anilist.co/anime/${detail.anime_id}`)} title="View on AniList" aria-label="View on AniList"><ExternalLink size={14} /></button>
           </h1>
           {#if titles.english && titles.english !== (titles.romaji ?? '')}
             <p class="alt-title">English: {titles.english}</p>
@@ -660,20 +682,20 @@
               <div class="section-actions">
                 <span class="file-count">{episodeFiles.length} files</span>
                 {#if episodeFiles.length > 0}
-                  <button class="action-btn small" on:click={openFolder}>📂 Open folder</button>
+                  <button class="action-btn small" on:click={openFolder}><FolderOpen size={13} /> Open folder</button>
                   <button class="action-btn small danger" on:click={handleUnmapAll} disabled={unmappingAll}>
                     {unmappingAll ? 'Unmapping…' : 'Unmap all'}
                   </button>
                 {/if}
                 <button class="action-btn small" on:click={handleRescanFiles} disabled={rescanning}>
-                  {rescanning ? 'Scanning…' : '↻ Rescan'}
+                  {#if rescanning}Scanning…{:else}<RotateCw size={13} /> Rescan{/if}
                 </button>
               </div>
             </div>
 
             <div class="manual-map">
               <button class="action-btn small" on:click={handleMapFolder} disabled={mappingFolder}>
-                {mappingFolder ? 'Mapping…' : '📁 Map folder…'}
+                {#if mappingFolder}Mapping…{:else}<FolderInput size={13} /> Map folder…{/if}
               </button>
               <span class="map-folder-hint">Pick this show's series or season folder to map its files here.</span>
             </div>
@@ -693,7 +715,7 @@
                     <div class="episode-file-row">
                       <span class="ep-num">Ep {file.episode ?? '?'}</span>
                       <span class="ep-path">{file.file_path}</span>
-                      <button class="action-btn small" on:click={() => handlePlayFile(file.file_path)}>▶ Play</button>
+                      <button class="action-btn small" on:click={() => handlePlayFile(file.file_path)}><Play size={13} /> Play</button>
                       <button class="action-btn small danger" on:click={() => handleUnmapFile(file.file_path)} title="Remove this file from this anime">Unmap</button>
                     </div>
                   {/each}
@@ -756,32 +778,44 @@
   }
 
   .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     justify-self: start;
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.45rem 0.9rem;
-    background: rgba(143, 183, 255, 0.12);
+    background: rgba(var(--color-accent-rgb), 0.12);
     color: #e9eefc;
     cursor: pointer;
     font-size: 0.85rem;
   }
 
   .back-btn:hover {
-    background: rgba(143, 183, 255, 0.22);
+    background: rgba(var(--color-accent-rgb), 0.22);
+  }
+
+  .delete-confirm-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .delete-btn {
-    border: 1px solid rgba(255, 130, 130, 0.4);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid rgba(var(--color-danger-rgb), 0.4);
     border-radius: 999px;
     padding: 0.45rem 0.9rem;
-    background: rgba(255, 130, 130, 0.12);
-    color: #ffb0b0;
+    background: rgba(var(--color-danger-rgb), 0.12);
+    color: var(--color-danger-text);
     cursor: pointer;
     font-size: 0.85rem;
   }
 
   .delete-btn:hover:not(:disabled) {
-    background: rgba(255, 130, 130, 0.24);
+    background: rgba(var(--color-danger-rgb), 0.24);
   }
 
   .delete-btn:disabled {
@@ -789,8 +823,23 @@
     cursor: default;
   }
 
+  .cancel-btn {
+    border: 1px solid rgba(var(--color-accent-rgb), 0.3);
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    background: transparent;
+    color: var(--color-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .cancel-btn:hover:not(:disabled) {
+    background: rgba(var(--color-accent-rgb), 0.1);
+    color: var(--color-text);
+  }
+
   .back-btn:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -825,7 +874,7 @@
     aspect-ratio: 2 / 3;
     object-fit: cover;
     border-radius: 16px;
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     background: rgba(255, 255, 255, 0.04);
   }
 
@@ -833,7 +882,7 @@
     width: 100%;
     aspect-ratio: 2 / 3;
     border-radius: 16px;
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     background: rgba(255, 255, 255, 0.04);
     display: grid;
     place-items: center;
@@ -845,7 +894,7 @@
     display: grid;
     gap: 0.4rem;
     padding: 0.75rem;
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.03);
   }
@@ -914,7 +963,7 @@
 
   .empty-prompt {
     padding: 0.75rem 1rem;
-    border: 1px dashed rgba(143, 183, 255, 0.35);
+    border: 1px dashed rgba(var(--color-accent-rgb), 0.35);
     border-radius: 12px;
     color: var(--color-accent);
     font-size: 0.9rem;
@@ -936,16 +985,16 @@
     display: grid;
     gap: 0.75rem;
     padding: 1rem;
-    border: 1px solid rgba(255, 157, 157, 0.35);
+    border: 1px solid rgba(var(--color-error-rgb), 0.35);
     border-radius: 14px;
-    background: rgba(255, 157, 157, 0.08);
+    background: rgba(var(--color-error-rgb), 0.08);
   }
 
   .editors {
     display: grid;
     gap: 0.9rem;
     padding: 1rem;
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: 16px;
     background: rgba(255, 255, 255, 0.03);
   }
@@ -970,7 +1019,7 @@
   .num-input {
     width: 5rem;
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 8px;
     padding: 0.5rem 0.65rem;
     color: var(--color-text);
@@ -978,14 +1027,14 @@
   }
 
   .num-input:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
   .select-input {
     min-width: 10rem;
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 8px;
     padding: 0.5rem 0.65rem;
     color: var(--color-text);
@@ -998,16 +1047,16 @@
   }
 
   .select-input:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
   .step-btn {
     width: 2.2rem;
     height: 2.2rem;
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 8px;
-    background: rgba(143, 183, 255, 0.12);
+    background: rgba(var(--color-accent-rgb), 0.12);
     color: #e9eefc;
     cursor: pointer;
     font-size: 1rem;
@@ -1015,11 +1064,11 @@
   }
 
   .step-btn:hover {
-    background: rgba(143, 183, 255, 0.22);
+    background: rgba(var(--color-accent-rgb), 0.22);
   }
 
   .step-btn:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -1032,21 +1081,24 @@
   }
 
   .action-btn {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.5rem 0.9rem;
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
     cursor: pointer;
     font-size: 0.82rem;
   }
 
   .action-btn:hover {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .action-btn:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -1077,7 +1129,7 @@
     gap: 0.6rem;
     align-items: center;
     padding: 0.5rem 0.6rem;
-    border: 1px solid rgba(143, 183, 255, 0.12);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.12);
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.03);
     font-size: 0.82rem;
@@ -1099,6 +1151,9 @@
 
   .history-player {
     color: var(--color-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .history-file {
@@ -1157,7 +1212,7 @@
   }
 
   .sonarr-section {
-    border: 1px solid rgba(143, 183, 255, 0.15);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.15);
     border-radius: 14px;
     padding: 1rem;
     background: rgba(255, 255, 255, 0.03);
@@ -1204,22 +1259,22 @@
   .file-count { font-size: 0.78rem; color: var(--color-muted); }
   .manual-map { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap; }
   .map-folder-hint { font-size: 0.72rem; color: var(--color-muted); }
-  .success-msg { color: #7ee87e; font-size: 0.8rem; margin: 0.3rem 0 0; }
+  .success-msg { color: var(--color-success); font-size: 0.8rem; margin: 0.3rem 0 0; }
   .episode-file-list { display: grid; gap: 0.35rem; margin-top: 0.5rem; }
-  .episode-file-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 0.82rem; min-width: 0; }
+  .episode-file-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid rgba(var(--color-accent-rgb),0.08); border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 0.82rem; min-width: 0; }
   .ep-num { font-weight: 600; color: var(--color-accent); min-width: 2.5rem; }
   .ep-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); font-family: monospace; font-size: 0.75rem; }
   .action-btn.small { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
-  .action-btn.danger { border-color: rgba(255, 130, 130, 0.4); background: rgba(255, 130, 130, 0.12); color: #ffb0b0; }
-  .action-btn.danger:hover:not(:disabled) { background: rgba(255, 130, 130, 0.24); }
+  .action-btn.danger { border-color: rgba(var(--color-danger-rgb), 0.4); background: rgba(var(--color-danger-rgb), 0.12); color: var(--color-danger-text); }
+  .action-btn.danger:hover:not(:disabled) { background: rgba(var(--color-danger-rgb), 0.24); }
   .meta-item.airing { flex-wrap: wrap; }
   .airing-countdown { font-size: 0.75rem; color: var(--color-accent); font-weight: 600; width: 100%; text-align: right; }
   .season-header { font-size: 0.75rem; font-weight: 700; color: var(--color-accent); text-transform: uppercase; letter-spacing: 0.06em; margin: 0.5rem 0 0.15rem; }
   .season-header:first-child { margin-top: 0; }
   .relations-list { display: grid; gap: 0.4rem; margin-top: 0.5rem; }
-  .relation-row { display: flex; gap: 0.6rem; align-items: center; padding: 0.4rem 0.5rem; border: 1px solid rgba(143,183,255,0.08); border-radius: 6px; background: rgba(255,255,255,0.02); min-width: 0; }
+  .relation-row { display: flex; gap: 0.6rem; align-items: center; padding: 0.4rem 0.5rem; border: 1px solid rgba(var(--color-accent-rgb),0.08); border-radius: 6px; background: rgba(255,255,255,0.02); min-width: 0; }
   .relation-row.clickable { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
-  .relation-row.clickable:hover { border-color: rgba(143,183,255,0.3); background: rgba(143,183,255,0.06); }
+  .relation-row.clickable:hover { border-color: rgba(var(--color-accent-rgb),0.3); background: rgba(var(--color-accent-rgb),0.06); }
   .relation-row.clickable:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
   .relation-thumb { width: 2rem; height: 2.8rem; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
   .relation-info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }

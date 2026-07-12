@@ -214,7 +214,9 @@
   .shell {
     display: grid;
     grid-template-columns: auto 1fr;
-    min-height: 100vh;
+    grid-template-rows: 1fr;
+    height: 100vh;
+    height: 100dvh;
   }
 
   .rail {
@@ -226,6 +228,8 @@
     flex-direction: column;
     gap: 1.5rem;
     width: 16rem;
+    min-height: 0;
+    overflow-y: auto;
     transition: width 0.2s ease, padding 0.2s ease;
   }
 
@@ -279,7 +283,7 @@
   }
 
   .collapse-toggle:focus-visible {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -368,7 +372,7 @@
   }
 
   .nav-item:focus-visible {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -380,6 +384,7 @@
 
   .content {
     padding: 1.5rem;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     max-width: 100%;

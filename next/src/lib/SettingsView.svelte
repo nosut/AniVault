@@ -7,6 +7,7 @@
     type V1DataPaths, type MigrationReport,
   } from './api';
   import { getVersion } from '@tauri-apps/api/app';
+  import { X } from 'lucide-svelte';
   import AniListConnect from './AniListConnect.svelte';
   import SyncStatus from './SyncStatus.svelte';
   import FileManager from './FileManager.svelte';
@@ -514,7 +515,7 @@
                 {#each libraryFolders as folder, i}
                   <li class="folder-item">
                     <span class="folder-path">{folder}</span>
-                    <button class="btn-remove" on:click={() => handleRemoveFolder(i)} aria-label="Remove">✕</button>
+                    <button class="btn-remove" on:click={() => handleRemoveFolder(i)} aria-label="Remove"><X size={13} /></button>
                   </li>
                 {/each}
               </ul>
@@ -972,7 +973,7 @@
   }
 
   .tab:focus-visible {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -982,7 +983,7 @@
   }
 
   .card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     padding: 1.25rem;
     background: rgba(255, 255, 255, 0.04);
@@ -1034,18 +1035,18 @@
   }
 
   .btn-retry {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.45rem 0.9rem;
     font-size: 0.78rem;
     cursor: pointer;
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
     font-family: inherit;
   }
 
   .btn-retry:hover {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .toggle-row {
@@ -1073,12 +1074,12 @@
   }
 
   .switch[aria-checked='true'] {
-    background: rgba(143, 183, 255, 0.35);
-    border-color: rgba(143, 183, 255, 0.5);
+    background: rgba(var(--color-accent-rgb), 0.35);
+    border-color: rgba(var(--color-accent-rgb), 0.5);
   }
 
   .switch:focus-visible {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -1137,7 +1138,7 @@
 
   .connected-badge {
     font-size: 0.78rem;
-    color: #7ee87e;
+    color: var(--color-success);
     font-weight: 600;
   }
 
@@ -1152,7 +1153,7 @@
     display: grid;
     gap: 0.15rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid rgba(143, 183, 255, 0.15);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.15);
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.03);
   }
@@ -1181,10 +1182,10 @@
   }
 
   .action-btn {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.45rem 0.9rem;
-    background: rgba(143, 183, 255, 0.12);
+    background: rgba(var(--color-accent-rgb), 0.12);
     color: #e9eefc;
     cursor: pointer;
     font-size: 0.85rem;
@@ -1192,7 +1193,7 @@
   }
 
   .action-btn:hover:not(:disabled) {
-    background: rgba(143, 183, 255, 0.22);
+    background: rgba(var(--color-accent-rgb), 0.22);
   }
 
   .action-btn:disabled {
@@ -1201,22 +1202,22 @@
   }
 
   .action-btn.danger {
-    border-color: rgba(255, 130, 130, 0.4);
-    background: rgba(255, 130, 130, 0.1);
-    color: #ffb0b0;
+    border-color: rgba(var(--color-danger-rgb), 0.4);
+    background: rgba(var(--color-danger-rgb), 0.1);
+    color: var(--color-danger-text);
   }
 
   .action-btn.danger:hover {
-    background: rgba(255, 130, 130, 0.2);
+    background: rgba(var(--color-danger-rgb), 0.2);
   }
 
   .action-btn.outline {
     background: transparent;
-    border-color: rgba(143, 183, 255, 0.35);
+    border-color: rgba(var(--color-accent-rgb), 0.35);
   }
 
   .action-btn.outline:hover {
-    background: rgba(143, 183, 255, 0.12);
+    background: rgba(var(--color-accent-rgb), 0.12);
   }
 
   .form-group {
@@ -1231,7 +1232,7 @@
   }
 
   .form-input {
-    border: 1px solid rgba(143, 183, 255, 0.25);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25);
     border-radius: 8px;
     padding: 0.55rem 0.7rem;
     background: rgba(255, 255, 255, 0.06);
@@ -1240,7 +1241,7 @@
   }
 
   .form-input:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.4);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.4);
     outline-offset: 1px;
   }
 
@@ -1253,15 +1254,15 @@
   .import-report {
     margin-top: 0.75rem;
     padding: 0.6rem 0.9rem;
-    border: 1px solid rgba(143, 183, 255, 0.2);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.2);
     border-radius: 10px;
-    background: rgba(143, 183, 255, 0.06);
+    background: rgba(var(--color-accent-rgb), 0.06);
     font-size: 0.82rem;
     color: #c8d2e0;
   }
 
   .scan-errors {
-    color: #ff9d9d;
+    color: var(--color-error);
     font-size: 0.82rem;
     margin-top: 0.5rem;
   }
@@ -1269,21 +1270,21 @@
   .scan-error-list {
     margin: 0.25rem 0 0 1.2rem;
     font-size: 0.78rem;
-    color: #ff9d9d;
+    color: var(--color-error);
   }
 
   .success-msg {
     margin-top: 0.5rem;
-    color: #7ee87e;
+    color: var(--color-success);
     font-size: 0.82rem;
   }
 
   .migration-path-list {
     margin-top: 0.75rem;
     padding: 0.6rem 0.9rem;
-    border: 1px solid rgba(143, 183, 255, 0.2);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.2);
     border-radius: 10px;
-    background: rgba(143, 183, 255, 0.06);
+    background: rgba(var(--color-accent-rgb), 0.06);
     font-size: 0.82rem;
   }
 
@@ -1300,14 +1301,14 @@
 
   .warnings-title {
     margin-top: 0.5rem;
-    color: var(--color-warning, #f0c040);
+    color: var(--color-warning, var(--color-warning));
     font-weight: 600;
   }
 
   .warning-list {
     margin: 0.25rem 0 0 1.2rem;
     font-size: 0.78rem;
-    color: var(--color-warning, #f0c040);
+    color: var(--color-warning, var(--color-warning));
   }
 
   .warning-list li {
@@ -1327,7 +1328,7 @@
   .export-pre {
     margin-top: 0.5rem;
     padding: 0.6rem;
-    border: 1px solid rgba(143, 183, 255, 0.2);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.2);
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.3);
     font-family: monospace;
@@ -1347,8 +1348,8 @@
   }
 
   .action-btn.outline.active {
-    background: rgba(143, 183, 255, 0.28);
-    border-color: rgba(143, 183, 255, 0.6);
+    background: rgba(var(--color-accent-rgb), 0.28);
+    border-color: rgba(var(--color-accent-rgb), 0.6);
     color: #e9eefc;
   }
 
@@ -1359,7 +1360,7 @@
     gap: 0.6rem;
     align-items: center;
     padding: 0.4rem 0.6rem;
-    border: 1px solid rgba(143,183,255,0.1);
+    border: 1px solid rgba(var(--color-accent-rgb),0.1);
     border-radius: 6px;
     background: rgba(255,255,255,0.03);
     font-size: 0.82rem;
@@ -1367,10 +1368,10 @@
   .ss-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text); }
   .ss-map { font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 12rem; }
   .ss-map.mapped { color: var(--color-accent); }
-  .ss-map.unmapped { color: #f0c040; }
+  .ss-map.unmapped { color: var(--color-warning); }
 
   .folder-list { list-style: none; padding: 0; margin: 0.5rem 0; }
-  .folder-item { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.6rem; border: 1px solid rgba(143,183,255,0.1); border-radius: 6px; margin-bottom: 0.25rem; background: rgba(255,255,255,0.03); font-size: 0.82rem; }
+  .folder-item { display: flex; align-items: center; justify-content: space-between; padding: 0.4rem 0.6rem; border: 1px solid rgba(var(--color-accent-rgb),0.1); border-radius: 6px; margin-bottom: 0.25rem; background: rgba(255,255,255,0.03); font-size: 0.82rem; }
   .folder-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); }
-  .btn-remove { border: none; background: transparent; color: #ff9d9d; cursor: pointer; font-size: 0.85rem; padding: 0 0.3rem; }
+  .btn-remove { display: inline-flex; align-items: center; border: none; background: transparent; color: var(--color-error); cursor: pointer; padding: 0 0.3rem; }
 </style>
