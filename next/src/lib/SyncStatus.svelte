@@ -98,7 +98,7 @@
 
 <style>
   .sync-card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     padding: 1.25rem;
     background: rgba(255, 255, 255, 0.04);
@@ -121,17 +121,17 @@
   }
 
   .btn-refresh {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.5rem 0.85rem;
     font-size: 0.78rem;
     cursor: pointer;
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
   }
 
   .btn-refresh:hover:not(:disabled) {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .btn-refresh:disabled {
@@ -169,7 +169,7 @@
   }
 
   .error {
-    color: var(--color-error, #ff9d9d);
+    color: var(--color-error);
     font-size: 0.82rem;
   }
 

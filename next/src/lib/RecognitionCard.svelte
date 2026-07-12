@@ -99,7 +99,7 @@
 
   .rc-hint { color: var(--color-muted); font-size: 0.82rem; }
   .confirm-msg { color: var(--color-accent); font-size: 0.85rem; }
-  .error { color: var(--color-error, #ff9d9d); font-size: 0.82rem; }
+  .error { color: var(--color-error); font-size: 0.82rem; }
 
   .rc-list { display: grid; gap: 0.5rem; padding: 0; margin: 0; }
   .rc-item {
@@ -113,16 +113,16 @@
   .rc-score { color: var(--color-accent); font-variant-numeric: tabular-nums; text-align: right; }
 
   .rc-confirm {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.35rem 0.75rem;
     font-size: 0.75rem;
-    background: rgba(143, 183, 255, 0.15);
+    background: rgba(var(--color-accent-rgb), 0.15);
     color: #e9eefc;
     cursor: pointer;
     white-space: nowrap;
   }
-  .rc-confirm:hover { background: rgba(143, 183, 255, 0.28); }
+  .rc-confirm:hover { background: rgba(var(--color-accent-rgb), 0.28); }
   .rc-confirm:focus { outline: 2px solid var(--color-accent); outline-offset: 2px; }
   .rc-confirm:disabled { opacity: 0.4; cursor: default; }
 </style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { storeAniListToken, disconnectAniList, importAniListLibrary, connectAniListOauth, getAniListConnectionStatus } from './api';
 
   // OAuth state
@@ -28,6 +28,9 @@
   }
 
   onMount(loadStatus);
+  onDestroy(() => {
+    if (confirmDisconnectTimer) clearTimeout(confirmDisconnectTimer);
+  });
 
   async function handleOAuthConnect() {
     if (!clientId.trim() || !clientSecret.trim()) return;
@@ -48,6 +51,7 @@
 
   async function handleConnect() {
     if (!manualToken.trim()) return;
+    loading = true;
     error = null;
     try {
       await storeAniListToken(manualToken.trim());
@@ -55,10 +59,30 @@
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       connected = false;
+    } finally {
+      loading = false;
     }
   }
 
+  let confirmingDisconnect = false;
+  let confirmDisconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Armed state auto-expires so a stray click minutes later can't land on a
+  // still-armed disconnect button.
+  function armDisconnect() {
+    confirmingDisconnect = true;
+    if (confirmDisconnectTimer) clearTimeout(confirmDisconnectTimer);
+    confirmDisconnectTimer = setTimeout(() => { confirmingDisconnect = false; }, 4000);
+  }
+
+  function cancelDisconnect() {
+    confirmingDisconnect = false;
+    if (confirmDisconnectTimer) clearTimeout(confirmDisconnectTimer);
+  }
+
   async function handleDisconnect() {
+    confirmingDisconnect = false;
+    if (confirmDisconnectTimer) clearTimeout(confirmDisconnectTimer);
     error = null;
     try {
       await disconnectAniList();
@@ -147,9 +171,14 @@
       <button type="button" class="btn-import" on:click={handleImport} disabled={loading}>
         {loading ? 'Importing…' : 'Import Library'}
       </button>
-      <button type="button" class="btn-disconnect" on:click={handleDisconnect} disabled={loading}>
-        Disconnect
-      </button>
+      {#if confirmingDisconnect}
+        <button type="button" class="btn-disconnect" on:click={handleDisconnect}>Confirm disconnect?</button>
+        <button type="button" class="btn-cancel" on:click={cancelDisconnect}>Cancel</button>
+      {:else}
+        <button type="button" class="btn-disconnect" on:click={armDisconnect} disabled={loading}>
+          Disconnect
+        </button>
+      {/if}
     </div>
 
     {#if importReport}
@@ -164,7 +193,7 @@
 
 <style>
   .anilist-card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     padding: 1.25rem;
     background: rgba(255, 255, 255, 0.04);
@@ -181,7 +210,7 @@
   }
 
   .error {
-    color: var(--color-error, #ff9d9d);
+    color: var(--color-error);
     font-size: 0.82rem;
   }
 
@@ -225,7 +254,7 @@
   }
 
   .form-input:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -234,14 +263,14 @@
     padding: 0.55rem 1rem;
     font-size: 0.78rem;
     cursor: pointer;
-    border: 1px solid rgba(143, 183, 255, 0.35);
-    background: rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
     white-space: nowrap;
   }
 
   .action-btn:hover:not(:disabled) {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .action-btn:disabled {
@@ -300,7 +329,7 @@
   }
 
   input:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -309,7 +338,7 @@
     padding: 0.55rem 1rem;
     font-size: 0.78rem;
     cursor: pointer;
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     white-space: nowrap;
   }
 
@@ -319,12 +348,12 @@
   }
 
   .btn-primary {
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .connected-row {
@@ -342,22 +371,33 @@
   }
 
   .btn-import {
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
   }
 
   .btn-import:hover:not(:disabled) {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .btn-disconnect {
-    background: rgba(255, 157, 157, 0.15);
-    border-color: rgba(255, 157, 157, 0.35);
-    color: #ff9d9d;
+    background: rgba(var(--color-error-rgb), 0.15);
+    border-color: rgba(var(--color-error-rgb), 0.35);
+    color: var(--color-error);
   }
 
   .btn-disconnect:hover:not(:disabled) {
-    background: rgba(255, 157, 157, 0.25);
+    background: rgba(var(--color-error-rgb), 0.25);
+  }
+
+  .btn-cancel {
+    background: transparent;
+    border-color: rgba(var(--color-accent-rgb), 0.3);
+    color: var(--color-muted);
+  }
+
+  .btn-cancel:hover:not(:disabled) {
+    background: rgba(var(--color-accent-rgb), 0.1);
+    color: var(--color-text);
   }
 
   .checking {

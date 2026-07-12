@@ -64,7 +64,7 @@
 
 <style>
   .known-files-card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     background: rgba(255, 255, 255, 0.04);
     padding: 1.25rem;
@@ -78,24 +78,24 @@
     gap: 0.75rem;
   }
   .action-btn {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.35rem 0.75rem;
     font-size: 0.75rem;
     cursor: pointer;
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
     transition: background 0.15s;
   }
   .action-btn:hover:not(:disabled) {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
   .action-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
   .success-msg {
-    color: #6fcf97;
+    color: var(--color-success);
     font-size: 0.82rem;
     margin: 0;
   }
@@ -107,7 +107,7 @@
     font-weight: 800;
   }
   .empty { color: var(--color-muted); font-size: 0.82rem; }
-  .error { color: var(--color-error, #ff9d9d); font-size: 0.82rem; }
+  .error { color: var(--color-error); font-size: 0.82rem; }
 
   .kf-list { display: grid; gap: 0.35rem; padding: 0; margin: 0; }
   .kf-item { display: grid; grid-template-columns: 1fr auto auto; gap: 0.75rem; font-size: 0.78rem; align-items: center; }

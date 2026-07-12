@@ -171,7 +171,7 @@
   }
 
   .stat-card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     background: rgba(255, 255, 255, 0.04);
     padding: 1.25rem;
@@ -201,10 +201,17 @@
     opacity: 0.6;
   }
 
+  .skeleton-row {
+    height: 4.75rem;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    animation: pulse 2s infinite;
+  }
+
   .skeleton-eyebrow {
     height: 0.78rem;
     width: 40%;
-    background: rgba(143, 183, 255, 0.15);
+    background: rgba(var(--color-accent-rgb), 0.15);
     border-radius: 999px;
     animation: pulse 2s infinite;
   }
@@ -223,9 +230,9 @@
   }
 
   .stats-error {
-    border: 1px solid rgba(255, 157, 157, 0.25);
+    border: 1px solid rgba(var(--color-error-rgb), 0.25);
     border-radius: var(--radius-card);
-    background: rgba(255, 157, 157, 0.06);
+    background: rgba(var(--color-error-rgb), 0.06);
     padding: 1.25rem;
     display: grid;
     gap: 0.75rem;
@@ -233,32 +240,32 @@
   }
 
   .error-msg {
-    color: var(--color-error, #ff9d9d);
+    color: var(--color-error);
     font-size: 0.85rem;
     margin: 0;
   }
 
   .btn-retry {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.5rem 0.85rem;
     font-size: 0.78rem;
     cursor: pointer;
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
   }
 
   .btn-retry:hover {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .btn-retry:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
   .stats-empty {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     background: rgba(255, 255, 255, 0.04);
     padding: 1.25rem;
@@ -299,7 +306,7 @@
     gap: 0.6rem;
     align-items: center;
     padding: 0.5rem;
-    border: 1px solid rgba(143,183,255,0.1);
+    border: 1px solid rgba(var(--color-accent-rgb),0.1);
     border-radius: 8px;
     background: rgba(255,255,255,0.03);
     cursor: pointer;
@@ -307,7 +314,7 @@
   }
 
   .continue-card:hover {
-    border-color: rgba(143,183,255,0.3);
+    border-color: rgba(var(--color-accent-rgb),0.3);
   }
 
   .continue-thumb {
@@ -319,7 +326,7 @@
   }
 
   .continue-thumb.placeholder {
-    background: rgba(143,183,255,0.08);
+    background: rgba(var(--color-accent-rgb),0.08);
   }
 
   .continue-info {
@@ -347,7 +354,7 @@
   .continue-progress-bar {
     height: 100%;
     border-radius: 2px;
-    background: rgba(143,183,255,0.5);
+    background: rgba(var(--color-accent-rgb),0.5);
   }
 
   .continue-episodes {

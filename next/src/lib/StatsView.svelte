@@ -66,19 +66,19 @@
   h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; }
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 0.75rem; }
   .activity-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 0.75rem; }
-  .stat-card { border: 1px solid rgba(143,183,255,0.12); border-radius: 10px; padding: 1rem; background: rgba(255,255,255,0.03); text-align: center; }
+  .stat-card { border: 1px solid rgba(var(--color-accent-rgb),0.12); border-radius: 10px; padding: 1rem; background: rgba(255,255,255,0.03); text-align: center; }
   .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--color-accent); }
   .stat-label { font-size: 0.78rem; color: var(--color-muted); margin-top: 0.25rem; }
-  .score-section { border: 1px solid rgba(143,183,255,0.1); border-radius: 10px; padding: 1rem; background: rgba(255,255,255,0.02); }
+  .score-section { border: 1px solid rgba(var(--color-accent-rgb),0.1); border-radius: 10px; padding: 1rem; background: rgba(255,255,255,0.02); }
   .score-chart { display: flex; flex-direction: column; gap: 0.5rem; }
   .score-row { display: flex; align-items: center; gap: 0.75rem; }
   .score-label { width: 4rem; font-size: 0.82rem; color: var(--color-muted); text-align: right; }
   .score-bar-wrap { flex: 1; height: 1rem; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden; }
-  .score-bar { height: 100%; border-radius: 4px; background: linear-gradient(90deg, rgba(143,183,255,0.4), rgba(143,183,255,0.7)); transition: width 0.5s ease; min-width: 2px; }
+  .score-bar { height: 100%; border-radius: 4px; background: linear-gradient(90deg, rgba(var(--color-accent-rgb),0.4), rgba(var(--color-accent-rgb),0.7)); transition: width 0.5s ease; min-width: 2px; }
   .score-count { width: 2.5rem; font-size: 0.82rem; font-weight: 600; text-align: left; }
   .skeleton-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
   .skeleton-card { height: 5rem; border-radius: 10px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.7} }
-  .message.error { color: #ff9d9d; padding: 1rem; border: 1px solid rgba(255,157,157,0.2); border-radius: 10px; background: rgba(255,157,157,0.06); }
-  .action-btn { border: 1px solid rgba(143,183,255,0.3); border-radius: 999px; padding: 0.4rem 0.9rem; background: rgba(143,183,255,0.1); color: var(--color-text); cursor: pointer; margin-top: 0.5rem; }
+  .message.error { color: var(--color-error); padding: 1rem; border: 1px solid rgba(var(--color-error-rgb),0.2); border-radius: 10px; background: rgba(var(--color-error-rgb),0.06); }
+  .action-btn { border: 1px solid rgba(var(--color-accent-rgb),0.3); border-radius: 999px; padding: 0.4rem 0.9rem; background: rgba(var(--color-accent-rgb),0.1); color: var(--color-text); cursor: pointer; margin-top: 0.5rem; }
 </style>

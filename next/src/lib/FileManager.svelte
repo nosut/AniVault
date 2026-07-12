@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { ChevronRight, ChevronDown } from 'lucide-svelte';
   import {
     listKnownFiles,
     rematchUnmappedFiles,
@@ -256,7 +257,25 @@
       error = err instanceof Error ? err.message : String(err);
     }
   }
+  // Only one row can be armed at a time; auto-expires so a stray click minutes
+  // later can't land on a still-armed remove button.
+  let armedRemovePath: string | null = null;
+  let armedRemoveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function armRemoveOne(path: string) {
+    armedRemovePath = path;
+    if (armedRemoveTimer) clearTimeout(armedRemoveTimer);
+    armedRemoveTimer = setTimeout(() => { armedRemovePath = null; }, 4000);
+  }
+
+  function cancelRemoveOne() {
+    armedRemovePath = null;
+    if (armedRemoveTimer) clearTimeout(armedRemoveTimer);
+  }
+
   async function handleRemoveOne(e: FileIndexEntry) {
+    armedRemovePath = null;
+    if (armedRemoveTimer) clearTimeout(armedRemoveTimer);
     try {
       await deleteKnownFile(e.file_path);
       const next = new Set(selected);
@@ -280,7 +299,23 @@
     }
   }
 
+  let confirmingBulkRemove = false;
+  let confirmBulkRemoveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function armBulkRemove() {
+    confirmingBulkRemove = true;
+    if (confirmBulkRemoveTimer) clearTimeout(confirmBulkRemoveTimer);
+    confirmBulkRemoveTimer = setTimeout(() => { confirmingBulkRemove = false; }, 4000);
+  }
+
+  function cancelBulkRemove() {
+    confirmingBulkRemove = false;
+    if (confirmBulkRemoveTimer) clearTimeout(confirmBulkRemoveTimer);
+  }
+
   async function bulkRemove() {
+    confirmingBulkRemove = false;
+    if (confirmBulkRemoveTimer) clearTimeout(confirmBulkRemoveTimer);
     const paths = selectedEntries().map((e) => e.file_path);
     if (paths.length === 0) return;
     try {
@@ -290,6 +325,11 @@
       error = err instanceof Error ? err.message : String(err);
     }
   }
+
+  onDestroy(() => {
+    if (armedRemoveTimer) clearTimeout(armedRemoveTimer);
+    if (confirmBulkRemoveTimer) clearTimeout(confirmBulkRemoveTimer);
+  });
 
   function openMap() {
     mapOpen = true;
@@ -417,7 +457,12 @@
         <button class="action-btn" on:click={openMap}>Map to anime…</button>
         <button class="mini-btn" on:click={() => bulkIgnore(true)}>Ignore</button>
         <button class="mini-btn" on:click={() => bulkIgnore(false)}>Un-ignore</button>
-        <button class="mini-btn danger" on:click={bulkRemove}>Remove</button>
+        {#if confirmingBulkRemove}
+          <button class="mini-btn danger" on:click={bulkRemove}>Confirm remove {selectedCount}?</button>
+          <button class="mini-btn" on:click={cancelBulkRemove}>Cancel</button>
+        {:else}
+          <button class="mini-btn danger" on:click={armBulkRemove}>Remove</button>
+        {/if}
         <button class="mini-btn" on:click={clearSelection}>Clear</button>
       </div>
     </div>
@@ -507,7 +552,9 @@
               aria-label="Select group {g.key}"
             />
             <button class="group-title-btn" on:click={() => toggleCollapse(g.key)}>
-              <span class="group-caret">{collapsed.has(g.key) ? '▶' : '▼'}</span>
+              <span class="group-caret">
+                {#if collapsed.has(g.key)}<ChevronRight size={13} />{:else}<ChevronDown size={13} />{/if}
+              </span>
               <span class="group-title">{g.key}</span>
               <span class="group-count">{g.files.length}</span>
             </button>
@@ -540,7 +587,12 @@
                     {:else}
                       <button class="mini-btn" on:click={() => handleIgnoreOne(e, false)}>Un-ignore</button>
                     {/if}
-                    <button class="mini-btn danger" on:click={() => handleRemoveOne(e)}>Remove</button>
+                    {#if armedRemovePath === e.file_path}
+                      <button class="mini-btn danger" on:click={() => handleRemoveOne(e)}>Confirm?</button>
+                      <button class="mini-btn" on:click={cancelRemoveOne}>Cancel</button>
+                    {:else}
+                      <button class="mini-btn danger" on:click={() => armRemoveOne(e.file_path)}>Remove</button>
+                    {/if}
                   </div>
                 </li>
               {/each}
@@ -554,7 +606,7 @@
 
 <style>
   .card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     padding: 1.25rem;
     background: rgba(255, 255, 255, 0.04);
@@ -566,19 +618,19 @@
   h3 { margin: 0; font-size: 1rem; font-weight: 700; color: var(--color-text); }
   .hint { margin: 0; font-size: 0.78rem; color: var(--color-muted); }
   .muted { color: var(--color-muted); font-size: 0.85rem; margin: 0; }
-  .error { color: var(--color-error, #ff9d9d); font-size: 0.82rem; margin: 0; }
+  .error { color: var(--color-error); font-size: 0.82rem; margin: 0; }
   .error-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-  .success-msg { color: #7ee87e; font-size: 0.82rem; margin: 0; }
+  .success-msg { color: var(--color-success); font-size: 0.82rem; margin: 0; }
 
   .toolbar { display: grid; gap: 0.6rem; }
   .search { width: 100%; }
   .chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
   .chip {
-    border: 1px solid rgba(143, 183, 255, 0.25); border-radius: 999px; padding: 0.3rem 0.7rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25); border-radius: 999px; padding: 0.3rem 0.7rem;
     font-size: 0.75rem; background: transparent; color: var(--color-muted); cursor: pointer; font-family: inherit;
   }
   .chip:hover { color: var(--color-text); }
-  .chip.active { background: rgba(143, 183, 255, 0.2); color: #e9eefc; border-color: rgba(143, 183, 255, 0.5); }
+  .chip.active { background: rgba(var(--color-accent-rgb), 0.2); color: #e9eefc; border-color: rgba(var(--color-accent-rgb), 0.5); }
   .chip-count { opacity: 0.7; font-variant-numeric: tabular-nums; }
 
   .select-all-row { font-size: 0.78rem; }
@@ -587,17 +639,17 @@
   .bulk-bar {
     position: sticky; top: 0; z-index: 2;
     display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;
-    padding: 0.55rem 0.8rem; border: 1px solid rgba(143, 183, 255, 0.4); border-radius: 10px;
+    padding: 0.55rem 0.8rem; border: 1px solid rgba(var(--color-accent-rgb), 0.4); border-radius: 10px;
     background: rgba(30, 40, 66, 0.96);
   }
   .bulk-count { font-size: 0.82rem; color: #e9eefc; font-weight: 600; }
   .bulk-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 
   .group-list { display: grid; gap: 0.5rem; }
-  .group { border: 1px solid rgba(143, 183, 255, 0.12); border-radius: 8px; overflow: hidden; }
+  .group { border: 1px solid rgba(var(--color-accent-rgb), 0.12); border-radius: 8px; overflow: hidden; }
   .group-header {
     display: flex; align-items: center; gap: 0.55rem; padding: 0.45rem 0.6rem;
-    background: rgba(143, 183, 255, 0.06);
+    background: rgba(var(--color-accent-rgb), 0.06);
   }
   .group-check { flex-shrink: 0; }
   .group-title-btn {
@@ -605,7 +657,7 @@
     background: transparent; border: none; color: var(--color-text); cursor: pointer;
     font-family: inherit; font-size: 0.85rem; text-align: left; padding: 0;
   }
-  .group-caret { color: var(--color-muted); font-size: 0.7rem; flex-shrink: 0; }
+  .group-caret { display: inline-flex; align-items: center; color: var(--color-muted); flex-shrink: 0; }
   .group-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .group-count {
     flex-shrink: 0; font-size: 0.7rem; color: var(--color-muted);
@@ -618,7 +670,7 @@
     display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.6rem; align-items: center;
     padding: 0.3rem 0.4rem; border-radius: 6px;
   }
-  .file-item.is-selected { background: rgba(143, 183, 255, 0.1); }
+  .file-item.is-selected { background: rgba(var(--color-accent-rgb), 0.1); }
   .file-item.is-ignored { opacity: 0.55; }
   .file-name {
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.76rem; color: var(--color-text);
@@ -626,22 +678,22 @@
   }
   .file-badge { font-size: 0.7rem; white-space: nowrap; }
   .file-badge.mapped { color: var(--color-accent); }
-  .file-badge.unmapped { color: #f0c040; }
+  .file-badge.unmapped { color: var(--color-warning); }
   .file-badge.ignored { color: var(--color-muted); }
   .file-actions { display: flex; gap: 0.3rem; }
 
   .mini-btn {
-    border: 1px solid rgba(143, 183, 255, 0.25); border-radius: 999px; padding: 0.22rem 0.55rem;
-    font-size: 0.7rem; cursor: pointer; background: rgba(143, 183, 255, 0.1); color: #e9eefc;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25); border-radius: 999px; padding: 0.22rem 0.55rem;
+    font-size: 0.7rem; cursor: pointer; background: rgba(var(--color-accent-rgb), 0.1); color: #e9eefc;
     font-family: inherit; white-space: nowrap;
   }
-  .mini-btn:hover:not(:disabled) { background: rgba(143, 183, 255, 0.22); }
-  .mini-btn.danger { border-color: rgba(255, 130, 130, 0.4); background: rgba(255, 130, 130, 0.1); color: #ffb0b0; }
-  .mini-btn.danger:hover { background: rgba(255, 130, 130, 0.2); }
+  .mini-btn:hover:not(:disabled) { background: rgba(var(--color-accent-rgb), 0.22); }
+  .mini-btn.danger { border-color: rgba(var(--color-danger-rgb), 0.4); background: rgba(var(--color-danger-rgb), 0.1); color: var(--color-danger-text); }
+  .mini-btn.danger:hover { background: rgba(var(--color-danger-rgb), 0.2); }
 
   .map-editor {
-    padding: 0.7rem 0.8rem; border: 1px solid rgba(143, 183, 255, 0.2); border-radius: 10px;
-    background: rgba(143, 183, 255, 0.05); display: grid; gap: 0.6rem;
+    padding: 0.7rem 0.8rem; border: 1px solid rgba(var(--color-accent-rgb), 0.2); border-radius: 10px;
+    background: rgba(var(--color-accent-rgb), 0.05); display: grid; gap: 0.6rem;
   }
   .map-source-toggle { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
   .map-source-hint { font-size: 0.72rem; color: var(--color-muted); }
@@ -650,12 +702,12 @@
   .map-results { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.2rem; max-height: 14rem; overflow-y: auto; }
   .map-result {
     width: 100%; display: flex; justify-content: space-between; gap: 0.75rem; align-items: center;
-    border: 1px solid rgba(143, 183, 255, 0.12); border-radius: 6px; padding: 0.4rem 0.6rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.12); border-radius: 6px; padding: 0.4rem 0.6rem;
     background: rgba(255, 255, 255, 0.03); color: var(--color-text); cursor: pointer; font-family: inherit;
     font-size: 0.8rem; text-align: left;
   }
-  .map-result:hover { border-color: rgba(143, 183, 255, 0.35); }
-  .map-result.selected { background: rgba(143, 183, 255, 0.2); border-color: rgba(143, 183, 255, 0.55); }
+  .map-result:hover { border-color: rgba(var(--color-accent-rgb), 0.35); }
+  .map-result.selected { background: rgba(var(--color-accent-rgb), 0.2); border-color: rgba(var(--color-accent-rgb), 0.55); }
   .map-result-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .map-result-id { color: var(--color-muted); flex-shrink: 0; }
 
@@ -665,21 +717,21 @@
   .map-selected-label { flex: 1; font-size: 0.78rem; color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .action-btn {
-    border: 1px solid rgba(143, 183, 255, 0.35); border-radius: 999px; padding: 0.4rem 0.85rem;
-    background: rgba(143, 183, 255, 0.12); color: #e9eefc; cursor: pointer; font-size: 0.8rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35); border-radius: 999px; padding: 0.4rem 0.85rem;
+    background: rgba(var(--color-accent-rgb), 0.12); color: #e9eefc; cursor: pointer; font-size: 0.8rem;
     font-family: inherit; white-space: nowrap;
   }
-  .action-btn:hover:not(:disabled) { background: rgba(143, 183, 255, 0.22); }
+  .action-btn:hover:not(:disabled) { background: rgba(var(--color-accent-rgb), 0.22); }
   .action-btn:disabled { opacity: 0.45; cursor: default; }
 
   .btn-retry {
-    border: 1px solid rgba(143, 183, 255, 0.35); border-radius: 999px; padding: 0.35rem 0.75rem;
-    font-size: 0.78rem; cursor: pointer; background: rgba(143, 183, 255, 0.18); color: #e9eefc; font-family: inherit;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35); border-radius: 999px; padding: 0.35rem 0.75rem;
+    font-size: 0.78rem; cursor: pointer; background: rgba(var(--color-accent-rgb), 0.18); color: #e9eefc; font-family: inherit;
   }
 
   .form-input {
-    border: 1px solid rgba(143, 183, 255, 0.25); border-radius: 8px; padding: 0.5rem 0.7rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.25); border-radius: 8px; padding: 0.5rem 0.7rem;
     background: rgba(255, 255, 255, 0.06); color: var(--color-text); font-size: 0.85rem; font-family: inherit;
   }
-  .form-input:focus { outline: 2px solid rgba(143, 183, 255, 0.4); outline-offset: 1px; }
+  .form-input:focus { outline: 2px solid rgba(var(--color-accent-rgb), 0.4); outline-offset: 1px; }
 </style>

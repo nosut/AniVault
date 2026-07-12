@@ -185,7 +185,7 @@
 
 <style>
   .now-playing-card {
-    border: 1px solid rgba(143, 183, 255, 0.18);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
     border-radius: var(--radius-card);
     padding: 1rem;
     background: rgba(255, 255, 255, 0.04);
@@ -214,8 +214,8 @@
   }
 
   .np-dot.active {
-    background: #7ee87e;
-    box-shadow: 0 0 6px rgba(126, 232, 126, 0.6);
+    background: var(--color-success);
+    box-shadow: 0 0 6px rgba(var(--color-success-rgb), 0.6);
   }
 
   .np-header {
@@ -233,7 +233,7 @@
   }
 
   .np-btn-start, .np-btn-stop {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 999px;
     padding: 0.5rem 0.85rem;
     font-size: 0.78rem;
@@ -241,31 +241,31 @@
   }
 
   .np-btn-start {
-    background: rgba(143, 183, 255, 0.18);
+    background: rgba(var(--color-accent-rgb), 0.18);
     color: #e9eefc;
   }
 
   .np-btn-start:hover {
-    background: rgba(143, 183, 255, 0.28);
+    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .np-btn-start:focus {
-    outline: 2px solid rgba(143, 183, 255, 0.5);
+    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
   }
 
   .np-btn-stop {
-    background: rgba(255, 157, 157, 0.15);
-    border-color: rgba(255, 157, 157, 0.35);
-    color: #ff9d9d;
+    background: rgba(var(--color-error-rgb), 0.15);
+    border-color: rgba(var(--color-error-rgb), 0.35);
+    color: var(--color-error);
   }
 
   .np-btn-stop:hover {
-    background: rgba(255, 157, 157, 0.25);
+    background: rgba(var(--color-error-rgb), 0.25);
   }
 
   .np-btn-stop:focus {
-    outline: 2px solid rgba(255, 157, 157, 0.5);
+    outline: 2px solid rgba(var(--color-error-rgb), 0.5);
     outline-offset: 2px;
   }
 
@@ -285,7 +285,7 @@
   }
 
   .np-chip.accent {
-    background: rgba(143, 183, 255, 0.15);
+    background: rgba(var(--color-accent-rgb), 0.15);
     color: var(--color-accent);
     font-weight: 600;
   }
@@ -310,7 +310,7 @@
   }
 
   .error {
-    color: var(--color-error, #ff9d9d);
+    color: var(--color-error);
     font-size: 0.82rem;
   }
 
@@ -320,14 +320,14 @@
     gap: 0.5rem;
     margin-top: 0.6rem;
     padding: 0.5rem 0.6rem;
-    border: 1px solid rgba(126, 232, 126, 0.3);
+    border: 1px solid rgba(var(--color-success-rgb), 0.3);
     border-radius: 8px;
-    background: rgba(126, 232, 126, 0.08);
+    background: rgba(var(--color-success-rgb), 0.08);
   }
-  .np-autotrack-icon { color: #7ee87e; font-weight: 700; }
+  .np-autotrack-icon { color: var(--color-success); font-weight: 700; }
   .np-autotrack-info { display: flex; flex-direction: column; min-width: 0; }
   .np-autotrack-title { font-size: 0.82rem; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .np-autotrack-sub { font-size: 0.72rem; color: #7ee87e; }
+  .np-autotrack-sub { font-size: 0.72rem; color: var(--color-success); }
 
   .np-candidates {
     margin-top: 0.25rem;
@@ -348,7 +348,7 @@
     align-items: center;
     gap: 0.1rem 0.4rem;
     padding: 0.4rem 0.5rem;
-    border: 1px solid rgba(143, 183, 255, 0.2);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.2);
     border-radius: 6px;
     margin-bottom: 0.3rem;
     font-size: 0.78rem;
@@ -376,16 +376,16 @@
   .confirm-btn { grid-area: btn; justify-self: end; }
 
   .confirm-btn {
-    border: 1px solid rgba(143, 183, 255, 0.35);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 4px;
     padding: 0.15rem 0.5rem;
-    background: rgba(143, 183, 255, 0.15);
+    background: rgba(var(--color-accent-rgb), 0.15);
     color: var(--color-accent);
     cursor: pointer;
     font-size: 0.75rem;
   }
   .confirm-btn:hover {
-    background: rgba(143, 183, 255, 0.25);
+    background: rgba(var(--color-accent-rgb), 0.25);
   }
   .confirm-btn:disabled {
     opacity: 0.5;
