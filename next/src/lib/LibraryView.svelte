@@ -26,7 +26,7 @@
     try { localStorage.setItem(key, value); } catch {}
   }
 
-  let query = '';
+  let query = loadPref('anivault-library-query', '');
   let statusFilter: string | null = loadPersistedFilter();
   let entries: LibraryEntry[] = [];
   let loading = false;
@@ -88,6 +88,7 @@
 
   $: persistPref('anivault-library-viewmode', viewMode);
   $: persistPref('anivault-library-compact', compact ? 'true' : 'false');
+  $: persistPref('anivault-library-query', query);
 
   async function loadStats() {
     try { stats = await getLibraryStats(); } catch { /* non-fatal */ }
