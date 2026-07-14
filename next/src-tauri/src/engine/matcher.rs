@@ -180,29 +180,8 @@ pub async fn recognize_file(
         let titles: serde_json::Value =
             serde_json::from_str(&anime.titles_json).unwrap_or_default();
         let romaji = titles["romaji"].as_str().unwrap_or("");
-        let english = titles["english"].as_str().unwrap_or("");
-        let japanese = titles["japanese"].as_str().unwrap_or("");
 
-        let score = [
-            score_title_match(&parsed.cleaned_title, romaji),
-            score_title_match(&parsed.cleaned_title, english),
-            score_title_match(&parsed.cleaned_title, japanese),
-        ]
-        .into_iter()
-        .max()
-        .unwrap_or(0);
-
-        let synonyms: Vec<String> = titles["synonyms"]
-            .as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-            .unwrap_or_default();
-        let syn_score = synonyms
-            .iter()
-            .map(|s| score_title_match(&parsed.cleaned_title, s))
-            .max()
-            .unwrap_or(0);
-
-        let confidence = score.max(syn_score);
+        let confidence = score_titles_json(&parsed.cleaned_title, &anime.titles_json);
 
         if confidence >= 20 {
             candidates.push(MatchCandidate {

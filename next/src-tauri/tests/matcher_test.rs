@@ -91,3 +91,32 @@ async fn confirm_identification_upserts_file_index() {
             if ev.anime_id == 42 && ev.episode == 3
     )));
 }
+
+#[tokio::test]
+async fn recognize_file_ranks_candidates_by_score_including_synonyms() {
+    let state = test_state().await;
+    let titles = serde_json::json!({
+        "romaji": "Koe no Katachi",
+        "english": "A Silent Voice",
+        "japanese": null,
+        "synonyms": ["Silent Voice"]
+    })
+    .to_string();
+    state
+        .storage
+        .upsert_anime(1, &titles, 1, None, 0)
+        .await
+        .unwrap();
+
+    // Matches only via the synonym, not romaji/english — this exercises the
+    // synonym branch that a naive port of the old inline scoring could drop.
+    let result = recognize_file("D:/Anime/Silent Voice - 01.mkv", None, &state.storage)
+        .await
+        .unwrap();
+
+    assert!(
+        result.candidates.iter().any(|c| c.anime_id == 1 && c.confidence >= 80),
+        "expected a high-confidence synonym match, got {:?}",
+        result.candidates
+    );
+}
