@@ -1,5 +1,5 @@
 use anivault_core::engine::library_scanner::{
-    rescan_anime_dirs, scan_library_folders, set_library_folders,
+    find_video_files, rescan_anime_dirs, scan_library_folders, set_library_folders,
 };
 use anivault_core::engine::storage::Tests;
 use std::fs;
@@ -209,4 +209,22 @@ async fn rescan_anime_with_no_files_falls_back_to_full_scan() {
     assert_eq!(report.found, 1, "fallback full scan should walk library folders");
 
     fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn find_video_files_still_finds_nested_files_after_cycle_guard() {
+    let base = unique_temp_dir("cycle_guard");
+    let nested = base.join("Season 1").join("Sub");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("01.mkv"), b"").unwrap();
+    fs::write(base.join("00.mkv"), b"").unwrap();
+
+    let mut files = Vec::new();
+    let mut errors = Vec::new();
+    find_video_files(&base, &mut files, &mut errors);
+
+    fs::remove_dir_all(&base).ok();
+
+    assert_eq!(files.len(), 2, "expected both nested and top-level video files, got {:?}", files);
+    assert!(errors.is_empty());
 }

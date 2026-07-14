@@ -464,15 +464,41 @@ pub fn is_video_file(path: &Path) -> bool {
     VIDEO_EXTENSIONS.contains(&ext.as_str())
 }
 
+const MAX_SCAN_DEPTH: u32 = 64;
+
 /// Recursively find video files under a directory.
 /// Collects errors for unreadable directories instead of silently skipping.
+/// Guards against directory-junction/symlink cycles (each directory's
+/// canonicalized path is visited at most once) and against runaway depth.
 pub fn find_video_files(dir: &Path, files: &mut Vec<std::path::PathBuf>, errors: &mut Vec<String>) {
+    let mut visited = std::collections::HashSet::new();
+    find_video_files_inner(dir, files, errors, &mut visited, 0);
+}
+
+fn find_video_files_inner(
+    dir: &Path,
+    files: &mut Vec<std::path::PathBuf>,
+    errors: &mut Vec<String>,
+    visited: &mut std::collections::HashSet<std::path::PathBuf>,
+    depth: u32,
+) {
+    if depth > MAX_SCAN_DEPTH {
+        errors.push(format!("Max scan depth ({MAX_SCAN_DEPTH}) exceeded at {}", dir.display()));
+        return;
+    }
+
+    let canonical = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    if !visited.insert(canonical) {
+        // Already visited this real directory — a symlink/junction cycle.
+        return;
+    }
+
     match std::fs::read_dir(dir) {
         Ok(entries) => {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    find_video_files(&path, files, errors);
+                    find_video_files_inner(&path, files, errors, visited, depth + 1);
                 } else if path.is_file() && is_video_file(&path) {
                     files.push(path);
                 }
