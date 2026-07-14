@@ -75,3 +75,13 @@ async fn get_file_index_by_filename_still_resolves_unambiguous_match() {
 
     assert_eq!(result.map(|r| r.anime_id), Some(Some(1)));
 }
+
+#[tokio::test]
+async fn file_index_anime_id_index_exists_after_migration() {
+    let storage = Storage::connect("sqlite::memory:").await.unwrap();
+    storage.migrate().await.unwrap();
+
+    let exists = storage.has_index("idx_file_index_anime_id").await.unwrap();
+
+    assert!(exists, "expected idx_file_index_anime_id to exist after migrate()");
+}

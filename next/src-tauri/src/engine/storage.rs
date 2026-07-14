@@ -220,6 +220,15 @@ impl Storage {
         Ok(row.get::<String, _>(0))
     }
 
+    /// Whether a SQLite index with this exact name exists.
+    pub async fn has_index(&self, name: &str) -> anyhow::Result<bool> {
+        let row = sqlx::query("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?1")
+            .bind(name)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
+    }
+
     pub async fn close(&self) {
         self.pool.close().await;
     }
