@@ -17,23 +17,26 @@
     return { season: s, year: now.getFullYear() };
   }
 
-  function loadSeasonState(): { season: string; year: number } {
+  function loadSeasonState(): { season: string; year: number; genre: string } {
     try {
       const saved = localStorage.getItem('anivault-season-state');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { season: parsed.season, year: parsed.year, genre: parsed.genre ?? '' };
+      }
     } catch {}
-    return getCurrentSeason();
+    return { ...getCurrentSeason(), genre: '' };
   }
 
-  function saveSeasonState(s: string, y: number) {
-    try { localStorage.setItem('anivault-season-state', JSON.stringify({ season: s, year: y })); }
+  function saveSeasonState(s: string, y: number, g: string) {
+    try { localStorage.setItem('anivault-season-state', JSON.stringify({ season: s, year: y, genre: g })); }
     catch {}
   }
 
   let initial = loadSeasonState();
   let season = initial.season;
   let year = initial.year;
-  let genre: string = '';
+  let genre: string = initial.genre;
   let entries: SeasonAnimeEntry[] = [];
   let loading = true;
   let error: string | null = null;
@@ -91,7 +94,7 @@
     return 'var(--color-error)';
   }
 
-  $: saveSeasonState(season, year);
+  $: saveSeasonState(season, year, genre);
 
   async function loadAll() {
     await Promise.all([load(), loadLibraryIds()]);
