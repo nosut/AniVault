@@ -953,10 +953,11 @@ pub async fn run_migration_inner(
     if !paths.found {
         return Err("No v1 data found. Cannot run migration.".to_string());
     }
-    // Backup first
-    if let Err(e) = backup::backup_database(&state.storage).await {
-        tracing::warn!("Backup failed (continuing): {}", e);
-    }
+    // Backup first — abort rather than run a destructive import with no
+    // safety net if the backup itself couldn't be taken.
+    backup::backup_database(&state.storage)
+        .await
+        .map_err(|e| format!("Pre-migration backup failed, migration aborted: {e}"))?;
     importer::live_import(&state.storage, &paths, strategy)
         .await
         .map_err(command_error)

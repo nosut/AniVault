@@ -1,4 +1,5 @@
 use anivault_core::engine::migration::{live_import, DuplicateStrategy, V1DataPaths};
+use anivault_core::engine::runtime::fresh_test_state;
 use anivault_core::engine::storage::Storage;
 
 // Async (no nested runtime — building one inside #[tokio::test] panics) and
@@ -205,4 +206,19 @@ async fn import_snapshot_does_not_duplicate_watch_history_when_rerun() {
     assert_eq!(history_count, 1);
 
     let _ = std::fs::remove_file(&db_path);
+}
+
+#[tokio::test]
+async fn run_migration_inner_returns_error_when_no_v1_data_found() {
+    let state = fresh_test_state().await;
+    // discover_v1_data() looks at real OS paths; on a clean test machine with
+    // no legacy v1 install this returns found: false, which is exactly the
+    // early-return branch this test locks in — a regression guard for the
+    // function overall, since run_migration_inner had zero test coverage
+    // before this change (a full backup-failure-injection test would need
+    // unreliable filesystem-fault simulation not worth the flakiness).
+    let result =
+        anivault_core::commands::run_migration_inner(&state, DuplicateStrategy::Skip).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("No v1 data found"));
 }
