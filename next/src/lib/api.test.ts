@@ -3,6 +3,7 @@ import {
   backupDatabase,
   confirmIdentification,
   connectSonarr,
+  deepMatchViaAnilist,
   deleteSetting,
   disconnectAniList,
   disconnectSonarr,
@@ -20,18 +21,21 @@ import {
   getSonarrStatus,
   getSyncStatus,
   getTrackingStatus,
+  getWatchHistory,
   identifyFile,
   importAniListLibrary,
   importDatabase,
   importSonarrSeries,
   listKnownFiles,
   listRecentHistory,
+  mapFolderToAnime,
   markEpisodeWatched,
   previewMigration,
   remapSonarr,
   restoreDatabase,
   runMigration,
   searchLibrary,
+  setKnownFileMappings,
   setLaunchOnStartup,
   setSetting,
   startTracking,
@@ -365,5 +369,38 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     await expect(testSonarrConnection('http://localhost:8989', 'key123', invoke)).resolves.toBeUndefined();
     expect(invoke).toHaveBeenCalledWith('test_sonarr_connection', { url: 'http://localhost:8989', apiKey: 'key123' });
+  });
+
+  it('gets watch history through invoke with the given paging', async () => {
+    const entries = [{ id: 1, anime_id: 2, anime_title: 'Test', episode: 1, file_path: null, player: null, watched_at: 1000, source: 'manual' }];
+    const invoke = vi.fn().mockResolvedValue(entries);
+    await expect(getWatchHistory('bebop', 50, 0, invoke)).resolves.toEqual(entries);
+    expect(invoke).toHaveBeenCalledWith('get_watch_history', { query: 'bebop', limit: 50, offset: 0 });
+  });
+
+  it('defaults getWatchHistory paging when omitted', async () => {
+    const invoke = vi.fn().mockResolvedValue([]);
+    await expect(getWatchHistory(undefined, undefined, undefined, invoke)).resolves.toEqual([]);
+    expect(invoke).toHaveBeenCalledWith('get_watch_history', { query: null, limit: 100, offset: 0 });
+  });
+
+  it('maps a folder to an anime through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue(12);
+    await expect(mapFolderToAnime('D:/Anime/Show', 42, invoke)).resolves.toBe(12);
+    expect(invoke).toHaveBeenCalledWith('map_folder_to_anime', { folder: 'D:/Anime/Show', animeId: 42 });
+  });
+
+  it('runs a deep AniList match through invoke', async () => {
+    const report = { groups_total: 3, groups_matched: 2, files_mapped: 10, unmatched: ['Odd Show'] };
+    const invoke = vi.fn().mockResolvedValue(report);
+    await expect(deepMatchViaAnilist(invoke)).resolves.toEqual(report);
+    expect(invoke).toHaveBeenCalledWith('deep_match_via_anilist');
+  });
+
+  it('sets known file mappings through invoke with snake_case payload fields', async () => {
+    const mappings = [{ file_path: 'D:/Anime/Show - 01.mkv', anime_id: 42, episode: 1 }];
+    const invoke = vi.fn().mockResolvedValue(1);
+    await expect(setKnownFileMappings(mappings, invoke)).resolves.toBe(1);
+    expect(invoke).toHaveBeenCalledWith('set_known_file_mappings', { mappings });
   });
 });
