@@ -5,12 +5,12 @@
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
-  let query = '';
-  let entries: SeasonAnimeEntry[] = [];
+  export let query = '';
+  export let entries: SeasonAnimeEntry[] = [];
+  export let hasSearched = false;
   let loading = false;
   let error: string | null = null;
   let libraryIds = new Set<number>();
-  let hasSearched = false;
 
   async function load() {
     if (!query.trim()) return;
