@@ -30,3 +30,48 @@ async fn storage_appends_history_and_queues_sync() {
     let pending = storage.pending_sync_count("anilist").await.unwrap();
     assert_eq!(pending, 1);
 }
+
+#[tokio::test]
+async fn get_file_index_by_filename_returns_none_when_ambiguous() {
+    let storage = Storage::connect("sqlite::memory:").await.unwrap();
+    storage.migrate().await.unwrap();
+    storage.insert_minimal_anime(1, "Show A Season 1").await.unwrap();
+    storage.insert_minimal_anime(2, "Show A Season 2").await.unwrap();
+
+    // Two different shows, each with an episode file that happens to share
+    // the exact same basename — a real-world case with generic numbering.
+    storage
+        .upsert_file_index("D:/Anime/Show A S1/01.mkv", Some(1), 1, 100, 1_782_769_000)
+        .await
+        .unwrap();
+    storage
+        .upsert_file_index("D:/Anime/Show A S2/01.mkv", Some(2), 1, 100, 1_782_769_001)
+        .await
+        .unwrap();
+
+    let result = storage.get_file_index_by_filename("01.mkv").await.unwrap();
+
+    assert!(
+        result.is_none(),
+        "an ambiguous basename match (two different anime_ids) must not silently pick a winner, got {:?}",
+        result
+    );
+}
+
+#[tokio::test]
+async fn get_file_index_by_filename_still_resolves_unambiguous_match() {
+    let storage = Storage::connect("sqlite::memory:").await.unwrap();
+    storage.migrate().await.unwrap();
+    storage.insert_minimal_anime(1, "Cowboy Bebop").await.unwrap();
+    storage
+        .upsert_file_index("D:/Anime/Cowboy Bebop - 01.mkv", Some(1), 1, 100, 1_782_769_000)
+        .await
+        .unwrap();
+
+    let result = storage
+        .get_file_index_by_filename("Cowboy Bebop - 01.mkv")
+        .await
+        .unwrap();
+
+    assert_eq!(result.map(|r| r.anime_id), Some(Some(1)));
+}

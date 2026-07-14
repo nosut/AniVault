@@ -617,6 +617,10 @@ impl Storage {
     /// Look up a mapped file by its filename (basename) rather than full path.
     /// Players like mpv only surface the filename in their window title, so the
     /// absolute-path index lookup misses; this matches on the trailing filename.
+    /// Returns `None` (falling through to full parse+search) rather than
+    /// guessing when two different anime share an identically-named episode
+    /// file — generic fansub numbering like "01.mkv" makes this a real case,
+    /// not just a theoretical one.
     pub async fn get_file_index_by_filename(
         &self,
         filename: &str,
@@ -627,16 +631,23 @@ impl Storage {
             .replace('%', "\\%")
             .replace('_', "\\_");
         let pattern = format!("%{escaped}");
-        let row = sqlx::query(
+        let rows = sqlx::query(
             "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored \
              FROM file_index \
              WHERE file_path LIKE ?1 ESCAPE '\\' AND anime_id IS NOT NULL AND ignored = 0 \
-             ORDER BY confidence DESC, indexed_at DESC LIMIT 1",
+             ORDER BY confidence DESC, indexed_at DESC",
         )
         .bind(pattern)
-        .fetch_optional(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
-        Ok(row.map(|row| FileIndexRow {
+
+        let distinct_anime: std::collections::HashSet<Option<i64>> =
+            rows.iter().map(|r| r.get::<Option<i64>, _>("anime_id")).collect();
+        if distinct_anime.len() > 1 {
+            return Ok(None);
+        }
+
+        Ok(rows.into_iter().next().map(|row| FileIndexRow {
             file_path: row.get("file_path"),
             anime_id: row.get("anime_id"),
             episode: row.get("episode"),
