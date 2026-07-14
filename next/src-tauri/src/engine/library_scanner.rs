@@ -498,9 +498,7 @@ pub struct LibraryScanReport {
 
 /// Open a file with the default system application (plays video files).
 pub fn open_file(path: &str) -> anyhow::Result<()> {
-    std::process::Command::new("cmd")
-        .args(["/c", "start", "", path])
-        .spawn()?;
+    open::that(path)?;
     Ok(())
 }
 
