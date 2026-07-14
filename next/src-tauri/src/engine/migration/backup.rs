@@ -33,13 +33,24 @@ pub async fn restore_database(
 ) -> anyhow::Result<String> {
     let db_path = storage.database_path().to_owned();
 
-    // Verify backup exists
+    // Verify backup exists and is actually a SQLite database before touching
+    // the live DB — a wrong or corrupt path must not destroy working data.
     if !std::path::Path::new(backup_path).exists() {
         anyhow::bail!("Backup file not found: {}", backup_path);
     }
+    verify_sqlite_file(backup_path)?;
 
-    // WAL checkpoint then close pool
+    // Safety net: back up the *current* (pre-restore) database so a restore
+    // from the wrong backup, or a change of mind, is itself reversible.
+    let pre_restore_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let pre_restore_path = format!("{}.pre-restore.{}", db_path, pre_restore_timestamp);
     storage.wal_checkpoint().await?;
+    std::fs::copy(&db_path, &pre_restore_path)?;
+
+    // Close pool, then replace DB file.
     storage.close().await;
 
     // Replace DB file. Remove stale WAL/SHM sidecars so leftover journal pages
@@ -49,9 +60,25 @@ pub async fn restore_database(
     let _ = std::fs::remove_file(format!("{db_path}-shm"));
 
     Ok(format!(
-        "Database restored from {}. Restart required.",
-        backup_path
+        "Database restored from {}. Previous database saved to {}. Restart required.",
+        backup_path, pre_restore_path
     ))
+}
+
+/// Check the file starts with SQLite's 16-byte magic header, rejecting
+/// anything that clearly isn't a SQLite database before we copy it over the
+/// live DB.
+fn verify_sqlite_file(path: &str) -> anyhow::Result<()> {
+    const SQLITE_HEADER: &[u8] = b"SQLite format 3\0";
+    let mut file = std::fs::File::open(path)?;
+    let mut header = [0u8; 16];
+    use std::io::Read;
+    file.read_exact(&mut header)
+        .map_err(|_| anyhow::anyhow!("{} is too small to be a SQLite database", path))?;
+    if header != SQLITE_HEADER {
+        anyhow::bail!("{} does not look like a SQLite database file", path);
+    }
+    Ok(())
 }
 
 // ── Export / Import ──────────────────────────────────────────────────────────
@@ -230,5 +257,68 @@ mod tests {
 
         let history = storage2.list_recent_watch_history(10).await.unwrap();
         assert_eq!(history.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn restore_rejects_non_sqlite_file() {
+        let storage = Tests::new_in_memory().await;
+        let bogus_path = std::env::temp_dir().join(format!(
+            "anivault-test-bogus-{}.db",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::write(&bogus_path, b"not a sqlite database").unwrap();
+
+        let result = restore_database(&storage, bogus_path.to_str().unwrap()).await;
+
+        std::fs::remove_file(&bogus_path).ok();
+        assert!(result.is_err(), "restoring a non-SQLite file must be rejected");
+    }
+
+    #[tokio::test]
+    async fn restore_takes_a_safety_backup_of_the_current_db_first() {
+        // Use a real file-backed database (not :memory:) so backup/restore's
+        // file-copy logic has an actual file to operate on.
+        let db_path = std::env::temp_dir().join(format!(
+            "anivault-test-restore-{}.db",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let db_url = format!("sqlite:{}", db_path.to_str().unwrap());
+        let storage = Storage::connect(&db_url).await.unwrap();
+        storage.migrate().await.unwrap();
+        storage.insert_minimal_anime(1, "Original DB").await.unwrap();
+
+        // Make a valid backup file to restore *from*.
+        let good_backup_path = backup_database(&storage).await.unwrap();
+
+        // Mutate the live DB so we can tell a safety backup captured the
+        // pre-restore state.
+        storage.insert_minimal_anime(2, "Changed before restore").await.unwrap();
+
+        restore_database(&storage, &good_backup_path).await.unwrap();
+
+        // A safety backup of the pre-restore state must exist on disk,
+        // distinct from the backup we restored from.
+        let db_dir = db_path.parent().unwrap();
+        let stem = db_path.file_name().unwrap().to_str().unwrap();
+        let safety_backups: Vec<_> = std::fs::read_dir(db_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.starts_with(stem) && name.contains(".pre-restore.")
+            })
+            .collect();
+        assert!(
+            !safety_backups.is_empty(),
+            "expected a .pre-restore. safety backup file next to {}",
+            db_path.display()
+        );
+
+        // Cleanup
+        std::fs::remove_file(&db_path).ok();
+        std::fs::remove_file(&good_backup_path).ok();
+        for f in safety_backups {
+            std::fs::remove_file(f.path()).ok();
+        }
     }
 }
