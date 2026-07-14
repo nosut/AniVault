@@ -136,7 +136,10 @@ impl AniListClient {
     pub fn new(token: String) -> Self {
         Self {
             token,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("failed to build reqwest client"),
         }
     }
 

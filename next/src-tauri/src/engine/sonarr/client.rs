@@ -103,7 +103,10 @@ impl SonarrClient {
         Self {
             url,
             api_key,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("failed to build reqwest client"),
         }
     }
 
