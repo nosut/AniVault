@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { onDestroy } from 'svelte';
@@ -76,9 +75,14 @@
   });
 
   async function loadAiring() {
+    const requestedId = animeId;
     nextAiring = null;
-    try { nextAiring = await getNextAiring(animeId); }
-    catch { nextAiring = null; }
+    try {
+      const na = await getNextAiring(requestedId);
+      if (requestedId === animeId) nextAiring = na;
+    } catch {
+      if (requestedId === animeId) nextAiring = null;
+    }
   }
 
   function formatCountdown(secs: number): string {
@@ -181,46 +185,66 @@
   }
 
   async function load() {
+    const requestedId = animeId;
     loading = true;
     error = null;
     saveOk = null;
     try {
-      const d = await fetchAnimeDetail(animeId);
+      const d = await fetchAnimeDetail(requestedId);
+      if (requestedId !== animeId) return; // a newer anime is now showing
       detail = d;
       setDraftsFromDetail(d);
       loadSonarr();
       loadEpisodeFiles();
       loadRelations();
     } catch (e) {
+      if (requestedId !== animeId) return;
       error = e instanceof Error ? e.message : String(e);
     } finally {
-      loading = false;
+      if (requestedId === animeId) loading = false;
     }
   }
 
   async function loadSonarr() {
+    const requestedId = animeId;
     sonarrLoading = true;
     try {
-      sonarrAvail = await getSonarrAvailability(animeId);
+      const avail = await getSonarrAvailability(requestedId);
+      if (requestedId !== animeId) return;
+      sonarrAvail = avail;
     } catch {
-      sonarrAvail = null;
+      if (requestedId === animeId) sonarrAvail = null;
     } finally {
-      sonarrLoading = false;
+      if (requestedId === animeId) sonarrLoading = false;
     }
   }
 
   async function loadEpisodeFiles() {
+    const requestedId = animeId;
     episodeFilesLoading = true;
-    try { episodeFiles = await getEpisodeFiles(animeId); }
-    catch { episodeFiles = []; }
-    finally { episodeFilesLoading = false; }
+    try {
+      const files = await getEpisodeFiles(requestedId);
+      if (requestedId !== animeId) return;
+      episodeFiles = files;
+    } catch {
+      if (requestedId === animeId) episodeFiles = [];
+    } finally {
+      if (requestedId === animeId) episodeFilesLoading = false;
+    }
   }
 
   async function loadRelations() {
+    const requestedId = animeId;
     relationsLoading = true;
-    try { relations = await getAnimeRelations(animeId); }
-    catch { relations = []; }
-    finally { relationsLoading = false; }
+    try {
+      const r = await getAnimeRelations(requestedId);
+      if (requestedId !== animeId) return;
+      relations = r;
+    } catch {
+      if (requestedId === animeId) relations = [];
+    } finally {
+      if (requestedId === animeId) relationsLoading = false;
+    }
   }
 
   let mappingFolder = false;
@@ -286,12 +310,11 @@
     openEpisodeFile(path);
   }
 
-  onMount(() => {
-    load();
-  });
-
+  // Reactive statements run once on init (in addition to on every later
+  // animeId change), so this alone covers both first mount and navigating
+  // to a different anime — an onMount(() => load()) alongside this would
+  // double-fire every request on initial load.
   $: if (animeId) {
-    // reactive reload when prop changes
     load();
     loadAiring();
   }
