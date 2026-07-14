@@ -78,3 +78,40 @@ async fn update_list_entry_edits_progress() {
     let entry = state.storage.get_list_entry(1).await.unwrap().unwrap();
     assert_eq!(entry.watched_episodes, 7);
 }
+
+#[tokio::test]
+async fn map_folder_to_anime_rejects_nonexistent_folder() {
+    let state = fresh_test_state().await;
+    state.storage.insert_minimal_anime(1, "Test Anime").await.unwrap();
+
+    let result = anivault_core::commands::map_folder_to_anime_inner(
+        "D:/this/path/does/not/exist",
+        1,
+        &state,
+    )
+    .await;
+
+    assert!(result.is_err(), "mapping a nonexistent folder must fail");
+}
+
+#[tokio::test]
+async fn map_folder_to_anime_rejects_filesystem_root() {
+    let state = fresh_test_state().await;
+    state.storage.insert_minimal_anime(1, "Test Anime").await.unwrap();
+
+    // Whichever root exists on this machine — on Windows this is a drive
+    // root, on Unix it's "/". Either way it has no parent.
+    let root = std::path::Path::new(".")
+        .canonicalize()
+        .unwrap()
+        .ancestors()
+        .last()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let result = anivault_core::commands::map_folder_to_anime_inner(&root, 1, &state).await;
+
+    assert!(result.is_err(), "mapping a filesystem root must be refused");
+}

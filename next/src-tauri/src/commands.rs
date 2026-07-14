@@ -1664,9 +1664,17 @@ pub async fn map_folder_to_anime_inner(
     anime_id: i64,
     state: &EngineState,
 ) -> anyhow::Result<usize> {
+    let path = std::path::Path::new(folder);
+    if !path.is_dir() {
+        anyhow::bail!("Folder does not exist: {folder}");
+    }
+    if path.parent().is_none() {
+        anyhow::bail!("Refusing to scan a filesystem root: {folder}");
+    }
+
     let mut files: Vec<std::path::PathBuf> = Vec::new();
     let mut errs: Vec<String> = Vec::new();
-    library_scanner::find_video_files(std::path::Path::new(folder), &mut files, &mut errs);
+    library_scanner::find_video_files(path, &mut files, &mut errs);
 
     let mappings: Vec<(String, i64, i32)> = files
         .iter()
