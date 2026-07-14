@@ -2,12 +2,12 @@
   import { onMount } from 'svelte';
   import { getWatchHistory, type WatchHistoryEntry } from './api';
 
-  let entries: WatchHistoryEntry[] = [];
-  let query = '';
+  export let entries: WatchHistoryEntry[] = [];
+  export let query = '';
+  export let offset = 0;
+  export let hasMore = true;
   let loading = true;
   let error: string | null = null;
-  let offset = 0;
-  let hasMore = true;
   const pageSize = 50;
 
   async function load(reset = false) {
@@ -36,7 +36,10 @@
     load(true);
   }
 
-  onMount(() => load(true));
+  // Only fetch on the very first mount — after that, entries/offset/query
+  // are restored from App.svelte's lifted state, so a remount from
+  // navigating back must not blow that away with a fresh page-1 fetch.
+  onMount(() => { if (entries.length === 0) load(true); });
 </script>
 
 <div class="history-view">

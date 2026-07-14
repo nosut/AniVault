@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { drainEngineEvents, type EngineEvent, type SeasonAnimeEntry } from './lib/api';
+  import { drainEngineEvents, type EngineEvent, type SeasonAnimeEntry, type WatchHistoryEntry } from './lib/api';
   import NowPlaying from './lib/NowPlaying.svelte';
   import DashboardView from './lib/DashboardView.svelte';
   import LibraryView from './lib/LibraryView.svelte';
@@ -56,6 +56,10 @@
   let searchQuery = '';
   let searchEntries: SeasonAnimeEntry[] = [];
   let searchHasSearched = false;
+  let historyEntries: WatchHistoryEntry[] = [];
+  let historyQuery = '';
+  let historyOffset = 0;
+  let historyHasMore = true;
   let latestEvents: EngineEvent[] = [];
   let eventIntervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -202,7 +206,7 @@
     {:else if currentView === 'calendar'}
       <CalendarView on:select={handleCalendarSelect} />
     {:else if currentView === 'history'}
-      <HistoryView />
+      <HistoryView bind:entries={historyEntries} bind:query={historyQuery} bind:offset={historyOffset} bind:hasMore={historyHasMore} />
     {:else if currentView === 'stats'}
       <StatsView />
     {:else if currentView === 'detail' && detailAnimeId !== null}
