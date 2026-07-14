@@ -109,7 +109,7 @@
   let migrationPreviewError: string | null = null;
 
   let migrationRunning = false;
-  let migrationStrategy: string = 'Skip';
+  let migrationStrategy: 'Skip' | 'Merge' = 'Skip';
   let migrationRunReport: MigrationReport | null = null;
   let migrationRunError: string | null = null;
 

@@ -239,7 +239,7 @@ export function discoverV1Data(invokeFn: InvokeFn = tauriInvoke): Promise<V1Data
   return invokeFn<V1DataPaths>('discover_v1_data');
 }
 
-export function runMigration(strategy: string, invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport> {
+export function runMigration(strategy: 'Skip' | 'Merge', invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport> {
   return invokeFn<MigrationReport>('run_migration', { strategy });
 }
 
@@ -247,6 +247,11 @@ export function backupDatabase(invokeFn: InvokeFn = tauriInvoke): Promise<string
   return invokeFn<string>('backup_database');
 }
 
+// The backend restarts the app immediately after a successful restore
+// (see commands.rs's restore_database), so this promise's success branch
+// is never actually observed by the caller in practice — only rejection
+// (a validation or file-system error before the restart) is. Don't add
+// .then() logic here expecting to run after a successful restore.
 export function restoreDatabase(backupPath: string, invokeFn: InvokeFn = tauriInvoke): Promise<string> {
   return invokeFn<string>('restore_database', { backupPath });
 }
