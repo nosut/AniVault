@@ -573,6 +573,10 @@ pub async fn get_library_stats_inner(state: &EngineState) -> anyhow::Result<Libr
     state.storage.library_stats().await
 }
 
+pub async fn get_library_ids_inner(state: &EngineState) -> anyhow::Result<Vec<i64>> {
+    state.storage.all_library_ids().await
+}
+
 /// Fetch a single anime's metadata from AniList by id and upsert it into the
 /// local `anime` table. Shared by detail auto-import and the file manager's
 /// "search AniList" mapping flow. Errors if AniList isn't connected or the id
@@ -2049,6 +2053,13 @@ pub async fn get_library_stats(
     state: tauri::State<'_, EngineState>,
 ) -> Result<LibraryStats, String> {
     get_library_stats_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_library_ids(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<i64>, String> {
+    get_library_ids_inner(&state).await.map_err(command_error)
 }
 
 #[tauri::command]

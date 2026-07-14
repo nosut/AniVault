@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { searchAnime, searchLibrary, updateListEntry, importAnilistAnime, type SeasonAnimeEntry } from './api';
+  import { searchAnime, getLibraryIds, updateListEntry, importAnilistAnime, type SeasonAnimeEntry } from './api';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
@@ -22,9 +22,7 @@
 
   async function loadLibraryIds() {
     try {
-      const all = await searchLibrary('', null, 500, 0);
-      libraryIds = new Set(all.map(e => e.anime_id));
-      libraryIds = libraryIds;
+      libraryIds = new Set(await getLibraryIds());
     } catch {}
   }
 

@@ -590,6 +590,12 @@ export function getLibraryStats(invokeFn: InvokeFn = tauriInvoke): Promise<Libra
   return invokeFn<LibraryStats>('get_library_stats');
 }
 
+// Full set of anime ids that have a list entry (any status) — unpaginated,
+// for "is this anime in my library?" membership checks (season/search grids).
+export function getLibraryIds(invokeFn: InvokeFn = tauriInvoke): Promise<number[]> {
+  return invokeFn<number[]>('get_library_ids');
+}
+
 export function fetchAnimeDetail(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<AnimeDetail> {
   return invokeFn<AnimeDetail>('fetch_anime_detail', { animeId: animeId });
 }

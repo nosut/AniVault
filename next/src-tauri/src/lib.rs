@@ -218,6 +218,7 @@ pub fn run() {
             commands::get_season_anime,
             commands::get_launch_on_startup,
             commands::get_library_folders,
+            commands::get_library_ids,
             commands::get_library_stats,
             commands::get_session_state,
             commands::get_sonarr_availability,

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { getSeasonAnime, searchLibrary, updateListEntry, importAnilistAnime, type SeasonAnimeEntry } from './api';
+  import { getSeasonAnime, getLibraryIds, updateListEntry, importAnilistAnime, type SeasonAnimeEntry } from './api';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
@@ -48,9 +48,7 @@
 
   async function loadLibraryIds() {
     try {
-      const all = await searchLibrary('', null, 500, 0);
-      libraryIds = new Set(all.map(e => e.anime_id));
-      libraryIds = libraryIds; // force reactivity
+      libraryIds = new Set(await getLibraryIds());
     } catch {
       libraryIds = new Set();
     }

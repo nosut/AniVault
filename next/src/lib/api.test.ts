@@ -12,6 +12,7 @@ import {
   fetchAnimeDetail,
   getEngineStatus,
   getLaunchOnStartup,
+  getLibraryIds,
   getLibraryStats,
   getSessionState,
   getSetting,
@@ -265,6 +266,13 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(stats);
     await expect(getLibraryStats(invoke)).resolves.toEqual(stats);
     expect(invoke).toHaveBeenCalledWith('get_library_stats');
+  });
+
+  it('gets all library ids through invoke', async () => {
+    const ids = [1, 2, 3];
+    const invoke = vi.fn().mockResolvedValue(ids);
+    await expect(getLibraryIds(invoke)).resolves.toEqual(ids);
+    expect(invoke).toHaveBeenCalledWith('get_library_ids');
   });
 
   it('fetches anime detail through invoke', async () => {

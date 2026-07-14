@@ -1242,6 +1242,18 @@ impl Storage {
             .collect())
     }
 
+    /// All anime ids that actually have a list entry (any status). Unlike
+    /// `search_library`, this isn't capped or ordered by `anime.id` (AniList's
+    /// global id, unrelated to when a show was added), so callers that just
+    /// need "is this anime in my library?" membership can't silently drop
+    /// entries once the local anime cache grows past an arbitrary page size.
+    pub async fn all_library_ids(&self) -> anyhow::Result<Vec<i64>> {
+        let ids: Vec<i64> = sqlx::query_scalar("SELECT anime_id FROM list_entry")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(ids)
+    }
+
     pub async fn library_stats(&self) -> anyhow::Result<LibraryStats> {
         let row = sqlx::query(
             "SELECT \

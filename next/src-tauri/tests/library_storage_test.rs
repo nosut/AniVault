@@ -56,6 +56,26 @@ async fn library_stats_counts_statuses() {
 }
 
 #[tokio::test]
+async fn all_library_ids_excludes_unlisted_anime() {
+    let storage = Tests::new_in_memory().await;
+
+    // Anime cached locally (e.g. browsed) but never added to the list.
+    storage.insert_minimal_anime(1, "Unlisted Anime").await.unwrap();
+    // Anime actually in the library, with a higher anime.id than the
+    // unlisted one above — this mirrors AniList ids for newer seasonal
+    // shows, which are numerically larger than older cached entries.
+    storage.insert_minimal_anime(2, "Plan To Watch Anime").await.unwrap();
+    storage
+        .upsert_list_entry_full(2, "plan_to_watch", 0, None, "", 1000, 1000)
+        .await
+        .unwrap();
+
+    let ids = storage.all_library_ids().await.unwrap();
+
+    assert_eq!(ids, vec![2]);
+}
+
+#[tokio::test]
 async fn anime_detail_returns_full_row() {
     let storage = Tests::new_in_memory().await;
 
