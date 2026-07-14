@@ -10,7 +10,17 @@
   let loading = true;
   let error: string | null = null;
 
-  let viewDate = new Date(); // current month being viewed
+  function loadViewDate(): Date {
+    try {
+      const raw = localStorage.getItem('anivault-calendar-date');
+      if (raw) {
+        const d = new Date(raw);
+        if (!isNaN(d.getTime())) return d;
+      }
+    } catch {}
+    return new Date();
+  }
+  let viewDate = loadViewDate(); // current month being viewed
   $: year = viewDate.getFullYear();
   $: month = viewDate.getMonth(); // 0-11
 
@@ -21,6 +31,7 @@
   }
   let viewMode: 'month' | 'agenda' = loadView();
   $: try { localStorage.setItem('anivault-calendar-view', viewMode); } catch {}
+  $: try { localStorage.setItem('anivault-calendar-date', viewDate.toISOString()); } catch {}
 
   // Live clock (seconds) driving the countdowns; ticks once a second.
   let now = Math.floor(Date.now() / 1000);
