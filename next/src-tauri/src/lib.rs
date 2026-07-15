@@ -253,6 +253,7 @@ pub fn run() {
             commands::preview_migration,
             commands::remap_sonarr,
             commands::rematch_unmapped_files,
+            commands::repair_anime_file_mappings,
             commands::rescan_anime_files,
             commands::restore_database,
             commands::run_migration,

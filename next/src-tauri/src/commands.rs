@@ -848,6 +848,53 @@ pub async fn rescan_anime_files_inner(
     library_scanner::rescan_anime_dirs(&state.storage, anime_id).await
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FileMappingRepairReport {
+    pub repaired: i64,
+    pub skipped: i64,
+    pub protected: i64,
+}
+
+/// Recompute conflicts for `anime_id` against current database and filesystem
+/// state, then transactionally repair the repairable ones. Recomputing here
+/// (rather than trusting candidates the frontend sent) prevents a stale UI
+/// view from authorizing an obsolete change.
+pub async fn repair_anime_file_mappings_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<FileMappingRepairReport> {
+    let dirs = library_scanner::anime_file_dirs(&state.storage, anime_id).await?;
+    let conflicts =
+        library_scanner::detect_mapping_conflicts(&state.storage, anime_id, &dirs).await?;
+    let protected = conflicts.iter().filter(|c| !c.repairable).count() as i64;
+
+    let mut repairs = Vec::new();
+    for conflict in conflicts.iter().filter(|c| c.repairable) {
+        // Prefer the episode re-parsed from the current filename; fall back to
+        // the conflict's existing episode when parsing yields nothing usable.
+        let episode = conflict.episode.unwrap_or(0);
+        repairs.push(crate::engine::storage::FileMappingRepair {
+            file_path: conflict.file_path.clone(),
+            expected_anime_id: conflict.current_anime_id,
+            target_anime_id: anime_id,
+            episode,
+            confidence: conflict.target_confidence,
+        });
+    }
+
+    let requested = repairs.len() as i64;
+    let repaired = state
+        .storage
+        .repair_file_mappings(&repairs, unix_now_inner()?)
+        .await? as i64;
+
+    Ok(FileMappingRepairReport {
+        repaired,
+        skipped: requested - repaired,
+        protected,
+    })
+}
+
 pub async fn get_episode_files_inner(
     state: &EngineState,
     anime_id: i64,
@@ -2289,6 +2336,16 @@ pub async fn rescan_anime_files(
     state: tauri::State<'_, EngineState>,
 ) -> Result<library_scanner::LibraryScanReport, String> {
     rescan_anime_files_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn repair_anime_file_mappings(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<FileMappingRepairReport, String> {
+    repair_anime_file_mappings_inner(&state, anime_id)
         .await
         .map_err(command_error)
 }

@@ -50,6 +50,15 @@ pub struct FileIndexRow {
     pub ignored: bool,
 }
 
+/// A confirmed repair candidate for `Storage::repair_file_mappings`.
+pub struct FileMappingRepair {
+    pub file_path: String,
+    pub expected_anime_id: i64,
+    pub target_anime_id: i64,
+    pub episode: i32,
+    pub confidence: i32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MappingSource {
@@ -671,6 +680,44 @@ impl Storage {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    /// A single confirmed conflict repair: move `file_path` from
+    /// `expected_anime_id` to `target_anime_id`. `expected_anime_id` is
+    /// re-checked in the `WHERE` clause as defense in depth against a stale
+    /// candidate authorizing an unintended change.
+    pub async fn repair_file_mappings(
+        &self,
+        repairs: &[FileMappingRepair],
+        indexed_at: i64,
+    ) -> anyhow::Result<u64> {
+        let mut tx = self.pool.begin().await?;
+        let mut repaired = 0u64;
+        for repair in repairs {
+            let result = sqlx::query(
+                "UPDATE file_index
+                 SET anime_id = ?1,
+                     episode = ?2,
+                     confidence = ?3,
+                     mapping_source = 'manual',
+                     indexed_at = ?4
+                 WHERE file_path = ?5
+                   AND anime_id = ?6
+                   AND ignored = 0
+                   AND mapping_source IN ('automatic', 'inherited', 'legacy')",
+            )
+            .bind(repair.target_anime_id)
+            .bind(repair.episode)
+            .bind(repair.confidence)
+            .bind(indexed_at)
+            .bind(&repair.file_path)
+            .bind(repair.expected_anime_id)
+            .execute(&mut *tx)
+            .await?;
+            repaired += result.rows_affected();
+        }
+        tx.commit().await?;
+        Ok(repaired)
     }
 
     pub async fn get_file_index(&self, file_path: &str) -> anyhow::Result<Option<FileIndexRow>> {
