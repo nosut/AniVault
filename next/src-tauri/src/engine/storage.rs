@@ -50,6 +50,21 @@ pub struct FileIndexRow {
     pub ignored: bool,
 }
 
+/// A file-index row enriched with the mapped anime's display title, for
+/// surfacing the real mapping (not just a filename-derived group) to the
+/// frontend.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KnownFileRow {
+    pub file_path: String,
+    pub anime_id: Option<i64>,
+    pub anime_title: Option<String>,
+    pub episode: Option<i32>,
+    pub confidence: i32,
+    pub indexed_at: i64,
+    pub ignored: bool,
+    pub mapping_source: MappingSource,
+}
+
 /// A confirmed repair candidate for `Storage::repair_file_mappings`.
 pub struct FileMappingRepair {
     pub file_path: String,
@@ -829,6 +844,50 @@ impl Storage {
                 mapping_source: MappingSource::from_db(&row.get::<String, _>("mapping_source")),
                 indexed_at: row.get("indexed_at"),
                 ignored: row.get::<i64, _>("ignored") != 0,
+            })
+            .collect())
+    }
+
+    /// Like `list_file_index`, but enriched with the mapped anime's display
+    /// title for UI display. `list_file_index` remains the internal
+    /// projection used by matching and rematch, which don't need the title.
+    pub async fn list_known_files(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> anyhow::Result<Vec<KnownFileRow>> {
+        let rows = sqlx::query(
+            "SELECT fi.file_path,
+                    fi.anime_id,
+                    fi.episode,
+                    fi.confidence,
+                    fi.indexed_at,
+                    fi.ignored,
+                    fi.mapping_source,
+                    COALESCE(
+                      NULLIF(json_extract(a.titles_json, '$.english'), ''),
+                      NULLIF(json_extract(a.titles_json, '$.romaji'), '')
+                    ) AS anime_title
+             FROM file_index fi
+             LEFT JOIN anime a ON a.id = fi.anime_id
+             ORDER BY fi.indexed_at DESC
+             LIMIT ?1 OFFSET ?2",
+        )
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|row| KnownFileRow {
+                file_path: row.get("file_path"),
+                anime_id: row.get("anime_id"),
+                anime_title: row.get("anime_title"),
+                episode: row.get("episode"),
+                confidence: row.get("confidence"),
+                indexed_at: row.get("indexed_at"),
+                ignored: row.get::<i64, _>("ignored") != 0,
+                mapping_source: MappingSource::from_db(&row.get::<String, _>("mapping_source")),
             })
             .collect())
     }

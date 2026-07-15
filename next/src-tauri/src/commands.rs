@@ -545,10 +545,10 @@ pub async fn confirm_identification_inner(
 pub async fn list_known_files_inner(
     limit: i64,
     state: &EngineState,
-) -> Result<Vec<FileIndexRow>, String> {
+) -> Result<Vec<crate::engine::storage::KnownFileRow>, String> {
     state
         .storage
-        .list_file_index(limit, 0)
+        .list_known_files(limit, 0)
         .await
         .map_err(command_error)
 }
@@ -1680,7 +1680,7 @@ pub async fn confirm_identification(
 pub async fn list_known_files(
     limit: i64,
     state: tauri::State<'_, EngineState>,
-) -> Result<Vec<FileIndexRow>, String> {
+) -> Result<Vec<crate::engine::storage::KnownFileRow>, String> {
     list_known_files_inner(limit, &state).await
 }
 

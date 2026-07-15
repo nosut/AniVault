@@ -63,6 +63,8 @@ export interface RecognitionResult {
   candidates: MatchCandidate[];
 }
 
+export type MappingSource = 'automatic' | 'inherited' | 'manual' | 'legacy';
+
 export interface FileIndexEntry {
   file_path: string;
   anime_id: number | null;
@@ -70,6 +72,21 @@ export interface FileIndexEntry {
   confidence: number;
   indexed_at: number;
   ignored: boolean;
+  mapping_source: MappingSource;
+}
+
+export interface KnownFileEntry extends FileIndexEntry {
+  anime_title: string | null;
+}
+
+export interface FileMappingConflict {
+  file_path: string;
+  episode: number | null;
+  current_anime_id: number;
+  current_anime_title: string;
+  mapping_source: MappingSource;
+  target_confidence: number;
+  repairable: boolean;
 }
 
 export interface LibraryScanReport {
@@ -78,6 +95,13 @@ export interface LibraryScanReport {
   skipped: number;
   removed: number;
   errors: string[];
+  mapping_conflicts: FileMappingConflict[];
+}
+
+export interface FileMappingRepairReport {
+  repaired: number;
+  skipped: number;
+  protected: number;
 }
 
 export interface AniListSyncStatus {
@@ -329,8 +353,8 @@ export function confirmIdentification(filePath: string, animeId: number, episode
   return invokeFn<void>('confirm_identification', { filePath: filePath, animeId: animeId, episode });
 }
 
-export function listKnownFiles(limit: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileIndexEntry[]> {
-  return invokeFn<FileIndexEntry[]>('list_known_files', { limit });
+export function listKnownFiles(limit: number, invokeFn: InvokeFn = tauriInvoke): Promise<KnownFileEntry[]> {
+  return invokeFn<KnownFileEntry[]>('list_known_files', { limit });
 }
 
 export function rematchUnmappedFiles(invokeFn: InvokeFn = tauriInvoke): Promise<number> {
@@ -663,6 +687,10 @@ export function rescanAnimeFiles(animeId: number, invokeFn: InvokeFn = tauriInvo
 
 export function getEpisodeFiles(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileIndexEntry[]> {
   return invokeFn<FileIndexEntry[]>('get_episode_files', { animeId });
+}
+
+export function repairAnimeFileMappings(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileMappingRepairReport> {
+  return invokeFn<FileMappingRepairReport>('repair_anime_file_mappings', { animeId });
 }
 
 export function openEpisodeFile(path: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {

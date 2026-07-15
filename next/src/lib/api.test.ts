@@ -32,6 +32,7 @@ import {
   markEpisodeWatched,
   previewMigration,
   remapSonarr,
+  repairAnimeFileMappings,
   restoreDatabase,
   runMigration,
   searchLibrary,
@@ -224,10 +225,28 @@ describe('api wrappers', () => {
   });
 
   it('lists known files', async () => {
-    const entries = [{ file_path: 'test.mkv', anime_id: 1, episode: 1, confidence: 100, indexed_at: 1782769008 }];
+    const entries = [
+      {
+        file_path: 'test.mkv',
+        anime_id: 1,
+        anime_title: 'Test Anime',
+        episode: 1,
+        confidence: 100,
+        indexed_at: 1782769008,
+        ignored: false,
+        mapping_source: 'automatic' as const,
+      },
+    ];
     const invoke = vi.fn().mockResolvedValue(entries);
     await expect(listKnownFiles(10, invoke)).resolves.toEqual(entries);
     expect(invoke).toHaveBeenCalledWith('list_known_files', { limit: 10 });
+  });
+
+  it('repairs anime file mappings through invoke', async () => {
+    const report = { repaired: 1, skipped: 0, protected: 0 };
+    const invoke = vi.fn().mockResolvedValue(report);
+    await expect(repairAnimeFileMappings(185542, invoke)).resolves.toEqual(report);
+    expect(invoke).toHaveBeenCalledWith('repair_anime_file_mappings', { animeId: 185542 });
   });
 
   it('stores anilist token', async () => {
