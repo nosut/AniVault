@@ -45,14 +45,17 @@ pub struct FileMatch {
     pub mapping_source: MappingSource,
 }
 
-/// Match a single file against the local library, scoring every candidate and
-/// returning the best above [`MATCH_THRESHOLD`]. Shared by the library scanner
-/// and the Re-match command so both rank identically and store real confidence
-/// (never a hardcoded value or an unscored first-candidate pick).
-pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<FileMatch> {
-    let file_path_str = file_path.to_string_lossy().to_string();
+/// Filename-derived episode/title plus the directory-name queries built from a
+/// file's parent and grandparent folders. Shared by real-time matching and
+/// conflict detection so both rank candidates identically.
+struct FileQueries {
+    episode: Option<i32>,
+    filename_title: Option<String>,
+    all: Vec<String>,
+}
 
-    // Parse filename to find episode info — use just the filename, not the full path
+fn file_queries(file_path: &Path) -> FileQueries {
+    let file_path_str = file_path.to_string_lossy().to_string();
     let file_name = file_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -65,21 +68,62 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
             None
         }
     });
+    let filename_title = parsed
+        .as_ref()
+        .map(|p| p.cleaned_title.trim().to_string())
+        .filter(|t| !t.is_empty());
 
-    // Build a set of title queries to try: the parsed filename title, plus the
-    // parent ("Season 1") and grandparent (show folder) directory names. The show
-    // folder is often the most reliable signal for well-organized libraries.
     let parent = file_path
         .parent()
         .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .map(|s| s.to_string());
+        .and_then(|n| n.to_str());
     let grandparent = file_path
         .parent()
         .and_then(|p| p.parent())
         .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .map(|s| s.to_string());
+        .and_then(|n| n.to_str());
+
+    let mut all: Vec<String> = Vec::new();
+    if let Some(title) = &filename_title {
+        all.push(title.clone());
+    }
+    for dir_name in [grandparent, parent].into_iter().flatten() {
+        let cleaned = dir_name
+            .replace(['[', ']', '(', ')', '_'], " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !cleaned.is_empty() {
+            all.push(cleaned);
+        }
+    }
+
+    FileQueries {
+        episode,
+        filename_title,
+        all,
+    }
+}
+
+/// Best title-match score of `queries` against `titles_json`.
+fn score_queries(queries: &[String], titles_json: &str) -> u8 {
+    queries
+        .iter()
+        .map(|q| crate::engine::matcher::score_titles_json(q, titles_json))
+        .max()
+        .unwrap_or(0)
+}
+
+/// Match a single file against the local library, scoring every candidate and
+/// returning the best above [`MATCH_THRESHOLD`]. Shared by the library scanner
+/// and the Re-match command so both rank identically and store real confidence
+/// (never a hardcoded value or an unscored first-candidate pick).
+pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<FileMatch> {
+    let file_path_str = file_path.to_string_lossy().to_string();
+
+    let fq = file_queries(file_path);
+    let episode = fq.episode;
+    let queries = fq.all;
 
     let folder_anime = if let (Some(_), Some(dir)) = (
         episode,
@@ -95,26 +139,6 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
     } else {
         None
     };
-
-    let mut queries: Vec<String> = Vec::new();
-    if let Some(ref p) = parsed {
-        if !p.cleaned_title.is_empty() {
-            queries.push(p.cleaned_title.clone());
-        }
-    }
-    for dir_name in [grandparent.as_deref(), parent.as_deref()]
-        .into_iter()
-        .flatten()
-    {
-        let cleaned = dir_name
-            .replace(['[', ']', '(', ')', '_'], " ")
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
-        if !cleaned.is_empty() {
-            queries.push(cleaned);
-        }
-    }
 
     // Gather candidates across all queries and rank them by real title-match score
     // (shared with the live recognizer) rather than blindly taking the first DB row.
@@ -184,7 +208,7 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
     };
 
     tracing::debug!(
-        file = %file_name,
+        file = %file_path_str,
         episode = episode.unwrap_or(0),
         queries = ?queries,
         matched_anime_id = ?anime_id,
@@ -337,15 +361,138 @@ pub async fn rescan_anime_dirs(
         storage.delete_file_indexes(&missing).await?;
     }
 
+    report.mapping_conflicts = detect_mapping_conflicts(storage, anime_id, &seen_dirs).await?;
+
     tracing::info!(
         anime_id,
         found = report.found,
         indexed = report.indexed,
         removed = report.removed,
+        conflicts = report.mapping_conflicts.len(),
         "anime rescan complete"
     );
 
     Ok(report)
+}
+
+/// Distinct, currently-existing parent directories of an anime's real-path
+/// mapped files. Shared by targeted rescan (to scope conflict detection) and
+/// confirmed repair (to recompute candidates server-side before writing).
+pub async fn anime_file_dirs(storage: &Storage, anime_id: i64) -> anyhow::Result<Vec<String>> {
+    let rows = storage.file_index_by_anime(anime_id).await?;
+    let mut dirs: Vec<String> = Vec::new();
+    for row in rows
+        .iter()
+        .filter(|r| crate::engine::matcher::looks_like_path(&r.file_path))
+    {
+        if let Some(parent) = Path::new(&row.file_path)
+            .parent()
+            .and_then(|p| p.to_str())
+        {
+            let d = parent.to_string();
+            if !d.is_empty() && !dirs.contains(&d) {
+                dirs.push(d);
+            }
+        }
+    }
+    Ok(dirs)
+}
+
+/// A file mapped to a different anime than the one being rescanned, but which
+/// plausibly belongs to it — reported for user confirmation, never mutated by
+/// detection itself.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FileMappingConflict {
+    pub file_path: String,
+    pub episode: Option<i32>,
+    pub current_anime_id: i64,
+    pub current_anime_title: String,
+    pub mapping_source: MappingSource,
+    pub target_confidence: i32,
+    pub repairable: bool,
+}
+
+fn anime_display_title(titles_json: &str, id: i64) -> String {
+    let titles: serde_json::Value = serde_json::from_str(titles_json).unwrap_or_default();
+    titles["english"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .or_else(|| titles["romaji"].as_str().filter(|s| !s.is_empty()))
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("#{id}"))
+}
+
+/// Read-only scan of the direct children of `dirs` for files mapped to a
+/// *different* anime than `anime_id` whose filename (or, absent a usable
+/// filename title, parent/grandparent directory names) plausibly belongs to
+/// `anime_id` at the normal match threshold. Nested files are never
+/// candidates merely because a parent directory was scanned. Never mutates
+/// the index — callers decide whether and how to act on the result.
+pub async fn detect_mapping_conflicts(
+    storage: &Storage,
+    anime_id: i64,
+    dirs: &[String],
+) -> anyhow::Result<Vec<FileMappingConflict>> {
+    let Some(target) = storage.fetch_anime(anime_id).await? else {
+        return Ok(Vec::new());
+    };
+
+    let mut conflicts = Vec::new();
+    let mut seen_paths = std::collections::HashSet::new();
+
+    for dir in dirs {
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || !is_video_file(&path) {
+                continue;
+            }
+            let path_str = path.to_string_lossy().to_string();
+            if !seen_paths.insert(path_str.clone()) {
+                continue;
+            }
+
+            let Some(row) = storage.get_file_index(&path_str).await? else {
+                continue;
+            };
+            let Some(current_anime_id) = row.anime_id else {
+                continue;
+            };
+            if row.ignored || current_anime_id == anime_id {
+                continue;
+            }
+
+            let fq = file_queries(&path);
+            let target_score = match &fq.filename_title {
+                Some(title) => crate::engine::matcher::score_titles_json(title, &target.titles_json),
+                None => score_queries(&fq.all, &target.titles_json),
+            };
+            if target_score < MATCH_THRESHOLD {
+                continue;
+            }
+
+            let current_anime_title = match storage.fetch_anime(current_anime_id).await? {
+                Some(current) => anime_display_title(&current.titles_json, current_anime_id),
+                None => format!("#{current_anime_id}"),
+            };
+
+            conflicts.push(FileMappingConflict {
+                file_path: path_str,
+                episode: fq.episode,
+                current_anime_id,
+                current_anime_title,
+                mapping_source: row.mapping_source,
+                target_confidence: target_score as i32,
+                repairable: row.mapping_source.is_repairable(),
+            });
+        }
+    }
+
+    conflicts.sort_by(|a, b| a.episode.cmp(&b.episode).then_with(|| a.file_path.cmp(&b.file_path)));
+    Ok(conflicts)
 }
 
 /// Is the library storage holding `file_path` currently reachable? Prevents
@@ -590,6 +737,10 @@ pub struct LibraryScanReport {
     /// Rows pruned because their file no longer exists on disk.
     pub removed: i64,
     pub errors: Vec<String>,
+    /// Files mapped to a different anime that plausibly belong to the anime
+    /// just rescanned. Only populated by targeted rescan; full and watcher
+    /// scans leave this empty.
+    pub mapping_conflicts: Vec<FileMappingConflict>,
 }
 
 /// Open a file with the default system application (plays video files).
