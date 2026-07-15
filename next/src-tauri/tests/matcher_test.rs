@@ -1,5 +1,6 @@
-use anivault_core::engine::matcher::{recognize_file, confirm_identification};
+use anivault_core::engine::matcher::{confirm_identification, recognize_file};
 use anivault_core::engine::runtime::{fresh_test_state, EngineState};
+use anivault_core::engine::storage::MappingSource;
 
 async fn test_state() -> EngineState {
     fresh_test_state().await
@@ -20,15 +21,15 @@ async fn recognize_known_file_skips_matching() {
             Some(1),
             1,
             100,
+            MappingSource::Manual,
             1_782_769_008,
         )
         .await
         .unwrap();
 
-    let result =
-        recognize_file("D:/Anime/Cowboy Bebop - 01.mkv", None, &state.storage)
-            .await
-            .unwrap();
+    let result = recognize_file("D:/Anime/Cowboy Bebop - 01.mkv", None, &state.storage)
+        .await
+        .unwrap();
     assert!(result.known_file);
     assert_eq!(result.candidates.len(), 1);
     assert_eq!(result.candidates[0].anime_id, 1);
@@ -45,15 +46,11 @@ async fn recognize_new_file_parses_and_searches() {
         .unwrap();
 
     // Use full path — strip_path in matcher handles directory stripping
-    let result =
-        recognize_file("D:/Anime/Mushishi - 07.mkv", None, &state.storage)
-            .await
-            .unwrap();
+    let result = recognize_file("D:/Anime/Mushishi - 07.mkv", None, &state.storage)
+        .await
+        .unwrap();
     assert!(!result.known_file);
-    assert_eq!(
-        result.parsed.as_ref().unwrap().episode_number,
-        7
-    );
+    assert_eq!(result.parsed.as_ref().unwrap().episode_number, 7);
     assert!(
         result.candidates.iter().any(|c| c.anime_id == 1),
         "Should find candidate with anime_id 1, got candidates: {:?}",
@@ -83,6 +80,7 @@ async fn confirm_identification_upserts_file_index() {
     assert_eq!(idx.anime_id, Some(42));
     assert_eq!(idx.episode, Some(3));
     assert_eq!(idx.confidence, 100);
+    assert_eq!(idx.mapping_source, MappingSource::Manual);
 
     let events = state.events.drain();
     assert!(events.iter().any(|e| matches!(
@@ -115,7 +113,10 @@ async fn recognize_file_ranks_candidates_by_score_including_synonyms() {
         .unwrap();
 
     assert!(
-        result.candidates.iter().any(|c| c.anime_id == 1 && c.confidence >= 80),
+        result
+            .candidates
+            .iter()
+            .any(|c| c.anime_id == 1 && c.confidence >= 80),
         "expected a high-confidence synonym match, got {:?}",
         result.candidates
     );

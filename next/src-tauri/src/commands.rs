@@ -8,11 +8,18 @@ use crate::engine::anilist::import::{import_library, ImportReport};
 use crate::engine::anilist::oauth;
 use crate::engine::events::EngineEvent;
 use crate::engine::library_scanner;
-use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
-use crate::engine::migration::{backup, discovery, importer, DuplicateStrategy, MigrationReport, V1DataPaths};
+use crate::engine::matcher::{
+    confirm_identification as matcher_confirm, recognize_file, RecognitionResult,
+};
+use crate::engine::migration::{
+    backup, discovery, importer, DuplicateStrategy, MigrationReport, V1DataPaths,
+};
 use crate::engine::runtime::EngineState;
-use crate::engine::storage::{AnimeStats, ContinueWatchingRow, FileIndexRow, LibraryRow, LibraryStats, WatchHistoryFullRow, WatchHistoryRow};
 use crate::engine::sonarr::client::SonarrClient;
+use crate::engine::storage::{
+    AnimeStats, ContinueWatchingRow, FileIndexRow, LibraryRow, LibraryStats, MappingSource,
+    WatchHistoryFullRow, WatchHistoryRow,
+};
 use crate::engine::tracker::run_tracking_loop;
 use tauri_plugin_notification::NotificationExt;
 
@@ -179,7 +186,12 @@ pub async fn get_setting_inner(
     key: &str,
     state: &EngineState,
 ) -> Result<Option<serde_json::Value>, String> {
-    let Some(value_json) = state.storage.get_setting(key).await.map_err(command_error)? else {
+    let Some(value_json) = state
+        .storage
+        .get_setting(key)
+        .await
+        .map_err(command_error)?
+    else {
         return Ok(None);
     };
     let value = serde_json::from_str(&value_json).map_err(|error| error.to_string())?;
@@ -200,17 +212,25 @@ pub async fn set_setting_inner(
 }
 
 pub async fn delete_setting_inner(key: &str, state: &EngineState) -> Result<bool, String> {
-    state.storage.delete_setting(key).await.map_err(command_error)
+    state
+        .storage
+        .delete_setting(key)
+        .await
+        .map_err(command_error)
 }
 
 pub async fn get_session_state_inner(state: &EngineState) -> anyhow::Result<SessionState> {
     Ok(SessionState {
-        paused: state.tracking_paused.load(std::sync::atomic::Ordering::Relaxed),
+        paused: state
+            .tracking_paused
+            .load(std::sync::atomic::Ordering::Relaxed),
     })
 }
 
 pub async fn toggle_pause_tracking_inner(state: &EngineState) -> anyhow::Result<SessionState> {
-    let current = state.tracking_paused.load(std::sync::atomic::Ordering::Relaxed);
+    let current = state
+        .tracking_paused
+        .load(std::sync::atomic::Ordering::Relaxed);
     state
         .tracking_paused
         .store(!current, std::sync::atomic::Ordering::Relaxed);
@@ -218,7 +238,10 @@ pub async fn toggle_pause_tracking_inner(state: &EngineState) -> anyhow::Result<
 }
 
 pub async fn get_launch_on_startup_inner(state: &EngineState) -> anyhow::Result<bool> {
-    let val: Option<String> = state.storage.get_setting("startup.launch_on_startup").await?;
+    let val: Option<String> = state
+        .storage
+        .get_setting("startup.launch_on_startup")
+        .await?;
     match val {
         Some(s) => {
             let v: serde_json::Value = serde_json::from_str(&s)?;
@@ -253,7 +276,15 @@ fn write_run_key(value: Option<&str>) -> anyhow::Result<()> {
         Some(v) => {
             let output = std::process::Command::new("reg")
                 .args([
-                    "add", RUN_KEY, "/v", RUN_VALUE_NAME, "/t", "REG_SZ", "/d", v, "/f",
+                    "add",
+                    RUN_KEY,
+                    "/v",
+                    RUN_VALUE_NAME,
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    v,
+                    "/f",
                 ])
                 .output()?;
             if !output.status.success() {
@@ -407,7 +438,14 @@ pub async fn mark_episode_watched_inner(
 ) -> Result<(), String> {
     state
         .storage
-        .append_watch_history(anime_id, episode, None, Some("manual"), "manual", unix_now()?)
+        .append_watch_history(
+            anime_id,
+            episode,
+            None,
+            Some("manual"),
+            "manual",
+            unix_now()?,
+        )
         .await
         .map_err(command_error)?;
 
@@ -441,7 +479,10 @@ pub async fn mark_episode_watched_inner(
         source: "manual".to_string(),
     });
 
-    if !state.tracking_paused.load(std::sync::atomic::Ordering::Relaxed) {
+    if !state
+        .tracking_paused
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
         if let Some(ref handle) = state.app_handle {
             let title = state
                 .storage
@@ -518,28 +559,30 @@ pub async fn rematch_unmapped_files_inner(state: &EngineState) -> anyhow::Result
     let now = unix_now_inner()?;
 
     for file in &files {
-        // Never touch tombstoned files or user-confirmed / exact (100%) mappings.
-        if file.ignored || file.confidence >= 100 {
+        if file.ignored || file.anime_id.is_some() {
             continue;
         }
 
-        // Re-evaluate with the same scored logic the scanner uses, storing the
-        // real confidence. This both matches previously-unmatched files and
-        // corrects/demotes stale low-confidence auto-matches from older runs.
         let path = std::path::Path::new(&file.file_path);
-        let (anime_id, confidence, episode) =
-            crate::engine::library_scanner::match_file(&state.storage, path).await?;
-        let episode = episode.unwrap_or(file.episode.unwrap_or(0));
+        let matched = crate::engine::library_scanner::match_file(&state.storage, path).await?;
+        let episode = matched.episode.unwrap_or(file.episode.unwrap_or(0));
 
         // Only write when something actually changed, to avoid needless churn.
-        if anime_id != file.anime_id || confidence != file.confidence {
+        if matched.anime_id != file.anime_id || matched.confidence != file.confidence {
             state
                 .storage
-                .upsert_file_index(&file.file_path, anime_id, episode, confidence, now)
+                .upsert_file_index(
+                    &file.file_path,
+                    matched.anime_id,
+                    episode,
+                    matched.confidence,
+                    matched.mapping_source,
+                    now,
+                )
                 .await?;
         }
 
-        if anime_id.is_some() {
+        if matched.anime_id.is_some() {
             rematched += 1;
         }
     }
@@ -548,10 +591,10 @@ pub async fn rematch_unmapped_files_inner(state: &EngineState) -> anyhow::Result
 }
 
 #[tauri::command]
-pub async fn rematch_unmapped_files(
-    state: tauri::State<'_, EngineState>,
-) -> Result<usize, String> {
-    rematch_unmapped_files_inner(&state).await.map_err(command_error)
+pub async fn rematch_unmapped_files(state: tauri::State<'_, EngineState>) -> Result<usize, String> {
+    rematch_unmapped_files_inner(&state)
+        .await
+        .map_err(command_error)
 }
 
 // ── Library command inner functions ─────────────────────────────────────────
@@ -608,12 +651,18 @@ pub async fn import_anime_from_anilist(state: &EngineState, anime_id: i64) -> an
     })
     .to_string();
     let ep_count = media.get("episodes").and_then(|e| e.as_i64()).unwrap_or(0) as i32;
-    let image_url = media.get("coverImage").and_then(|c| c.get("large")).and_then(|l| l.as_str());
+    let image_url = media
+        .get("coverImage")
+        .and_then(|c| c.get("large"))
+        .and_then(|l| l.as_str());
     let synopsis = media.get("description").and_then(|d| d.as_str());
     let anime_type = media.get("type").and_then(|t| t.as_str());
     let anime_status = media.get("status").and_then(|s| s.as_str());
     let season = media.get("season").and_then(|s| s.as_str());
-    let season_year = media.get("seasonYear").and_then(|y| y.as_i64()).map(|y| y as i32);
+    let season_year = media
+        .get("seasonYear")
+        .and_then(|y| y.as_i64())
+        .map(|y| y as i32);
     let now = unix_now_inner()?;
 
     state
@@ -712,7 +761,10 @@ pub async fn get_next_airing_inner(
     Ok(n.map(|n| NextAiring {
         episode: n.get("episode").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
         airing_at: n.get("airingAt").and_then(|v| v.as_i64()).unwrap_or(0),
-        time_until_airing: n.get("timeUntilAiring").and_then(|v| v.as_i64()).unwrap_or(0),
+        time_until_airing: n
+            .get("timeUntilAiring")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
     }))
 }
 
@@ -819,7 +871,11 @@ async fn load_sonarr_connection(state: &EngineState) -> Option<(String, String)>
     Some((url, api_key))
 }
 
-pub async fn connect_sonarr_inner(url: &str, api_key: &str, state: &EngineState) -> anyhow::Result<()> {
+pub async fn connect_sonarr_inner(
+    url: &str,
+    api_key: &str,
+    state: &EngineState,
+) -> anyhow::Result<()> {
     let client = SonarrClient::new(url.to_string(), api_key.to_string());
 
     // Validate connection
@@ -830,8 +886,14 @@ pub async fn connect_sonarr_inner(url: &str, api_key: &str, state: &EngineState)
     let encrypted_key = crate::engine::secrets::protect_secret(api_key)?;
     let now = unix_now().map_err(|e| anyhow::anyhow!(e))?;
 
-    state.storage.set_setting("sonarr.url", &url_json, now).await?;
-    state.storage.set_setting("sonarr.api_key", &encrypted_key, now).await?;
+    state
+        .storage
+        .set_setting("sonarr.url", &url_json, now)
+        .await?;
+    state
+        .storage
+        .set_setting("sonarr.api_key", &encrypted_key, now)
+        .await?;
 
     // Import series
     crate::engine::sonarr::import::import_sonarr_series(&client, &state.storage).await?;
@@ -861,7 +923,10 @@ pub async fn get_sonarr_status_inner(state: &EngineState) -> anyhow::Result<Sona
         0
     };
     let last_sync_at = if connected {
-        state.storage.get_setting("sonarr.last_sync_at").await?
+        state
+            .storage
+            .get_setting("sonarr.last_sync_at")
+            .await?
             .and_then(|v| serde_json::from_str::<i64>(&v).ok())
     } else {
         None
@@ -875,16 +940,23 @@ pub async fn get_sonarr_status_inner(state: &EngineState) -> anyhow::Result<Sona
     })
 }
 
-pub async fn import_sonarr_series_inner(state: &EngineState) -> anyhow::Result<crate::engine::sonarr::import::ImportReport> {
-    let (url, api_key) = load_sonarr_connection(state).await
+pub async fn import_sonarr_series_inner(
+    state: &EngineState,
+) -> anyhow::Result<crate::engine::sonarr::import::ImportReport> {
+    let (url, api_key) = load_sonarr_connection(state)
+        .await
         .ok_or_else(|| anyhow::anyhow!("Sonarr not connected"))?;
     let client = SonarrClient::new(url, api_key);
-    let report = crate::engine::sonarr::import::import_sonarr_series(&client, &state.storage).await?;
+    let report =
+        crate::engine::sonarr::import::import_sonarr_series(&client, &state.storage).await?;
 
     // Update last sync time
     let now = unix_now().map_err(|e| anyhow::anyhow!(e))?;
     let now_json = serde_json::to_string(&now)?;
-    state.storage.set_setting("sonarr.last_sync_at", &now_json, now).await?;
+    state
+        .storage
+        .set_setting("sonarr.last_sync_at", &now_json, now)
+        .await?;
 
     Ok(report)
 }
@@ -942,7 +1014,9 @@ pub async fn discover_v1_data_inner() -> Result<V1DataPaths, String> {
 
 pub async fn preview_migration_inner(_state: &EngineState) -> Result<MigrationReport, String> {
     let paths = discovery::discover_v1_data();
-    importer::dry_run_import(&paths).await.map_err(command_error)
+    importer::dry_run_import(&paths)
+        .await
+        .map_err(command_error)
 }
 
 pub async fn run_migration_inner(
@@ -995,31 +1069,46 @@ pub async fn import_database_inner(
 
 // ── AniList Search ─────────────────────────────────────────────────────────────
 
-pub async fn search_anime_inner(state: &EngineState, query: String) -> anyhow::Result<Vec<SeasonAnimeEntry>> {
-    let token = crate::engine::anilist::auth::load_token(&state.storage).await?.ok_or_else(|| anyhow::anyhow!("not connected"))?;
+pub async fn search_anime_inner(
+    state: &EngineState,
+    query: String,
+) -> anyhow::Result<Vec<SeasonAnimeEntry>> {
+    let token = crate::engine::anilist::auth::load_token(&state.storage)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("not connected"))?;
     let client = AniListClient::new(token);
     let results = client.search_anime(&query).await?;
-    Ok(results.into_iter().map(|r| {
-        let title = r.title.as_ref()
-            .and_then(|t| t.romaji.clone())
-            .or_else(|| r.title.as_ref().and_then(|t| t.english.clone()))
-            .unwrap_or_else(|| format!("#{}", r.id));
-        SeasonAnimeEntry {
-            id: r.id,
-            title,
-            image_url: r.cover_image.and_then(|c| c.large),
-            episodes: r.episodes,
-            status: r.status,
-            format: r.format,
-            average_score: r.average_score,
-            popularity: None,
-        }
-    }).collect())
+    Ok(results
+        .into_iter()
+        .map(|r| {
+            let title = r
+                .title
+                .as_ref()
+                .and_then(|t| t.romaji.clone())
+                .or_else(|| r.title.as_ref().and_then(|t| t.english.clone()))
+                .unwrap_or_else(|| format!("#{}", r.id));
+            SeasonAnimeEntry {
+                id: r.id,
+                title,
+                image_url: r.cover_image.and_then(|c| c.large),
+                episodes: r.episodes,
+                status: r.status,
+                format: r.format,
+                average_score: r.average_score,
+                popularity: None,
+            }
+        })
+        .collect())
 }
 
 #[tauri::command]
-pub async fn search_anime(query: String, state: tauri::State<'_, EngineState>) -> Result<Vec<SeasonAnimeEntry>, String> {
-    search_anime_inner(&state, query).await.map_err(command_error)
+pub async fn search_anime(
+    query: String,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<SeasonAnimeEntry>, String> {
+    search_anime_inner(&state, query)
+        .await
+        .map_err(command_error)
 }
 
 // ── Season Browser ────────────────────────────────────────────────────────────
@@ -1042,19 +1131,31 @@ pub async fn get_season_anime_inner(
     year: i32,
     genre: Option<String>,
 ) -> anyhow::Result<Vec<SeasonAnimeEntry>> {
-    let token = crate::engine::anilist::auth::load_token(&state.storage).await?.ok_or_else(|| anyhow::anyhow!("not connected"))?;
+    let token = crate::engine::anilist::auth::load_token(&state.storage)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("not connected"))?;
     let client = AniListClient::new(token);
-    let entries = client.fetch_season_anime(&season, year, genre.as_deref()).await?;
-    Ok(entries.into_iter().map(|e| SeasonAnimeEntry {
-        id: e.id,
-        title: e.title.as_ref().and_then(|t| t.english.clone()).or_else(|| e.title.as_ref().and_then(|t| t.romaji.clone())).unwrap_or_else(|| format!("#{}", e.id)),
-        image_url: e.cover_image.and_then(|c| c.large),
-        episodes: e.episodes,
-        status: e.status,
-        format: e.format,
-        average_score: e.average_score,
-        popularity: e.popularity,
-    }).collect())
+    let entries = client
+        .fetch_season_anime(&season, year, genre.as_deref())
+        .await?;
+    Ok(entries
+        .into_iter()
+        .map(|e| SeasonAnimeEntry {
+            id: e.id,
+            title: e
+                .title
+                .as_ref()
+                .and_then(|t| t.english.clone())
+                .or_else(|| e.title.as_ref().and_then(|t| t.romaji.clone()))
+                .unwrap_or_else(|| format!("#{}", e.id)),
+            image_url: e.cover_image.and_then(|c| c.large),
+            episodes: e.episodes,
+            status: e.status,
+            format: e.format,
+            average_score: e.average_score,
+            popularity: e.popularity,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -1064,7 +1165,9 @@ pub async fn get_season_anime(
     genre: Option<String>,
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<SeasonAnimeEntry>, String> {
-    get_season_anime_inner(&state, season, year, genre).await.map_err(command_error)
+    get_season_anime_inner(&state, season, year, genre)
+        .await
+        .map_err(command_error)
 }
 
 // ── Anime Relations ─────────────────────────────────────────────────────────
@@ -1079,43 +1182,74 @@ pub struct RelationEntry {
     pub image_url: Option<String>,
 }
 
-pub async fn get_anime_relations_inner(state: &EngineState, anime_id: i64) -> anyhow::Result<Vec<RelationEntry>> {
-    let token = crate::engine::anilist::auth::load_token(&state.storage).await?.ok_or_else(|| anyhow::anyhow!("not connected"))?;
+pub async fn get_anime_relations_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<Vec<RelationEntry>> {
+    let token = crate::engine::anilist::auth::load_token(&state.storage)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("not connected"))?;
     let client = AniListClient::new(token);
     let edges = client.fetch_anime_relations(anime_id).await?;
-    Ok(edges.into_iter().filter_map(|e| {
-        let node = e.node?;
-        let title = node.title.as_ref()
-            .and_then(|t| t.romaji.clone().or_else(|| t.english.clone()))
-            .unwrap_or_else(|| format!("#{}", node.id));
-        Some(RelationEntry {
-            id: node.id,
-            title,
-            relation_type: e.relation_type,
-            format: node.format,
-            status: node.status,
-            image_url: node.cover_image.and_then(|c| c.large),
+    Ok(edges
+        .into_iter()
+        .filter_map(|e| {
+            let node = e.node?;
+            let title = node
+                .title
+                .as_ref()
+                .and_then(|t| t.romaji.clone().or_else(|| t.english.clone()))
+                .unwrap_or_else(|| format!("#{}", node.id));
+            Some(RelationEntry {
+                id: node.id,
+                title,
+                relation_type: e.relation_type,
+                format: node.format,
+                status: node.status,
+                image_url: node.cover_image.and_then(|c| c.large),
+            })
         })
-    }).collect())
+        .collect())
 }
 
 #[tauri::command]
-pub async fn get_anime_relations(anime_id: i64, state: tauri::State<'_, EngineState>) -> Result<Vec<RelationEntry>, String> {
-    get_anime_relations_inner(&state, anime_id).await.map_err(command_error)
+pub async fn get_anime_relations(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<RelationEntry>, String> {
+    get_anime_relations_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
 }
 
 // ── Sync queue helpers ───────────────────────────────────────────────────────
 
-pub async fn queue_anilist_sync_inner(state: &EngineState, anime_id: i64, episode: i32) -> anyhow::Result<()> {
+pub async fn queue_anilist_sync_inner(
+    state: &EngineState,
+    anime_id: i64,
+    episode: i32,
+) -> anyhow::Result<()> {
     let payload = serde_json::json!({"episode": episode, "status": "plan_to_watch"}).to_string();
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-    state.storage.queue_sync(anime_id, "anilist", "update", &payload, now).await?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    state
+        .storage
+        .queue_sync(anime_id, "anilist", "update", &payload, now)
+        .await?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn queue_anilist_sync(anime_id: i64, episode: i32, state: tauri::State<'_, EngineState>) -> Result<(), String> {
-    queue_anilist_sync_inner(&state, anime_id, episode).await.map_err(command_error)
+pub async fn queue_anilist_sync(
+    anime_id: i64,
+    episode: i32,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    queue_anilist_sync_inner(&state, anime_id, episode)
+        .await
+        .map_err(command_error)
 }
 
 // ── Calendar ─────────────────────────────────────────────────────────────────
@@ -1194,7 +1328,12 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
 
     // ── FALLBACK: Sonarr fills followed shows AniList had no airing for ───────
     let url_raw = state.storage.get_setting("sonarr.url").await.ok().flatten();
-    let api_key_enc = state.storage.get_setting("sonarr.api_key").await.ok().flatten();
+    let api_key_enc = state
+        .storage
+        .get_setting("sonarr.api_key")
+        .await
+        .ok()
+        .flatten();
     if let (Some(url_raw), Some(api_key_enc)) = (url_raw, api_key_enc) {
         if let (Ok(url), Ok(api_key)) = (
             serde_json::from_str::<String>(&url_raw),
@@ -1280,7 +1419,10 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                 time_until_airing: None,
             })
             .collect();
-        tracing::info!("Calendar fallback: {} watching entries from local DB", result.len());
+        tracing::info!(
+            "Calendar fallback: {} watching entries from local DB",
+            result.len()
+        );
     }
 
     Ok(result)
@@ -1295,12 +1437,16 @@ pub async fn get_statistics(state: tauri::State<'_, EngineState>) -> Result<Anim
     get_statistics_inner(&state).await.map_err(command_error)
 }
 
-pub async fn continue_watching_inner(state: &EngineState) -> anyhow::Result<Vec<ContinueWatchingRow>> {
+pub async fn continue_watching_inner(
+    state: &EngineState,
+) -> anyhow::Result<Vec<ContinueWatchingRow>> {
     state.storage.continue_watching(10).await
 }
 
 #[tauri::command]
-pub async fn continue_watching(state: tauri::State<'_, EngineState>) -> Result<Vec<ContinueWatchingRow>, String> {
+pub async fn continue_watching(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<ContinueWatchingRow>, String> {
     continue_watching_inner(&state).await.map_err(command_error)
 }
 
@@ -1347,9 +1493,7 @@ pub async fn get_engine_status(
 // ── Migration command wrappers ─────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn backup_database(
-    state: tauri::State<'_, EngineState>,
-) -> Result<String, String> {
+pub async fn backup_database(state: tauri::State<'_, EngineState>) -> Result<String, String> {
     backup_database_inner(&state).await
 }
 
@@ -1359,9 +1503,7 @@ pub async fn discover_v1_data() -> Result<V1DataPaths, String> {
 }
 
 #[tauri::command]
-pub async fn export_database(
-    state: tauri::State<'_, EngineState>,
-) -> Result<String, String> {
+pub async fn export_database(state: tauri::State<'_, EngineState>) -> Result<String, String> {
     export_database_inner(&state).await
 }
 
@@ -1440,9 +1582,7 @@ pub async fn start_tracking(
 }
 
 #[tauri::command]
-pub async fn stop_tracking(
-    state: tauri::State<'_, EngineState>,
-) -> Result<TrackingStatus, String> {
+pub async fn stop_tracking(state: tauri::State<'_, EngineState>) -> Result<TrackingStatus, String> {
     stop_tracking_inner(&state).await
 }
 
@@ -1540,7 +1680,14 @@ pub async fn set_known_file_mapping_inner(
     let now = unix_now_inner()?;
     state
         .storage
-        .upsert_file_index(file_path, Some(anime_id), episode, 100, now)
+        .upsert_file_index(
+            file_path,
+            Some(anime_id),
+            episode,
+            100,
+            MappingSource::Manual,
+            now,
+        )
         .await?;
     let dirs = crate::engine::library_scanner::parent_dirs(&[file_path.to_string()]);
     crate::engine::library_scanner::rematch_unmatched_in_dirs(&state.storage, &dirs).await?;
@@ -1579,7 +1726,10 @@ pub async fn set_known_file_mappings_inner(
         .map(|m| (m.file_path, m.anime_id, m.episode))
         .collect();
     let count = tuples.len();
-    state.storage.upsert_file_mappings(&tuples, now).await?;
+    state
+        .storage
+        .upsert_file_mappings(&tuples, MappingSource::Manual, now)
+        .await?;
     let paths: Vec<String> = tuples.into_iter().map(|(p, _, _)| p).collect();
     let dirs = crate::engine::library_scanner::parent_dirs(&paths);
     crate::engine::library_scanner::rematch_unmatched_in_dirs(&state.storage, &dirs).await?;
@@ -1690,7 +1840,10 @@ pub async fn map_folder_to_anime_inner(
         .collect();
 
     let now = unix_now_inner()?;
-    state.storage.upsert_file_mappings(&mappings, now).await?;
+    state
+        .storage
+        .upsert_file_mappings(&mappings, MappingSource::Manual, now)
+        .await?;
     Ok(mappings.len())
 }
 
@@ -1892,7 +2045,10 @@ pub async fn deep_match_via_anilist_inner(state: &EngineState) -> anyhow::Result
             }
         };
         let key = series_key_from_path(&f.file_path);
-        groups.entry(key).or_default().push((f.file_path.clone(), episode));
+        groups
+            .entry(key)
+            .or_default()
+            .push((f.file_path.clone(), episode));
     }
 
     let groups_total = groups.len();
@@ -1931,7 +2087,10 @@ pub async fn deep_match_via_anilist_inner(state: &EngineState) -> anyhow::Result
                             .iter()
                             .map(|(p, ep)| (p.clone(), r.id, *ep))
                             .collect();
-                        state.storage.upsert_file_mappings(&mappings, now).await?;
+                        state
+                            .storage
+                            .upsert_file_mappings(&mappings, MappingSource::Automatic, now)
+                            .await?;
                         groups_matched += 1;
                         files_mapped += group_files.len();
                     }
@@ -1992,9 +2151,7 @@ pub async fn store_anilist_token(
 }
 
 #[tauri::command]
-pub async fn disconnect_anilist(
-    state: tauri::State<'_, EngineState>,
-) -> Result<(), String> {
+pub async fn disconnect_anilist(state: tauri::State<'_, EngineState>) -> Result<(), String> {
     disconnect_anilist_inner(&state)
         .await
         .map_err(|e| e.to_string())
@@ -2019,9 +2176,7 @@ pub async fn get_anilist_connection_status(
 }
 
 #[tauri::command]
-pub async fn get_sync_status(
-    state: tauri::State<'_, EngineState>,
-) -> Result<SyncStatus, String> {
+pub async fn get_sync_status(state: tauri::State<'_, EngineState>) -> Result<SyncStatus, String> {
     get_sync_status_inner(&state)
         .await
         .map_err(|e| e.to_string())
@@ -2052,9 +2207,15 @@ pub async fn search_library(
     offset: Option<i64>,
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<LibraryRow>, String> {
-    search_library_inner(query, status_filter, limit.unwrap_or(50), offset.unwrap_or(0), &state)
-        .await
-        .map_err(command_error)
+    search_library_inner(
+        query,
+        status_filter,
+        limit.unwrap_or(50),
+        offset.unwrap_or(0),
+        &state,
+    )
+    .await
+    .map_err(command_error)
 }
 
 #[tauri::command]
@@ -2065,9 +2226,7 @@ pub async fn get_library_stats(
 }
 
 #[tauri::command]
-pub async fn get_library_ids(
-    state: tauri::State<'_, EngineState>,
-) -> Result<Vec<i64>, String> {
+pub async fn get_library_ids(state: tauri::State<'_, EngineState>) -> Result<Vec<i64>, String> {
     get_library_ids_inner(&state).await.map_err(command_error)
 }
 
@@ -2076,7 +2235,9 @@ pub async fn fetch_anime_detail(
     anime_id: i64,
     state: tauri::State<'_, EngineState>,
 ) -> Result<AnimeDetailResponse, String> {
-    fetch_anime_detail_inner(anime_id, &state).await.map_err(command_error)
+    fetch_anime_detail_inner(anime_id, &state)
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]
@@ -2098,7 +2259,9 @@ pub async fn update_list_entry(
 pub async fn get_library_folders(
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<String>, String> {
-    get_library_folders_inner(&state).await.map_err(command_error)
+    get_library_folders_inner(&state)
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]
@@ -2115,7 +2278,9 @@ pub async fn set_library_folders(
 pub async fn scan_library_folders(
     state: tauri::State<'_, EngineState>,
 ) -> Result<library_scanner::LibraryScanReport, String> {
-    scan_library_folders_inner(&state).await.map_err(command_error)
+    scan_library_folders_inner(&state)
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]
@@ -2154,7 +2319,11 @@ pub async fn open_containing_folder(path: String) -> Result<(), String> {
 pub async fn list_sonarr_series(
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<crate::engine::storage::SonarrSeriesListRow>, String> {
-    state.storage.list_sonarr_series().await.map_err(command_error)
+    state
+        .storage
+        .list_sonarr_series()
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]
@@ -2169,9 +2338,7 @@ pub async fn connect_sonarr(
 }
 
 #[tauri::command]
-pub async fn disconnect_sonarr(
-    state: tauri::State<'_, EngineState>,
-) -> Result<(), String> {
+pub async fn disconnect_sonarr(state: tauri::State<'_, EngineState>) -> Result<(), String> {
     disconnect_sonarr_inner(&state).await.map_err(command_error)
 }
 
@@ -2186,7 +2353,9 @@ pub async fn get_sonarr_status(
 pub async fn import_sonarr_series(
     state: tauri::State<'_, EngineState>,
 ) -> Result<crate::engine::sonarr::import::ImportReport, String> {
-    import_sonarr_series_inner(&state).await.map_err(command_error)
+    import_sonarr_series_inner(&state)
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]
@@ -2211,10 +2380,7 @@ pub async fn remap_sonarr(
 }
 
 #[tauri::command]
-pub async fn test_sonarr_connection(
-    url: String,
-    api_key: String,
-) -> Result<(), String> {
+pub async fn test_sonarr_connection(url: String, api_key: String) -> Result<(), String> {
     test_sonarr_connection_inner(&url, &api_key)
         .await
         .map_err(command_error)
@@ -2234,17 +2400,19 @@ pub async fn toggle_pause_tracking(
     app: tauri::AppHandle,
     state: tauri::State<'_, EngineState>,
 ) -> Result<SessionState, String> {
-    let session = toggle_pause_tracking_inner(&state).await.map_err(command_error)?;
+    let session = toggle_pause_tracking_inner(&state)
+        .await
+        .map_err(command_error)?;
     // Keep the tray menu's pause label in sync when toggled from the UI.
     crate::update_tray_pause_label(&app, session.paused);
     Ok(session)
 }
 
 #[tauri::command]
-pub async fn get_launch_on_startup(
-    state: tauri::State<'_, EngineState>,
-) -> Result<bool, String> {
-    get_launch_on_startup_inner(&state).await.map_err(command_error)
+pub async fn get_launch_on_startup(state: tauri::State<'_, EngineState>) -> Result<bool, String> {
+    get_launch_on_startup_inner(&state)
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]
@@ -2258,9 +2426,7 @@ pub async fn set_launch_on_startup(
 }
 
 #[tauri::command]
-pub async fn get_start_in_tray(
-    state: tauri::State<'_, EngineState>,
-) -> Result<bool, String> {
+pub async fn get_start_in_tray(state: tauri::State<'_, EngineState>) -> Result<bool, String> {
     get_start_in_tray_inner(&state).await.map_err(command_error)
 }
 

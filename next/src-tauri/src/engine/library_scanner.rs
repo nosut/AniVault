@@ -1,5 +1,5 @@
 use crate::engine::parser::parse_filename;
-use crate::engine::storage::Storage;
+use crate::engine::storage::{MappingSource, Storage};
 use std::path::Path;
 
 const LIBRARY_FOLDERS_KEY: &str = "library.folders";
@@ -37,8 +37,13 @@ const MATCH_THRESHOLD: u8 = 40;
 /// well above the title threshold so the scanner treats it as a real match.
 const INHERITED_CONFIDENCE: i32 = 85;
 
-/// Best-match result for a single file: (anime_id, confidence, episode).
-pub type FileMatch = (Option<i64>, i32, Option<i32>);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMatch {
+    pub anime_id: Option<i64>,
+    pub confidence: i32,
+    pub episode: Option<i32>,
+    pub mapping_source: MappingSource,
+}
 
 /// Match a single file against the local library, scoring every candidate and
 /// returning the best above [`MATCH_THRESHOLD`]. Shared by the library scanner
@@ -48,7 +53,10 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
     let file_path_str = file_path.to_string_lossy().to_string();
 
     // Parse filename to find episode info — use just the filename, not the full path
-    let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or(&file_path_str);
+    let file_name = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(&file_path_str);
     let parsed = parse_filename(file_name, None);
     let episode = parsed.as_ref().and_then(|p| {
         if p.episode_number > 0 {
@@ -61,8 +69,32 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
     // Build a set of title queries to try: the parsed filename title, plus the
     // parent ("Season 1") and grandparent (show folder) directory names. The show
     // folder is often the most reliable signal for well-organized libraries.
-    let parent = file_path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()).map(|s| s.to_string());
-    let grandparent = file_path.parent().and_then(|p| p.parent()).and_then(|p| p.file_name()).and_then(|n| n.to_str()).map(|s| s.to_string());
+    let parent = file_path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string());
+    let grandparent = file_path
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string());
+
+    let folder_anime = if let (Some(_), Some(dir)) = (
+        episode,
+        file_path
+            .parent()
+            .and_then(|p| p.to_str())
+            .filter(|d| !d.is_empty()),
+    ) {
+        let prefix = dir_prefix(dir);
+        let mut rows = storage.mapped_files_under(&prefix).await?;
+        rows.retain(|(p, _)| p != &file_path_str);
+        unanimous_dir_anime(&rows, &prefix)
+    } else {
+        None
+    };
 
     let mut queries: Vec<String> = Vec::new();
     if let Some(ref p) = parsed {
@@ -70,7 +102,10 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
             queries.push(p.cleaned_title.clone());
         }
     }
-    for dir_name in [grandparent.as_deref(), parent.as_deref()].into_iter().flatten() {
+    for dir_name in [grandparent.as_deref(), parent.as_deref()]
+        .into_iter()
+        .flatten()
+    {
         let cleaned = dir_name
             .replace(['[', ']', '(', ')', '_'], " ")
             .split_whitespace()
@@ -99,9 +134,17 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
     // If all searches fail, try word-wildcard matching (handles punctuation differences)
     if best_id.is_none() {
         for query in &queries {
-            let cleaned: String = query.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
-            let words: Vec<&str> = cleaned.split_whitespace().filter(|w| w.len() >= 3).collect();
-            if words.len() < 2 { continue; }
+            let cleaned: String = query
+                .chars()
+                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                .collect();
+            let words: Vec<&str> = cleaned
+                .split_whitespace()
+                .filter(|w| w.len() >= 3)
+                .collect();
+            if words.len() < 2 {
+                continue;
+            }
             if let Ok(candidates) = storage.search_anime_by_words(&words, 3).await {
                 for c in &candidates {
                     let score = crate::engine::matcher::score_titles_json(query, &c.titles_json);
@@ -114,27 +157,30 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
         }
     }
 
-    // Require a minimum confidence to auto-attach. Below the threshold, fall
-    // back to folder inheritance: if every mapped file in this directory agrees
-    // on one anime and we parsed an episode number, adopt that anime — one
-    // manual mapping then fixes the whole series. Otherwise leave unmatched (0)
-    // so the file resurfaces on the next re-scan.
-    let (anime_id, confidence) = if best_score >= MATCH_THRESHOLD {
-        (best_id, best_score as i32)
-    } else if let (Some(_), Some(dir)) = (
-        episode,
-        file_path.parent().and_then(|p| p.to_str()).filter(|d| !d.is_empty()),
-    ) {
-        let prefix = dir_prefix(dir);
-        let mut rows = storage.mapped_files_under(&prefix).await?;
-        // Never inherit from this file's own (stale) row.
-        rows.retain(|(p, _)| p != &file_path_str);
-        match unanimous_dir_anime(&rows, &prefix) {
-            Some(id) => (Some(id), INHERITED_CONFIDENCE),
-            None => (None, 0),
-        }
+    // Prefer direct-folder consensus when title search is weak, or when the
+    // folder anime is also a plausible title match. This prevents sequel-season
+    // folders from splitting to the base series while preserving exact matches
+    // for unrelated files that happen to live in the same folder.
+    let folder_score = match folder_anime {
+        Some(id) => match storage.fetch_anime(id).await? {
+            Some(anime) => queries
+                .iter()
+                .map(|q| crate::engine::matcher::score_titles_json(q, &anime.titles_json))
+                .max()
+                .unwrap_or(0),
+            None => 0,
+        },
+        None => 0,
+    };
+
+    let (anime_id, confidence, mapping_source) = if let Some(id) =
+        folder_anime.filter(|_| best_score < MATCH_THRESHOLD || folder_score >= MATCH_THRESHOLD)
+    {
+        (Some(id), INHERITED_CONFIDENCE, MappingSource::Inherited)
+    } else if best_score >= MATCH_THRESHOLD {
+        (best_id, best_score as i32, MappingSource::Automatic)
     } else {
-        (None, 0)
+        (None, 0, MappingSource::Automatic)
     };
 
     tracing::debug!(
@@ -146,7 +192,12 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
         "file match"
     );
 
-    Ok((anime_id, confidence, episode))
+    Ok(FileMatch {
+        anime_id,
+        confidence,
+        episode,
+        mapping_source,
+    })
 }
 
 /// Distinct parent directories of a set of file paths, in first-seen order.
@@ -181,10 +232,17 @@ pub async fn rematch_unmatched_in_dirs(
                 Some(rest) if !rest.contains(['\\', '/']) => {}
                 _ => continue,
             }
-            let (anime_id, confidence, episode) = match_file(storage, Path::new(&path)).await?;
-            if anime_id.is_some() {
+            let matched = match_file(storage, Path::new(&path)).await?;
+            if matched.anime_id.is_some() {
                 storage
-                    .upsert_file_index(&path, anime_id, episode.unwrap_or(0), confidence, now)
+                    .upsert_file_index(
+                        &path,
+                        matched.anime_id,
+                        matched.episode.unwrap_or(0),
+                        matched.confidence,
+                        matched.mapping_source,
+                        now,
+                    )
                     .await?;
                 updated += 1;
             }
@@ -348,18 +406,25 @@ async fn index_new_files_in_dir(
             }
         }
 
-        let (anime_id, confidence, episode) = match_file(storage, file_path).await?;
+        let matched = match_file(storage, file_path).await?;
 
         // An already-indexed unmatched file that stays unmatched isn't a change —
         // don't rewrite it, so `indexed` reports only real changes and periodic
         // auto-scans stay silent when nothing happened.
-        if existing.is_some() && anime_id.is_none() {
+        if existing.is_some() && matched.anime_id.is_none() {
             report.skipped += 1;
             continue;
         }
 
         storage
-            .upsert_file_index(&file_path_str, anime_id, episode.unwrap_or(0), confidence, now)
+            .upsert_file_index(
+                &file_path_str,
+                matched.anime_id,
+                matched.episode.unwrap_or(0),
+                matched.confidence,
+                matched.mapping_source,
+                now,
+            )
             .await?;
         report.indexed += 1;
     }
@@ -433,7 +498,9 @@ fn dir_prefix(dir: &str) -> String {
 pub fn unanimous_dir_anime(rows: &[(String, i64)], prefix: &str) -> Option<i64> {
     let mut found: Option<i64> = None;
     for (path, anime_id) in rows {
-        let Some(rest) = path.strip_prefix(prefix) else { continue };
+        let Some(rest) = path.strip_prefix(prefix) else {
+            continue;
+        };
         if rest.contains(['\\', '/']) {
             continue; // lives in a subdirectory, not a direct sibling
         }
@@ -483,7 +550,10 @@ fn find_video_files_inner(
     depth: u32,
 ) {
     if depth > MAX_SCAN_DEPTH {
-        errors.push(format!("Max scan depth ({MAX_SCAN_DEPTH}) exceeded at {}", dir.display()));
+        errors.push(format!(
+            "Max scan depth ({MAX_SCAN_DEPTH}) exceeded at {}",
+            dir.display()
+        ));
         return;
     }
 
@@ -536,7 +606,9 @@ pub fn open_containing_folder(path: &str) -> anyhow::Result<()> {
     let dir = if p.is_dir() {
         p.to_path_buf()
     } else {
-        p.parent().map(|x| x.to_path_buf()).unwrap_or_else(|| p.to_path_buf())
+        p.parent()
+            .map(|x| x.to_path_buf())
+            .unwrap_or_else(|| p.to_path_buf())
     };
     std::process::Command::new("explorer")
         .arg(dir.as_os_str())

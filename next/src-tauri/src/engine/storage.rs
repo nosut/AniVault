@@ -44,9 +44,44 @@ pub struct FileIndexRow {
     pub anime_id: Option<i64>,
     pub episode: Option<i32>,
     pub confidence: i32,
+    pub mapping_source: MappingSource,
     pub indexed_at: i64,
     #[serde(default)]
     pub ignored: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MappingSource {
+    Automatic,
+    Inherited,
+    Manual,
+    Legacy,
+}
+
+impl MappingSource {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            Self::Automatic => "automatic",
+            Self::Inherited => "inherited",
+            Self::Manual => "manual",
+            Self::Legacy => "legacy",
+        }
+    }
+
+    pub fn from_db(value: &str) -> Self {
+        match value {
+            "automatic" => Self::Automatic,
+            "inherited" => Self::Inherited,
+            "manual" => Self::Manual,
+            "legacy" => Self::Legacy,
+            _ => Self::Legacy,
+        }
+    }
+
+    pub fn is_repairable(self) -> bool {
+        !matches!(self, Self::Manual)
+    }
 }
 
 pub struct ListEntryFullRow {
@@ -194,29 +229,44 @@ pub struct Storage {
 
 impl Storage {
     pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
-        let opts = SqliteConnectOptions::from_str(database_url)?
-            .create_if_missing(true);
+        let opts = SqliteConnectOptions::from_str(database_url)?.create_if_missing(true);
         // Each `sqlite::memory:` connection is a separate empty database, so an
         // in-memory pool must stay at 1 connection or queries can land on a
         // connection that never ran the migrations.
-        let max_connections = if database_url.contains(":memory:") { 1 } else { 5 };
+        let max_connections = if database_url.contains(":memory:") {
+            1
+        } else {
+            5
+        };
         let pool = SqlitePoolOptions::new()
             .max_connections(max_connections)
             .connect_with(opts)
             .await?;
-        let db_path = database_url.strip_prefix("sqlite:").unwrap_or(database_url).to_string();
-        Ok(Self { pool, database_path: db_path })
+        let db_path = database_url
+            .strip_prefix("sqlite:")
+            .unwrap_or(database_url)
+            .to_string();
+        Ok(Self {
+            pool,
+            database_path: db_path,
+        })
     }
 
     pub async fn migrate(&self) -> anyhow::Result<()> {
-        sqlx::query("PRAGMA journal_mode = WAL").execute(&self.pool).await?;
-        sqlx::query("PRAGMA wal_autocheckpoint = 1000").execute(&self.pool).await?;
+        sqlx::query("PRAGMA journal_mode = WAL")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("PRAGMA wal_autocheckpoint = 1000")
+            .execute(&self.pool)
+            .await?;
         sqlx::migrate!("./migrations").run(&self.pool).await?;
         Ok(())
     }
 
     pub async fn journal_mode(&self) -> anyhow::Result<String> {
-        let row = sqlx::query("PRAGMA journal_mode").fetch_one(&self.pool).await?;
+        let row = sqlx::query("PRAGMA journal_mode")
+            .fetch_one(&self.pool)
+            .await?;
         Ok(row.get::<String, _>(0))
     }
 
@@ -298,11 +348,12 @@ impl Storage {
     }
 
     pub async fn watch_history_count(&self, anime_id: i64, episode: i32) -> anyhow::Result<i64> {
-        let row = sqlx::query("SELECT COUNT(*) FROM watch_history WHERE anime_id = ?1 AND episode = ?2")
-            .bind(anime_id)
-            .bind(episode)
-            .fetch_one(&self.pool)
-            .await?;
+        let row =
+            sqlx::query("SELECT COUNT(*) FROM watch_history WHERE anime_id = ?1 AND episode = ?2")
+                .bind(anime_id)
+                .bind(episode)
+                .fetch_one(&self.pool)
+                .await?;
         Ok(row.get::<i64, _>(0))
     }
 
@@ -397,7 +448,11 @@ impl Storage {
         }))
     }
 
-    pub async fn list_all_watch_history(&self, limit: i64, offset: i64) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
+    pub async fn list_all_watch_history(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
         let rows = sqlx::query(
             "SELECT wh.id, wh.anime_id, \
              COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
@@ -478,7 +533,10 @@ impl Storage {
             .collect())
     }
 
-    pub async fn list_recent_watch_history(&self, limit: i64) -> anyhow::Result<Vec<WatchHistoryRow>> {
+    pub async fn list_recent_watch_history(
+        &self,
+        limit: i64,
+    ) -> anyhow::Result<Vec<WatchHistoryRow>> {
         let rows = sqlx::query(
             "SELECT id, anime_id, episode, file_path, player, watched_at
              FROM watch_history ORDER BY watched_at DESC LIMIT ?1",
@@ -527,7 +585,11 @@ impl Storage {
             .collect())
     }
 
-    pub async fn search_anime_by_title(&self, query: &str, limit: i64) -> anyhow::Result<Vec<AnimeRow>> {
+    pub async fn search_anime_by_title(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> anyhow::Result<Vec<AnimeRow>> {
         // Tokenize the query into significant words and match anime whose titles_json
         // contains ANY of them. A single full-title LIKE is too brittle: punctuation
         // ("Online!" vs stored "online?"), stylized characters ("«Fruitmaster»"), and
@@ -549,7 +611,10 @@ impl Storage {
         // pool than `limit` so the ranking step downstream has room to work.
         let (where_clause, patterns): (String, Vec<String>) = if words.is_empty() {
             // Fall back to the whole (trimmed) query if nothing survived tokenization.
-            ("titles_json LIKE ?1".to_string(), vec![format!("%{}%", query.trim())])
+            (
+                "titles_json LIKE ?1".to_string(),
+                vec![format!("%{}%", query.trim())],
+            )
         } else {
             let clauses: Vec<String> = (0..words.len())
                 .map(|i| format!("titles_json LIKE ?{}", i + 1))
@@ -584,21 +649,24 @@ impl Storage {
         anime_id: Option<i64>,
         episode: i32,
         confidence: i32,
+        mapping_source: MappingSource,
         indexed_at: i64,
     ) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO file_index (file_path, anime_id, episode, confidence, indexed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO file_index (file_path, anime_id, episode, confidence, mapping_source, indexed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(file_path) DO UPDATE SET
                anime_id = excluded.anime_id,
                episode = excluded.episode,
                confidence = excluded.confidence,
+               mapping_source = excluded.mapping_source,
                indexed_at = excluded.indexed_at",
         )
         .bind(file_path)
         .bind(anime_id)
         .bind(episode)
         .bind(confidence)
+        .bind(mapping_source.as_db())
         .bind(indexed_at)
         .execute(&self.pool)
         .await?;
@@ -607,7 +675,7 @@ impl Storage {
 
     pub async fn get_file_index(&self, file_path: &str) -> anyhow::Result<Option<FileIndexRow>> {
         let row = sqlx::query(
-            "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored
+            "SELECT file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored
              FROM file_index WHERE file_path = ?1",
         )
         .bind(file_path)
@@ -618,6 +686,7 @@ impl Storage {
             anime_id: row.get("anime_id"),
             episode: row.get("episode"),
             confidence: row.get("confidence"),
+            mapping_source: MappingSource::from_db(&row.get::<String, _>("mapping_source")),
             indexed_at: row.get("indexed_at"),
             ignored: row.get::<i64, _>("ignored") != 0,
         }))
@@ -641,7 +710,7 @@ impl Storage {
             .replace('_', "\\_");
         let pattern = format!("%{escaped}");
         let rows = sqlx::query(
-            "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored \
+            "SELECT file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored \
              FROM file_index \
              WHERE file_path LIKE ?1 ESCAPE '\\' AND anime_id IS NOT NULL AND ignored = 0 \
              ORDER BY confidence DESC, indexed_at DESC",
@@ -650,8 +719,10 @@ impl Storage {
         .fetch_all(&self.pool)
         .await?;
 
-        let distinct_anime: std::collections::HashSet<Option<i64>> =
-            rows.iter().map(|r| r.get::<Option<i64>, _>("anime_id")).collect();
+        let distinct_anime: std::collections::HashSet<Option<i64>> = rows
+            .iter()
+            .map(|r| r.get::<Option<i64>, _>("anime_id"))
+            .collect();
         if distinct_anime.len() > 1 {
             return Ok(None);
         }
@@ -661,6 +732,7 @@ impl Storage {
             anime_id: row.get("anime_id"),
             episode: row.get("episode"),
             confidence: row.get("confidence"),
+            mapping_source: MappingSource::from_db(&row.get::<String, _>("mapping_source")),
             indexed_at: row.get("indexed_at"),
             ignored: row.get::<i64, _>("ignored") != 0,
         }))
@@ -668,7 +740,7 @@ impl Storage {
 
     pub async fn file_index_by_anime(&self, anime_id: i64) -> anyhow::Result<Vec<FileIndexRow>> {
         let rows = sqlx::query(
-            "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored FROM file_index WHERE anime_id = ?1 ORDER BY episode",
+            "SELECT file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored FROM file_index WHERE anime_id = ?1 ORDER BY episode",
         )
         .bind(anime_id)
         .fetch_all(&self.pool)
@@ -680,15 +752,20 @@ impl Storage {
                 anime_id: r.get("anime_id"),
                 episode: r.get("episode"),
                 confidence: r.get("confidence"),
+                mapping_source: MappingSource::from_db(&r.get::<String, _>("mapping_source")),
                 indexed_at: r.get("indexed_at"),
                 ignored: r.get::<i64, _>("ignored") != 0,
             })
             .collect())
     }
 
-    pub async fn list_file_index(&self, limit: i64, offset: i64) -> anyhow::Result<Vec<FileIndexRow>> {
+    pub async fn list_file_index(
+        &self,
+        limit: i64,
+        offset: i64,
+    ) -> anyhow::Result<Vec<FileIndexRow>> {
         let rows = sqlx::query(
-            "SELECT file_path, anime_id, episode, confidence, indexed_at, ignored
+            "SELECT file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored
              FROM file_index ORDER BY indexed_at DESC LIMIT ?1 OFFSET ?2",
         )
         .bind(limit)
@@ -702,6 +779,7 @@ impl Storage {
                 anime_id: row.get("anime_id"),
                 episode: row.get("episode"),
                 confidence: row.get("confidence"),
+                mapping_source: MappingSource::from_db(&row.get::<String, _>("mapping_source")),
                 indexed_at: row.get("indexed_at"),
                 ignored: row.get::<i64, _>("ignored") != 0,
             })
@@ -748,10 +826,12 @@ impl Storage {
         }
         let mut tx = self.pool.begin().await?;
         for path in file_paths {
-            sqlx::query("UPDATE file_index SET anime_id = NULL, confidence = 0 WHERE file_path = ?1")
-                .bind(path)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE file_index SET anime_id = NULL, confidence = 0 WHERE file_path = ?1",
+            )
+            .bind(path)
+            .execute(&mut *tx)
+            .await?;
         }
         tx.commit().await?;
         Ok(())
@@ -781,13 +861,15 @@ impl Storage {
             .replace('%', "\\%")
             .replace('_', "\\_");
         let pattern = format!("{escaped}%");
-        let rows = sqlx::query(
-            "SELECT file_path FROM file_index WHERE file_path LIKE ?1 ESCAPE '\\'",
-        )
-        .bind(pattern)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows.iter().map(|r| r.get::<String, _>("file_path")).collect())
+        let rows =
+            sqlx::query("SELECT file_path FROM file_index WHERE file_path LIKE ?1 ESCAPE '\\'")
+                .bind(pattern)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows
+            .iter()
+            .map(|r| r.get::<String, _>("file_path"))
+            .collect())
     }
 
     /// Mapped, non-ignored rows under `dir`: `(file_path, anime_id)` for rows
@@ -833,7 +915,10 @@ impl Storage {
         .bind(pattern)
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(|r| r.get::<String, _>("file_path")).collect())
+        Ok(rows
+            .iter()
+            .map(|r| r.get::<String, _>("file_path"))
+            .collect())
     }
 
     /// Batch delete of file-index rows in a single transaction.
@@ -881,11 +966,12 @@ impl Storage {
         Ok(())
     }
 
-    /// Batch manual mapping: each tuple is (file_path, anime_id, episode). All are
+    /// Batch mapping: each tuple is (file_path, anime_id, episode). All are
     /// written at full confidence (100) in a single transaction.
     pub async fn upsert_file_mappings(
         &self,
         mappings: &[(String, i64, i32)],
+        mapping_source: MappingSource,
         indexed_at: i64,
     ) -> anyhow::Result<()> {
         if mappings.is_empty() {
@@ -894,18 +980,20 @@ impl Storage {
         let mut tx = self.pool.begin().await?;
         for (file_path, anime_id, episode) in mappings {
             sqlx::query(
-                "INSERT INTO file_index (file_path, anime_id, episode, confidence, indexed_at, ignored)
-                 VALUES (?1, ?2, ?3, 100, ?4, 0)
+                "INSERT INTO file_index (file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored)
+                 VALUES (?1, ?2, ?3, 100, ?4, ?5, 0)
                  ON CONFLICT(file_path) DO UPDATE SET
                    anime_id = excluded.anime_id,
                    episode = excluded.episode,
                    confidence = 100,
+                   mapping_source = excluded.mapping_source,
                    indexed_at = excluded.indexed_at,
                    ignored = 0",
             )
             .bind(file_path)
             .bind(anime_id)
             .bind(episode)
+            .bind(mapping_source.as_db())
             .bind(indexed_at)
             .execute(&mut *tx)
             .await?;
@@ -1139,21 +1227,16 @@ impl Storage {
         retry_count: i32,
         next_retry_at: i64,
     ) -> anyhow::Result<()> {
-        sqlx::query(
-            "UPDATE sync_queue SET retry_count = ?1, next_retry_at = ?2 WHERE id = ?3",
-        )
-        .bind(retry_count)
-        .bind(next_retry_at)
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("UPDATE sync_queue SET retry_count = ?1, next_retry_at = ?2 WHERE id = ?3")
+            .bind(retry_count)
+            .bind(next_retry_at)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    pub async fn sync_status_counts(
-        &self,
-        service: &str,
-    ) -> anyhow::Result<(i64, i64, i64)> {
+    pub async fn sync_status_counts(&self, service: &str) -> anyhow::Result<(i64, i64, i64)> {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
@@ -1453,22 +1536,25 @@ impl Storage {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.iter().map(|row| SonarrSeriesDb {
-            sonarr_id: row.get("sonarr_id"),
-            title: row.get("title"),
-            season_count: row.get("season_count"),
-            episode_count: row.get("episode_count"),
-            episode_file_count: row.get("episode_file_count"),
-            monitored: row.get("monitored"),
-            next_airing: row.get("next_airing"),
-            path: row.get("path"),
-            poster_url: row.get("poster_url"),
-            overview: row.get("overview"),
-            network: row.get("network"),
-            status: row.get("status"),
-            added: row.get("added"),
-            last_synced: row.get("last_synced"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|row| SonarrSeriesDb {
+                sonarr_id: row.get("sonarr_id"),
+                title: row.get("title"),
+                season_count: row.get("season_count"),
+                episode_count: row.get("episode_count"),
+                episode_file_count: row.get("episode_file_count"),
+                monitored: row.get("monitored"),
+                next_airing: row.get("next_airing"),
+                path: row.get("path"),
+                poster_url: row.get("poster_url"),
+                overview: row.get("overview"),
+                network: row.get("network"),
+                status: row.get("status"),
+                added: row.get("added"),
+                last_synced: row.get("last_synced"),
+            })
+            .collect())
     }
 
     pub async fn sonarr_series_count(&self) -> anyhow::Result<i64> {
@@ -1479,7 +1565,9 @@ impl Storage {
     }
 
     pub async fn sonarr_series_delete_all(&self) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM sonarr_series").execute(&self.pool).await?;
+        sqlx::query("DELETE FROM sonarr_series")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -1507,7 +1595,10 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn sonarr_mapping_by_anime(&self, anime_id: i64) -> anyhow::Result<Option<SonarrMappingDb>> {
+    pub async fn sonarr_mapping_by_anime(
+        &self,
+        anime_id: i64,
+    ) -> anyhow::Result<Option<SonarrMappingDb>> {
         let row = sqlx::query(
             "SELECT id, sonarr_id, anime_id, title_match, confidence, mapped_at, user_confirmed
              FROM sonarr_mapping WHERE anime_id = ?1",
@@ -1527,7 +1618,10 @@ impl Storage {
         }))
     }
 
-    pub async fn sonarr_mapping_by_sonarr_id(&self, sonarr_id: i64) -> anyhow::Result<Option<SonarrMappingDb>> {
+    pub async fn sonarr_mapping_by_sonarr_id(
+        &self,
+        sonarr_id: i64,
+    ) -> anyhow::Result<Option<SonarrMappingDb>> {
         let row = sqlx::query(
             "SELECT id, sonarr_id, anime_id, title_match, confidence, mapped_at, user_confirmed
              FROM sonarr_mapping WHERE sonarr_id = ?1",
@@ -1555,15 +1649,18 @@ impl Storage {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.iter().map(|r| SonarrMappingDb {
-            id: Some(r.get("id")),
-            sonarr_id: r.get("sonarr_id"),
-            anime_id: r.get("anime_id"),
-            title_match: r.get("title_match"),
-            confidence: r.get("confidence"),
-            mapped_at: r.get("mapped_at"),
-            user_confirmed: r.get("user_confirmed"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| SonarrMappingDb {
+                id: Some(r.get("id")),
+                sonarr_id: r.get("sonarr_id"),
+                anime_id: r.get("anime_id"),
+                title_match: r.get("title_match"),
+                confidence: r.get("confidence"),
+                mapped_at: r.get("mapped_at"),
+                user_confirmed: r.get("user_confirmed"),
+            })
+            .collect())
     }
 
     pub async fn sonarr_mapping_count(&self) -> anyhow::Result<i64> {
@@ -1577,7 +1674,9 @@ impl Storage {
     /// Passing an empty slice clears them all. Mappings cascade on delete.
     pub async fn prune_sonarr_series_except(&self, keep_ids: &[i64]) -> anyhow::Result<()> {
         if keep_ids.is_empty() {
-            sqlx::query("DELETE FROM sonarr_series").execute(&self.pool).await?;
+            sqlx::query("DELETE FROM sonarr_series")
+                .execute(&self.pool)
+                .await?;
             return Ok(());
         }
         let placeholders = (1..=keep_ids.len())
@@ -1622,13 +1721,18 @@ impl Storage {
     }
 
     pub async fn sonarr_mapping_delete_all(&self) -> anyhow::Result<()> {
-        sqlx::query("DELETE FROM sonarr_mapping").execute(&self.pool).await?;
+        sqlx::query("DELETE FROM sonarr_mapping")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
     // ── Sonarr availability (join) ──────────────────────────────────────────────
 
-    pub async fn sonarr_availability(&self, anime_id: i64) -> anyhow::Result<Option<SonarrAvailabilityDb>> {
+    pub async fn sonarr_availability(
+        &self,
+        anime_id: i64,
+    ) -> anyhow::Result<Option<SonarrAvailabilityDb>> {
         let row = sqlx::query(
             "SELECT s.sonarr_id, s.title, s.monitored, s.episode_count, s.episode_file_count,
                     s.next_airing, s.path, s.season_count, s.status as sonarr_status
@@ -1658,11 +1762,19 @@ impl Storage {
     }
 
     pub async fn wal_checkpoint(&self) -> anyhow::Result<()> {
-        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)").execute(&self.pool).await?;
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    pub async fn log_migration(&self, source: &str, source_id: &str, status: &str, message: &str) -> anyhow::Result<()> {
+    pub async fn log_migration(
+        &self,
+        source: &str,
+        source_id: &str,
+        status: &str,
+        message: &str,
+    ) -> anyhow::Result<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -1680,43 +1792,53 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn export_all_anime(&self) -> anyhow::Result<Vec<crate::engine::migration::backup::AnimeExport>> {
+    pub async fn export_all_anime(
+        &self,
+    ) -> anyhow::Result<Vec<crate::engine::migration::backup::AnimeExport>> {
         use crate::engine::migration::backup::AnimeExport;
         let rows = sqlx::query(
             "SELECT id, titles_json, type, status, episode_count, image_url, synopsis, last_modified FROM anime ORDER BY id",
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(|r| AnimeExport {
-            id: r.get("id"),
-            titles_json: r.get("titles_json"),
-            anime_type: r.get("type"),
-            status: r.get("status"),
-            episode_count: r.get("episode_count"),
-            image_url: r.get("image_url"),
-            synopsis: r.get("synopsis"),
-            last_modified: r.get("last_modified"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| AnimeExport {
+                id: r.get("id"),
+                titles_json: r.get("titles_json"),
+                anime_type: r.get("type"),
+                status: r.get("status"),
+                episode_count: r.get("episode_count"),
+                image_url: r.get("image_url"),
+                synopsis: r.get("synopsis"),
+                last_modified: r.get("last_modified"),
+            })
+            .collect())
     }
 
-    pub async fn export_all_list_entries(&self) -> anyhow::Result<Vec<crate::engine::migration::backup::ListEntryExport>> {
+    pub async fn export_all_list_entries(
+        &self,
+    ) -> anyhow::Result<Vec<crate::engine::migration::backup::ListEntryExport>> {
         use crate::engine::migration::backup::ListEntryExport;
         let rows = sqlx::query(
             "SELECT anime_id, status, watched_episodes, score, notes, date_started, date_completed, local_updated, remote_updated FROM list_entry ORDER BY anime_id",
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(|r| ListEntryExport {
-            anime_id: r.get("anime_id"),
-            status: r.get("status"),
-            watched_episodes: r.get("watched_episodes"),
-            score: r.get("score"),
-            notes: r.get("notes"),
-            date_started: r.get("date_started"),
-            date_completed: r.get("date_completed"),
-            local_updated: r.get("local_updated"),
-            remote_updated: r.get("remote_updated"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| ListEntryExport {
+                anime_id: r.get("anime_id"),
+                status: r.get("status"),
+                watched_episodes: r.get("watched_episodes"),
+                score: r.get("score"),
+                notes: r.get("notes"),
+                date_started: r.get("date_started"),
+                date_completed: r.get("date_completed"),
+                local_updated: r.get("local_updated"),
+                remote_updated: r.get("remote_updated"),
+            })
+            .collect())
     }
 
     pub async fn compute_stats(&self) -> anyhow::Result<AnimeStats> {
@@ -1733,11 +1855,19 @@ impl Storage {
              FROM list_entry \
              WHERE score IS NOT NULL AND score > 0 \
              GROUP BY bucket \
-             ORDER BY bucket"
-        ).fetch_all(&self.pool).await?;
+             ORDER BY bucket",
+        )
+        .fetch_all(&self.pool)
+        .await?;
 
         let bucket_labels = ["0-9", "10-29", "30-49", "50-69", "70-89", "90-100"];
-        let mut score_distribution: Vec<ScoreBucket> = bucket_labels.iter().map(|r| ScoreBucket { range: r.to_string(), count: 0 }).collect();
+        let mut score_distribution: Vec<ScoreBucket> = bucket_labels
+            .iter()
+            .map(|r| ScoreBucket {
+                range: r.to_string(),
+                count: 0,
+            })
+            .collect();
         for row in &score_rows {
             let bucket: i32 = row.get("bucket");
             let cnt: i64 = row.get("cnt");
@@ -1746,23 +1876,53 @@ impl Storage {
             }
         }
 
-        let total_anime: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM list_entry").fetch_one(&self.pool).await?;
-        let total_eps: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(watched_episodes), 0) FROM list_entry").fetch_one(&self.pool).await?;
-        let total_rewatches: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM watch_history WHERE source = 'manual' OR source = 'auto-detect'").fetch_one(&self.pool).await?;
+        let total_anime: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM list_entry")
+            .fetch_one(&self.pool)
+            .await?;
+        let total_eps: i64 =
+            sqlx::query_scalar("SELECT COALESCE(SUM(watched_episodes), 0) FROM list_entry")
+                .fetch_one(&self.pool)
+                .await?;
+        let total_rewatches: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM watch_history WHERE source = 'manual' OR source = 'auto-detect'",
+        )
+        .fetch_one(&self.pool)
+        .await?;
         let avg_score: f64 = sqlx::query_scalar("SELECT COALESCE(AVG(CAST(score AS REAL)), 0) FROM list_entry WHERE score IS NOT NULL AND score > 0").fetch_one(&self.pool).await?;
 
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
         let day_ago = now - 86400;
         let week_ago = now - 604800;
 
-        let episodes_today: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM watch_history WHERE watched_at > ?1").bind(day_ago).fetch_one(&self.pool).await?;
-        let episodes_this_week: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM watch_history WHERE watched_at > ?1").bind(week_ago).fetch_one(&self.pool).await?;
+        let episodes_today: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM watch_history WHERE watched_at > ?1")
+                .bind(day_ago)
+                .fetch_one(&self.pool)
+                .await?;
+        let episodes_this_week: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM watch_history WHERE watched_at > ?1")
+                .bind(week_ago)
+                .fetch_one(&self.pool)
+                .await?;
 
-        Ok(AnimeStats { score_distribution, total_anime, total_episodes_watched: total_eps, total_rewatches, avg_score, episodes_today, episodes_this_week })
+        Ok(AnimeStats {
+            score_distribution,
+            total_anime,
+            total_episodes_watched: total_eps,
+            total_rewatches,
+            avg_score,
+            episodes_today,
+            episodes_this_week,
+        })
     }
 
     pub async fn all_library_anime_ids(&self) -> anyhow::Result<Vec<i64>> {
-        let rows = sqlx::query("SELECT anime_id FROM list_entry").fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT anime_id FROM list_entry")
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows.iter().map(|r| r.get::<i64, _>("anime_id")).collect())
     }
 
@@ -1818,21 +1978,30 @@ impl Storage {
 
     /// Word-wildcard search: builds %word1%word2%word3% pattern for LIKE.
     /// Useful when punctuation differences prevent exact substring matching.
-    pub async fn search_anime_by_words(&self, words: &[&str], limit: i64) -> anyhow::Result<Vec<AnimeRow>> {
-        if words.is_empty() { return Ok(vec![]); }
+    pub async fn search_anime_by_words(
+        &self,
+        words: &[&str],
+        limit: i64,
+    ) -> anyhow::Result<Vec<AnimeRow>> {
+        if words.is_empty() {
+            return Ok(vec![]);
+        }
         let pattern = format!("%{}%", words.join("%"));
         let rows = sqlx::query("SELECT id, titles_json, episode_count FROM anime WHERE titles_json LIKE ?1 ORDER BY id LIMIT ?2")
             .bind(&pattern).bind(limit).fetch_all(&self.pool).await?;
-        Ok(rows.iter().map(|row| AnimeRow {
-            id: row.get("id"),
-            titles_json: row.get("titles_json"),
-            episode_count: row.get("episode_count"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|row| AnimeRow {
+                id: row.get("id"),
+                titles_json: row.get("titles_json"),
+                episode_count: row.get("episode_count"),
+            })
+            .collect())
     }
 
     pub async fn watching_anime_ids(&self) -> anyhow::Result<Vec<i64>> {
         let rows = sqlx::query(
-            "SELECT anime_id FROM list_entry WHERE status = 'watching' ORDER BY anime_id"
+            "SELECT anime_id FROM list_entry WHERE status = 'watching' ORDER BY anime_id",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -1859,31 +2028,39 @@ impl Storage {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.iter().map(|r| ContinueWatchingRow {
-            anime_id: r.get("anime_id"),
-            anime_title: r.get("anime_title"),
-            image_url: r.get("image_url"),
-            watched_episodes: r.get("watched_episodes"),
-            episode_count: r.get("episode_count"),
-            last_watched_at: r.get("last_watched_at"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| ContinueWatchingRow {
+                anime_id: r.get("anime_id"),
+                anime_title: r.get("anime_title"),
+                image_url: r.get("image_url"),
+                watched_episodes: r.get("watched_episodes"),
+                episode_count: r.get("episode_count"),
+                last_watched_at: r.get("last_watched_at"),
+            })
+            .collect())
     }
 
-    pub async fn export_all_watch_history(&self) -> anyhow::Result<Vec<crate::engine::migration::backup::WatchHistoryExport>> {
+    pub async fn export_all_watch_history(
+        &self,
+    ) -> anyhow::Result<Vec<crate::engine::migration::backup::WatchHistoryExport>> {
         use crate::engine::migration::backup::WatchHistoryExport;
         let rows = sqlx::query(
             "SELECT anime_id, episode, file_path, player, watched_at, source FROM watch_history ORDER BY watched_at",
         )
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows.iter().map(|r| WatchHistoryExport {
-            anime_id: r.get("anime_id"),
-            episode: r.get("episode"),
-            file_path: r.get("file_path"),
-            player: r.get("player"),
-            watched_at: r.get("watched_at"),
-            source: r.get::<String, _>("source"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| WatchHistoryExport {
+                anime_id: r.get("anime_id"),
+                episode: r.get("episode"),
+                file_path: r.get("file_path"),
+                player: r.get("player"),
+                watched_at: r.get("watched_at"),
+                source: r.get::<String, _>("source"),
+            })
+            .collect())
     }
 }
 

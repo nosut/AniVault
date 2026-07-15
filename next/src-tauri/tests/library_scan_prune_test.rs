@@ -1,7 +1,7 @@
 use anivault_core::engine::library_scanner::{
     find_video_files, rescan_anime_dirs, scan_library_folders, set_library_folders,
 };
-use anivault_core::engine::storage::Tests;
+use anivault_core::engine::storage::{MappingSource, Tests};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -76,7 +76,7 @@ async fn offline_folder_does_not_prune_its_files() {
     // Index a row for a file under it, then remove the folder so it's "offline".
     storage.insert_minimal_anime(1, "Show").await.unwrap();
     storage
-        .upsert_file_index(&ghost_file, Some(1), 1, 90, now())
+        .upsert_file_index(&ghost_file, Some(1), 1, 90, MappingSource::Manual, now())
         .await
         .unwrap();
     fs::remove_dir_all(&offline).unwrap();
@@ -103,7 +103,14 @@ async fn rescan_anime_dirs_prunes_only_that_shows_folder() {
     // Map the file to anime 1 directly.
     storage.insert_minimal_anime(1, "Show").await.unwrap();
     storage
-        .upsert_file_index(&file.to_string_lossy(), Some(1), 1, 90, now())
+        .upsert_file_index(
+            &file.to_string_lossy(),
+            Some(1),
+            1,
+            90,
+            MappingSource::Manual,
+            now(),
+        )
         .await
         .unwrap();
 
@@ -112,11 +119,7 @@ async fn rescan_anime_dirs_prunes_only_that_shows_folder() {
     let report = rescan_anime_dirs(&storage, 1).await.unwrap();
     assert_eq!(report.removed, 1);
     assert!(
-        storage
-            .file_index_by_anime(1)
-            .await
-            .unwrap()
-            .is_empty(),
+        storage.file_index_by_anime(1).await.unwrap().is_empty(),
         "anime's deleted file should be pruned by targeted rescan"
     );
 
@@ -144,7 +147,14 @@ async fn rescan_prunes_when_whole_show_folder_is_deleted() {
     storage.insert_minimal_anime(1, "Show").await.unwrap();
     for (i, f) in [&ep1, &ep2].iter().enumerate() {
         storage
-            .upsert_file_index(&f.to_string_lossy(), Some(1), i as i32 + 1, 90, now())
+            .upsert_file_index(
+                &f.to_string_lossy(),
+                Some(1),
+                i as i32 + 1,
+                90,
+                MappingSource::Manual,
+                now(),
+            )
             .await
             .unwrap();
     }
@@ -177,7 +187,14 @@ async fn rescan_does_not_prune_when_library_root_is_offline() {
         .unwrap();
     storage.insert_minimal_anime(1, "Show").await.unwrap();
     storage
-        .upsert_file_index(&file.to_string_lossy(), Some(1), 1, 90, now())
+        .upsert_file_index(
+            &file.to_string_lossy(),
+            Some(1),
+            1,
+            90,
+            MappingSource::Manual,
+            now(),
+        )
         .await
         .unwrap();
 
@@ -206,7 +223,10 @@ async fn rescan_anime_with_no_files_falls_back_to_full_scan() {
     // Anime 99 has no indexed files, so there's no folder to derive — the rescan
     // falls back to a full library scan and indexes the file it finds.
     let report = rescan_anime_dirs(&storage, 99).await.unwrap();
-    assert_eq!(report.found, 1, "fallback full scan should walk library folders");
+    assert_eq!(
+        report.found, 1,
+        "fallback full scan should walk library folders"
+    );
 
     fs::remove_dir_all(&dir).ok();
 }
@@ -225,6 +245,11 @@ fn find_video_files_still_finds_nested_files_after_cycle_guard() {
 
     fs::remove_dir_all(&base).ok();
 
-    assert_eq!(files.len(), 2, "expected both nested and top-level video files, got {:?}", files);
+    assert_eq!(
+        files.len(),
+        2,
+        "expected both nested and top-level video files, got {:?}",
+        files
+    );
     assert!(errors.is_empty());
 }

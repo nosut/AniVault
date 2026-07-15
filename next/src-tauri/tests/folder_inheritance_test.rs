@@ -1,5 +1,5 @@
-use anivault_core::engine::storage::Tests;
 use anivault_core::engine::library_scanner::{match_file, unanimous_dir_anime};
+use anivault_core::engine::storage::{MappingSource, Tests};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -31,12 +31,55 @@ async fn mapped_files_under_returns_only_real_matches() {
     // Windows-style paths; the queries are pure string-prefix matches so no
     // real files are needed here.
     let base = "C:\\Lib\\ShowA\\";
-    storage.upsert_file_index("C:\\Lib\\ShowA\\ep1.mkv", Some(7), 1, 100, now()).await.unwrap();
-    storage.upsert_file_index("C:\\Lib\\ShowA\\ep2.mkv", None, 0, 0, now()).await.unwrap(); // unmatched
-    storage.upsert_file_index("C:\\Lib\\ShowA2\\ep1.mkv", Some(8), 1, 100, now()).await.unwrap(); // sibling folder
-    // Ignored row must never count.
-    storage.upsert_file_index("C:\\Lib\\ShowA\\junk.mkv", Some(8), 1, 100, now()).await.unwrap();
-    storage.set_file_index_ignored("C:\\Lib\\ShowA\\junk.mkv", true).await.unwrap();
+    storage
+        .upsert_file_index(
+            "C:\\Lib\\ShowA\\ep1.mkv",
+            Some(7),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
+        .await
+        .unwrap();
+    storage
+        .upsert_file_index(
+            "C:\\Lib\\ShowA\\ep2.mkv",
+            None,
+            0,
+            0,
+            MappingSource::Automatic,
+            now(),
+        )
+        .await
+        .unwrap(); // unmatched
+    storage
+        .upsert_file_index(
+            "C:\\Lib\\ShowA2\\ep1.mkv",
+            Some(8),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
+        .await
+        .unwrap(); // sibling folder
+                   // Ignored row must never count.
+    storage
+        .upsert_file_index(
+            "C:\\Lib\\ShowA\\junk.mkv",
+            Some(8),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
+        .await
+        .unwrap();
+    storage
+        .set_file_index_ignored("C:\\Lib\\ShowA\\junk.mkv", true)
+        .await
+        .unwrap();
 
     let mapped = storage.mapped_files_under(base).await.unwrap();
     assert_eq!(mapped, vec![("C:\\Lib\\ShowA\\ep1.mkv".to_string(), 7)]);
@@ -81,15 +124,30 @@ async fn file_inherits_unanimous_folder_anime() {
 
     // The anime title shares no words with the filename, so title matching
     // fails — exactly the situation that forced manual mapping.
-    storage.insert_minimal_anime(7, "Completely Unrelated Title").await.unwrap();
+    storage
+        .insert_minimal_anime(7, "Completely Unrelated Title")
+        .await
+        .unwrap();
     // Episode 1 was mapped manually (confidence 100).
     storage
-        .upsert_file_index(&ep1.to_string_lossy(), Some(7), 1, 100, now())
+        .upsert_file_index(
+            &ep1.to_string_lossy(),
+            Some(7),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
         .await
         .unwrap();
 
-    let (anime_id, confidence, episode) = match_file(&storage, &ep2.as_path()).await.unwrap();
-    assert_eq!(anime_id, Some(7), "episode 2 must inherit the folder's anime");
+    let matched = match_file(&storage, &ep2.as_path()).await.unwrap();
+    let (anime_id, confidence, episode) = (matched.anime_id, matched.confidence, matched.episode);
+    assert_eq!(
+        anime_id,
+        Some(7),
+        "episode 2 must inherit the folder's anime"
+    );
     assert_eq!(confidence, 85);
     assert_eq!(episode, Some(2));
 
@@ -106,12 +164,39 @@ async fn mixed_folder_does_not_inherit() {
     for f in [&a, &b, &c] {
         fs::write(f, b"x").unwrap();
     }
-    storage.insert_minimal_anime(7, "Completely Unrelated Title").await.unwrap();
-    storage.insert_minimal_anime(8, "Another Unrelated Title").await.unwrap();
-    storage.upsert_file_index(&a.to_string_lossy(), Some(7), 1, 100, now()).await.unwrap();
-    storage.upsert_file_index(&b.to_string_lossy(), Some(8), 1, 100, now()).await.unwrap();
+    storage
+        .insert_minimal_anime(7, "Completely Unrelated Title")
+        .await
+        .unwrap();
+    storage
+        .insert_minimal_anime(8, "Another Unrelated Title")
+        .await
+        .unwrap();
+    storage
+        .upsert_file_index(
+            &a.to_string_lossy(),
+            Some(7),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
+        .await
+        .unwrap();
+    storage
+        .upsert_file_index(
+            &b.to_string_lossy(),
+            Some(8),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
+        .await
+        .unwrap();
 
-    let (anime_id, confidence, _) = match_file(&storage, &c.as_path()).await.unwrap();
+    let matched = match_file(&storage, &c.as_path()).await.unwrap();
+    let (anime_id, confidence) = (matched.anime_id, matched.confidence);
     assert_eq!(anime_id, None, "disagreeing siblings must not inherit");
     assert_eq!(confidence, 0);
 
@@ -126,10 +211,24 @@ async fn no_episode_number_does_not_inherit() {
     let extra = dir.join("Zzqx Qwpv.mkv"); // no parsable episode number
     fs::write(&ep1, b"x").unwrap();
     fs::write(&extra, b"x").unwrap();
-    storage.insert_minimal_anime(7, "Completely Unrelated Title").await.unwrap();
-    storage.upsert_file_index(&ep1.to_string_lossy(), Some(7), 1, 100, now()).await.unwrap();
+    storage
+        .insert_minimal_anime(7, "Completely Unrelated Title")
+        .await
+        .unwrap();
+    storage
+        .upsert_file_index(
+            &ep1.to_string_lossy(),
+            Some(7),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
+        .await
+        .unwrap();
 
-    let (anime_id, confidence, _) = match_file(&storage, &extra.as_path()).await.unwrap();
+    let matched = match_file(&storage, &extra.as_path()).await.unwrap();
+    let (anime_id, confidence) = (matched.anime_id, matched.confidence);
     assert_eq!(anime_id, None, "no episode number → leave unmatched");
     assert_eq!(confidence, 0);
 
@@ -144,12 +243,33 @@ async fn confident_title_match_beats_inheritance() {
     let movie = dir.join("Great Vault Movie - 01.mkv");
     fs::write(&sibling, b"x").unwrap();
     fs::write(&movie, b"x").unwrap();
-    storage.insert_minimal_anime(7, "Completely Unrelated Title").await.unwrap();
-    storage.insert_minimal_anime(9, "Great Vault Movie").await.unwrap();
-    storage.upsert_file_index(&sibling.to_string_lossy(), Some(7), 1, 100, now()).await.unwrap();
+    storage
+        .insert_minimal_anime(7, "Completely Unrelated Title")
+        .await
+        .unwrap();
+    storage
+        .insert_minimal_anime(9, "Great Vault Movie")
+        .await
+        .unwrap();
+    storage
+        .upsert_file_index(
+            &sibling.to_string_lossy(),
+            Some(7),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
+        .await
+        .unwrap();
 
-    let (anime_id, confidence, _) = match_file(&storage, &movie.as_path()).await.unwrap();
-    assert_eq!(anime_id, Some(9), "a confident title match must win over inheritance");
+    let matched = match_file(&storage, &movie.as_path()).await.unwrap();
+    let (anime_id, confidence) = (matched.anime_id, matched.confidence);
+    assert_eq!(
+        anime_id,
+        Some(9),
+        "a confident title match must win over inheritance"
+    );
     assert!(confidence >= 40);
 
     fs::remove_dir_all(&dir).ok();

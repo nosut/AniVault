@@ -1,7 +1,7 @@
 use crate::engine::events::{EngineEvent, MatchCandidate};
 use crate::engine::parser::{parse_filename, ParsedFilename};
 use crate::engine::runtime::EngineState;
-use crate::engine::storage::Storage;
+use crate::engine::storage::{MappingSource, Storage};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RecognitionResult {
@@ -212,7 +212,14 @@ pub async fn confirm_identification(
 
     state
         .storage
-        .upsert_file_index(file_path, Some(anime_id), episode, 100, now)
+        .upsert_file_index(
+            file_path,
+            Some(anime_id),
+            episode,
+            100,
+            MappingSource::Manual,
+            now,
+        )
         .await?;
 
     state.events.publish(EngineEvent::AnimeIdentified(

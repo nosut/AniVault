@@ -2,6 +2,7 @@ use crate::engine::events::{AnimeIdentified, EngineEvent};
 use crate::engine::matcher::recognize_file;
 use crate::engine::runtime::EngineState;
 use crate::engine::scanner::ScanResult;
+use crate::engine::storage::MappingSource;
 
 #[derive(Debug, Clone)]
 pub struct ActivePlayback {
@@ -23,8 +24,8 @@ pub fn guess_episode(file_path: Option<&str>, window_title: Option<&str>) -> Opt
     // Search and slice the same lowercased string: lowercasing can change byte
     // lengths for some Unicode characters, so an offset found in the lowercased
     // text must never be used to index the original.
-    let text = (window_title.unwrap_or("").to_string() + " " + file_path.unwrap_or(""))
-        .to_lowercase();
+    let text =
+        (window_title.unwrap_or("").to_string() + " " + file_path.unwrap_or("")).to_lowercase();
 
     // Simple heuristic: find " - " or " S01E" or " EP" patterns
     for pattern in &[" - ", " s01e", " ep", " episode "] {
@@ -86,16 +87,25 @@ pub async fn process_scan_result(state: &EngineState, result: ScanResult) -> any
             if !recognition.known_file && crate::engine::matcher::looks_like_path(fp) {
                 let _ = state
                     .storage
-                    .upsert_file_index(fp, Some(anime_id), episode, confidence as i32, now)
+                    .upsert_file_index(
+                        fp,
+                        Some(anime_id),
+                        episode,
+                        confidence as i32,
+                        MappingSource::Automatic,
+                        now,
+                    )
                     .await;
             }
 
-            state.events.publish(EngineEvent::AnimeIdentified(AnimeIdentified {
-                anime_id,
-                episode,
-                confidence,
-                evidence: format!("auto match: {fp}"),
-            }));
+            state
+                .events
+                .publish(EngineEvent::AnimeIdentified(AnimeIdentified {
+                    anime_id,
+                    episode,
+                    confidence,
+                    evidence: format!("auto match: {fp}"),
+                }));
 
             let old_episode = state
                 .storage
