@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type RelationEntry, type NextAiring, type EngineEvent } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { onDestroy } from 'svelte';
   import SonarrRemap from './SonarrRemap.svelte';
+  import { mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
   import { ArrowLeft, ExternalLink, FolderOpen, FolderInput, RotateCw, Play, Trash2 } from 'lucide-svelte';
 
   export let animeId: number;
@@ -22,6 +23,14 @@
   let episodeFiles: FileIndexEntry[] = [];
   let episodeFilesLoading = false;
   let rescanning = false;
+
+  let fileScanReport: LibraryScanReport | null = null;
+  let fileActionError: string | null = null;
+  let fileActionMessage: string | null = null;
+  let repairConfirming = false;
+  let repairing = false;
+
+  $: conflictGroups = partitionMappingConflicts(fileScanReport?.mapping_conflicts ?? []);
 
   let relations: RelationEntry[] = [];
   let relationsLoading = false;
@@ -189,6 +198,10 @@
     loading = true;
     error = null;
     saveOk = null;
+    fileScanReport = null;
+    fileActionError = null;
+    fileActionMessage = null;
+    repairConfirming = false;
     try {
       const d = await fetchAnimeDetail(requestedId);
       if (requestedId !== animeId) return; // a newer anime is now showing
@@ -252,15 +265,46 @@
 
   async function handleRescanFiles() {
     rescanning = true;
+    fileActionError = null;
+    fileActionMessage = null;
+    repairConfirming = false;
     try {
       // Re-read this show's own folders from disk (picks up added files, drops
       // deleted ones), then refresh the list.
-      await rescanAnimeFiles(animeId);
+      fileScanReport = await rescanAnimeFiles(animeId);
       await loadEpisodeFiles();
-    } catch {
-      // silent
+      if (fileScanReport.mapping_conflicts.length === 0) {
+        fileActionMessage = 'Rescan complete. No mapping conflicts found.';
+      }
+    } catch (e) {
+      fileActionError = e instanceof Error ? e.message : String(e);
     } finally {
       rescanning = false;
+    }
+  }
+
+  function beginRepairMappings() {
+    if (conflictGroups.repairable.length > 0) repairConfirming = true;
+  }
+
+  function cancelRepairMappings() {
+    repairConfirming = false;
+  }
+
+  async function confirmRepairMappings() {
+    if (repairing) return;
+    repairing = true;
+    fileActionError = null;
+    try {
+      const result = await repairAnimeFileMappings(animeId);
+      await loadEpisodeFiles();
+      fileScanReport = await rescanAnimeFiles(animeId);
+      fileActionMessage = `Repaired ${result.repaired} file mapping${result.repaired === 1 ? '' : 's'}.`;
+      repairConfirming = false;
+    } catch (e) {
+      fileActionError = e instanceof Error ? e.message : String(e);
+    } finally {
+      repairing = false;
     }
   }
 
@@ -725,6 +769,41 @@
             {#if mapFolderMsg}
               <p class="success-msg">{mapFolderMsg}</p>
             {/if}
+
+            {#if fileScanReport && fileScanReport.mapping_conflicts.length > 0}
+              <div class="mapping-conflict-warning">
+                <p>
+                  {fileScanReport.mapping_conflicts.length} conflicting file mapping{fileScanReport.mapping_conflicts.length === 1 ? '' : 's'} found.
+                </p>
+                <ul>
+                  {#each fileScanReport.mapping_conflicts as conflict (conflict.file_path)}
+                    <li>
+                      <span>Ep {conflict.episode ?? '?'}</span>
+                      <span>{conflict.current_anime_title} (#{conflict.current_anime_id})</span>
+                      <span>{mappingSourceLabel(conflict.mapping_source)}</span>
+                      <span class="ep-path">{conflict.file_path}</span>
+                      {#if !conflict.repairable}<span class="protected-label">Manual mapping protected</span>{/if}
+                    </li>
+                  {/each}
+                </ul>
+                {#if conflictGroups.repairable.length > 0 && !repairConfirming}
+                  <button class="action-btn small" on:click={beginRepairMappings}>Repair mappings</button>
+                {:else if repairConfirming}
+                  <div class="repair-confirm-row">
+                    <span>Move {conflictGroups.repairable.length} eligible file{conflictGroups.repairable.length === 1 ? '' : 's'} to this anime?</span>
+                    <button class="action-btn small" on:click={confirmRepairMappings} disabled={repairing}>
+                      {repairing ? 'Repairing...' : 'Confirm repair'}
+                    </button>
+                    <button class="action-btn small" on:click={cancelRepairMappings} disabled={repairing}>Cancel</button>
+                  </div>
+                {/if}
+                {#if conflictGroups.protected.length > 0}
+                  <p class="muted">Protected manual mappings were not changed. Use Map folder to override them intentionally.</p>
+                {/if}
+              </div>
+            {/if}
+            {#if fileActionMessage}<p class="success-msg">{fileActionMessage}</p>{/if}
+            {#if fileActionError}<p class="error-text">{fileActionError}</p>{/if}
 
             {#if episodeFilesLoading}
               <p class="muted">Loading…</p>
@@ -1283,6 +1362,20 @@
   .manual-map { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; flex-wrap: wrap; }
   .map-folder-hint { font-size: 0.72rem; color: var(--color-muted); }
   .success-msg { color: var(--color-success); font-size: 0.8rem; margin: 0.3rem 0 0; }
+  .mapping-conflict-warning {
+    margin-top: 0.5rem; padding: 0.5rem 0.6rem; border-radius: 6px;
+    border: 1px solid rgba(var(--color-warning-rgb, 234, 179, 8), 0.35);
+    background: rgba(var(--color-warning-rgb, 234, 179, 8), 0.08);
+    font-size: 0.8rem;
+  }
+  .mapping-conflict-warning > p { margin: 0 0 0.4rem; font-weight: 600; }
+  .mapping-conflict-warning ul { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.3rem; }
+  .mapping-conflict-warning li {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    padding: 0.3rem 0.4rem; border-radius: 6px; background: rgba(255,255,255,0.02);
+  }
+  .protected-label { color: var(--color-muted); font-style: italic; }
+  .repair-confirm-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .episode-file-list { display: grid; gap: 0.35rem; margin-top: 0.5rem; }
   .episode-file-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border: 1px solid rgba(var(--color-accent-rgb),0.08); border-radius: 6px; background: rgba(255,255,255,0.02); font-size: 0.82rem; min-width: 0; }
   .ep-num { font-weight: 600; color: var(--color-accent); min-width: 2.5rem; }

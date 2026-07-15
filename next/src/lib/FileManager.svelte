@@ -13,15 +13,16 @@
     searchAnime,
     importAnilistAnime,
     deepMatchViaAnilist,
-    type FileIndexEntry,
+    type KnownFileEntry,
     type EngineEvent,
   } from './api';
+  import { knownFileMappingLabel } from './fileMappingUi';
 
   type Filter = 'all' | 'unmapped' | 'mapped' | 'ignored';
   type MapSource = 'library' | 'anilist';
   interface Group {
     key: string;
-    files: FileIndexEntry[];
+    files: KnownFileEntry[];
   }
   interface MapCandidate {
     anime_id: number;
@@ -29,7 +30,7 @@
     from_anilist: boolean;
   }
 
-  let entries: FileIndexEntry[] = [];
+  let entries: KnownFileEntry[] = [];
   let loading = true;
   let error: string | null = null;
 
@@ -105,7 +106,7 @@
     return name;
   }
 
-  function statusOf(e: FileIndexEntry): Filter {
+  function statusOf(e: KnownFileEntry): Filter {
     if (e.ignored) return 'ignored';
     return e.anime_id != null ? 'mapped' : 'unmapped';
   }
@@ -128,8 +129,8 @@
 
   $: groups = buildGroups(visible);
 
-  function buildGroups(list: FileIndexEntry[]): Group[] {
-    const map = new Map<string, FileIndexEntry[]>();
+  function buildGroups(list: KnownFileEntry[]): Group[] {
+    const map = new Map<string, KnownFileEntry[]>();
     for (const e of list) {
       const k = seriesKey(e.file_path);
       const arr = map.get(k);
@@ -205,7 +206,7 @@
     collapsed = next;
   }
 
-  function selectedEntries(): FileIndexEntry[] {
+  function selectedEntries(): KnownFileEntry[] {
     return entries.filter((e) => selected.has(e.file_path));
   }
 
@@ -249,7 +250,7 @@
   }
 
   // ── Single-file quick actions ──
-  async function handleIgnoreOne(e: FileIndexEntry, ignored: boolean) {
+  async function handleIgnoreOne(e: KnownFileEntry, ignored: boolean) {
     try {
       await setKnownFileIgnored(e.file_path, ignored);
       await load();
@@ -273,7 +274,7 @@
     if (armedRemoveTimer) clearTimeout(armedRemoveTimer);
   }
 
-  async function handleRemoveOne(e: FileIndexEntry) {
+  async function handleRemoveOne(e: KnownFileEntry) {
     armedRemovePath = null;
     if (armedRemoveTimer) clearTimeout(armedRemoveTimer);
     try {
@@ -572,14 +573,8 @@
                     aria-label="Select file"
                   />
                   <span class="file-name" title={e.file_path}>{basename(e.file_path)}</span>
-                  <span class="file-badge {statusOf(e)}">
-                    {#if e.ignored}
-                      Ignored
-                    {:else if e.anime_id != null}
-                      #{e.anime_id} · ep {e.episode ?? '?'} · {e.confidence}%
-                    {:else}
-                      Unmapped
-                    {/if}
+                  <span class="file-badge {statusOf(e)}" title={knownFileMappingLabel(e)}>
+                    {knownFileMappingLabel(e)}
                   </span>
                   <div class="file-actions">
                     {#if !e.ignored}
@@ -676,7 +671,10 @@
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.76rem; color: var(--color-text);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
   }
-  .file-badge { font-size: 0.7rem; white-space: nowrap; }
+  .file-badge {
+    font-size: 0.7rem; white-space: nowrap;
+    max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+  }
   .file-badge.mapped { color: var(--color-accent); }
   .file-badge.unmapped { color: var(--color-warning); }
   .file-badge.ignored { color: var(--color-muted); }
