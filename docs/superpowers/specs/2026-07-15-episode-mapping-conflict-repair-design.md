@@ -57,6 +57,10 @@ Replace the tuple `FileMatch` with a struct containing `anime_id`, `episode`,
 there is no implicit default in the Rust storage API. Batch manual mapping always writes
 `manual`.
 
+The Re-match unmapped command processes only rows whose `anime_id` is null. It may not
+rewrite an existing automatic, inherited, legacy, or manual mapping; existing mapping
+changes go through confirmed repair or an explicit Map Folder action.
+
 ## Conflict Detection
 
 Normal full scans, watcher scans, and targeted rescans keep their current add, skip, and
@@ -67,9 +71,11 @@ detection phase after indexing and pruning:
 2. Inspect only video files directly inside each derived directory. Nested files are not
    candidates merely because a parent directory was scanned.
 3. Load each existing non-ignored row mapped to another anime.
-4. Build the same filename, parent, and grandparent title queries used by matching, then
-   score the selected anime against those queries.
-5. Report the row when the selected anime reaches the normal match threshold.
+4. Build the same filename, parent, and grandparent title queries used by matching. When
+   the parser produced a usable filename title, require that title itself to score against
+   the selected anime at the normal match threshold. Only a generic filename with no
+   usable title may fall back to parent and grandparent directory queries.
+5. Report the row when that filename-first plausibility rule succeeds.
 
 Each reported conflict contains the file path, parsed episode, current anime ID, current
 anime title, mapping source, and whether it is repairable. Sources `automatic`,
@@ -145,7 +151,8 @@ success message but does not clear loaded episode data.
   detection layer.
 - The direct-child guard prevents an anchor in a season folder from claiming files in a
   Specials or unrelated nested directory.
-- Weak title similarity prevents unrelated direct siblings from being offered for repair.
+- Filename-first title similarity prevents an unrelated direct sibling from being offered
+  for repair merely because it lives inside the selected anime's directory.
 
 ## Testing
 
@@ -154,6 +161,7 @@ success message but does not clear loaded episode data.
 - Migration 0007 preserves existing file-index rows and gives them source `legacy`.
 - File-index reads serialize mapping source and mapped anime title.
 - Single and batch writes persist each explicit source correctly.
+- Re-match unmapped maps null rows but never rewrites an existing mapped row.
 - Transactional repair rechecks source and ignored state.
 
 ### Scanner and commands
