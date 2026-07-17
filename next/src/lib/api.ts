@@ -516,6 +516,7 @@ export interface CalendarEntry {
   next_episode: number | null;
   airing_at: number | null;
   time_until_airing: number | null;
+  has_file: boolean;
 }
 
 export interface WatchHistoryEntry {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { getCalendar, getLibraryStats, type CalendarEntry, type LibraryStats } from './api';
+  import { episodeMarker } from './calendarUi';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
@@ -142,6 +143,8 @@
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
+  const markerLabels = { have: 'Downloaded', missing: 'Not downloaded', future: 'Upcoming' } as const;
+
   onMount(() => {
     load();
     ticker = setInterval(() => { now = Math.floor(Date.now() / 1000); }, 1000);
@@ -185,11 +188,12 @@
         <div class="cal-day-cell" class:today={isToday(d)} class:has-entries={dayEntries.length > 0}>
           <span class="cal-day-num">{d}</span>
           {#each dayEntries as entry}
+            {@const marker = episodeMarker(entry, now)}
             <div
               class="cal-day-entry"
               tabindex="0"
               role="button"
-              aria-label="{entry.title} Ep {entry.next_episode ?? '?'}"
+              aria-label="{entry.title} Ep {entry.next_episode ?? '?'} ({markerLabels[marker]})"
               on:click={() => selectEntry(entry)}
               on:keydown={(e) => e.key === 'Enter' && selectEntry(entry)}
               on:mouseenter={(e) => placeTip(entry, e.clientX, e.clientY)}
@@ -198,6 +202,7 @@
               on:focus={(e) => showTipAt(entry, e.currentTarget)}
               on:blur={hideTip}
             >
+              <span class="ep-dot {marker}" title={markerLabels[marker]}></span>
               <span class="cal-entry-title">{entry.title}</span>
               {#if entry.next_episode}
                 <span class="cal-entry-ep">Ep{entry.next_episode}</span>
@@ -289,10 +294,14 @@
   .cal-day-cell.empty { background: rgba(10,13,20,0.5); }
   .cal-day-cell.has-entries { background: rgba(var(--color-accent-rgb),0.05); }
   .cal-day-cell.has-entries .cal-day-num { color: var(--color-text); }
-  .cal-day-cell.today { background: rgba(var(--color-accent-rgb),0.08); }
+  .cal-day-cell.today { background: rgba(var(--color-accent-rgb),0.08); box-shadow: inset 0 0 0 2px rgba(var(--color-accent-rgb),0.6); border-radius: 6px; }
   .cal-day-cell.today .cal-day-num { color: var(--color-accent); font-weight: 700; }
   .cal-day-num { display: block; margin-bottom: 0.15rem; color: var(--color-muted); }
-  .cal-day-entry { display: flex; justify-content: space-between; font-size: 0.65rem; padding: 0.1rem 0; overflow: hidden; cursor: pointer; }
+  .cal-day-entry { display: flex; align-items: center; gap: 0.28rem; justify-content: space-between; font-size: 0.65rem; padding: 0.1rem 0; overflow: hidden; cursor: pointer; }
+  .ep-dot { flex-shrink: 0; width: 0.4rem; height: 0.4rem; border-radius: 50%; box-sizing: border-box; }
+  .ep-dot.have { background: var(--color-success); }
+  .ep-dot.missing { background: transparent; border: 1.5px solid var(--color-warning); }
+  .ep-dot.future { background: rgba(var(--color-accent-rgb), 0.25); }
   .cal-day-entry:hover { background: rgba(var(--color-accent-rgb),0.1); border-radius: 2px; }
   .cal-entry-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
   .cal-entry-ep { color: var(--color-accent); flex-shrink: 0; margin-left: 0.2rem; }

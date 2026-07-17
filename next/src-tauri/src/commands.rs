@@ -1311,6 +1311,16 @@ pub struct CalendarEntry {
     pub next_episode: Option<i32>,
     pub airing_at: Option<i64>,
     pub time_until_airing: Option<i64>,
+    pub has_file: bool,
+}
+
+/// Mark entries whose airing episode already exists in the local file index.
+fn apply_has_file(entries: &mut [CalendarEntry], files: &std::collections::HashSet<(i64, i32)>) {
+    for e in entries.iter_mut() {
+        e.has_file = e
+            .next_episode
+            .is_some_and(|ep| files.contains(&(e.anime_id, ep)));
+    }
 }
 
 pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<CalendarEntry>> {
@@ -1360,6 +1370,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                             next_episode: Some(it.episode),
                             airing_at: Some(it.airing_at),
                             time_until_airing: Some(it.time_until_airing),
+                            has_file: false,
                         });
                     }
                     tracing::info!(
@@ -1438,6 +1449,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                             next_episode: e.episode_number,
                             airing_at: air_ts,
                             time_until_airing: air_ts.map(|air| (air - now).max(0)),
+                            has_file: false,
                         });
                         filled += 1;
                     }
@@ -1464,6 +1476,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                 next_episode: None,
                 airing_at: None,
                 time_until_airing: None,
+                has_file: false,
             })
             .collect();
         tracing::info!(
@@ -1471,6 +1484,27 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
             result.len()
         );
     }
+
+    // ── Download status: mark episodes already present in the file index ──────
+    let marker_ids: std::collections::HashSet<i64> = result
+        .iter()
+        .filter(|e| e.next_episode.is_some())
+        .map(|e| e.anime_id)
+        .collect();
+    let mut have: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
+    for id in marker_ids {
+        if let Ok(rows) = state.storage.file_index_by_anime(id).await {
+            for row in rows {
+                if row.ignored {
+                    continue;
+                }
+                if let Some(ep) = row.episode {
+                    have.insert((id, ep));
+                }
+            }
+        }
+    }
+    apply_has_file(&mut result, &have);
 
     Ok(result)
 }
@@ -2495,4 +2529,41 @@ pub async fn set_start_in_tray(
     set_start_in_tray_inner(enabled, &state)
         .await
         .map_err(command_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn calendar_entry(anime_id: i64, next_episode: Option<i32>) -> CalendarEntry {
+        CalendarEntry {
+            anime_id,
+            title: "Test".to_string(),
+            image_url: None,
+            episode_count: None,
+            progress: None,
+            next_episode,
+            airing_at: None,
+            time_until_airing: None,
+            has_file: false,
+        }
+    }
+
+    #[test]
+    fn apply_has_file_marks_only_indexed_episodes() {
+        let mut entries = vec![
+            calendar_entry(10, Some(3)),
+            calendar_entry(10, Some(4)),
+            calendar_entry(20, Some(3)),
+            calendar_entry(30, None),
+        ];
+        let files: std::collections::HashSet<(i64, i32)> = [(10, 3)].into_iter().collect();
+
+        apply_has_file(&mut entries, &files);
+
+        assert!(entries[0].has_file, "anime 10 ep 3 is in the file index");
+        assert!(!entries[1].has_file, "anime 10 ep 4 has no file");
+        assert!(!entries[2].has_file, "ep 3 of a different anime has no file");
+        assert!(!entries[3].has_file, "entry without an episode number");
+    }
 }
