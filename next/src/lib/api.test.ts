@@ -12,6 +12,7 @@ import {
   exportDatabase,
   fetchAnimeDetail,
   getEngineStatus,
+  getFutureAnime,
   getLaunchOnStartup,
   getLibraryIds,
   getLibraryStats,
@@ -50,6 +51,18 @@ import {
 } from './api';
 
 describe('api wrappers', () => {
+  it('gets future anime through invoke', async () => {
+    const entries = [{
+      id: 9, title: 'Far Future Show', image_url: null, episodes: null, status: 'NOT_YET_RELEASED',
+      format: 'TV', average_score: null, popularity: 1000, season: null, season_year: null, start_year: null,
+    }];
+    const invoke = vi.fn().mockResolvedValue(entries);
+    await expect(getFutureAnime('Action', invoke)).resolves.toEqual(entries);
+    expect(invoke).toHaveBeenCalledWith('get_future_anime', { genre: 'Action' });
+    await getFutureAnime(undefined, invoke);
+    expect(invoke).toHaveBeenLastCalledWith('get_future_anime', { genre: null });
+  });
+
   it('gets engine status through invoke', async () => {
     const status = {
       ok: true,

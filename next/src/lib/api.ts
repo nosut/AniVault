@@ -593,6 +593,16 @@ export function getSeasonAnime(season: string, year: number, genre?: string, inv
   return invokeFn<SeasonAnimeEntry[]>('get_season_anime', { season, year, genre: genre ?? null });
 }
 
+export interface FutureAnimeEntry extends SeasonAnimeEntry {
+  season: string | null;
+  season_year: number | null;
+  start_year: number | null;
+}
+
+export function getFutureAnime(genre?: string, invokeFn: InvokeFn = tauriInvoke): Promise<FutureAnimeEntry[]> {
+  return invokeFn<FutureAnimeEntry[]>('get_future_anime', { genre: genre ?? null });
+}
+
 export function triggerSync(invokeFn: InvokeFn = tauriInvoke): Promise<SyncResult> {
   return invokeFn<SyncResult>('trigger_sync');
 }

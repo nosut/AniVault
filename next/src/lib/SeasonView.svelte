@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { getSeasonAnime, getLibraryIds, updateListEntry, importAnilistAnime, type SeasonAnimeEntry } from './api';
+  import { getSeasonAnime, getFutureAnime, getLibraryIds, updateListEntry, importAnilistAnime, type SeasonAnimeEntry, type FutureAnimeEntry } from './api';
+  import { addSeasons, futureLabel, seasonOffset } from './seasonUi';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
@@ -17,19 +18,31 @@
     return { season: s, year: now.getFullYear() };
   }
 
-  function loadSeasonState(): { season: string; year: number; genre: string } {
+  // Seasons reachable with the arrows: current through +4 ahead. Beyond that
+  // sits the single "Future Seasons" page (far-out and TBA announcements).
+  const BROWSABLE_SEASONS_AHEAD = 4;
+
+  function loadSeasonState(): { season: string; year: number; genre: string; future: boolean } {
     try {
       const saved = localStorage.getItem('anivault-season-state');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return { season: parsed.season, year: parsed.year, genre: parsed.genre ?? '' };
+        const current = getCurrentSeason();
+        // Saved states deeper than the browsable window (including ones from
+        // before the future page existed) land on the Future Seasons page,
+        // anchored at the last browsable season so prev exits sensibly.
+        if (parsed.future || seasonOffset(parsed.season, parsed.year, current.season, current.year) > BROWSABLE_SEASONS_AHEAD) {
+          const last = addSeasons(current.season, current.year, BROWSABLE_SEASONS_AHEAD);
+          return { ...last, genre: parsed.genre ?? '', future: true };
+        }
+        return { season: parsed.season, year: parsed.year, genre: parsed.genre ?? '', future: false };
       }
     } catch {}
-    return { ...getCurrentSeason(), genre: '' };
+    return { ...getCurrentSeason(), genre: '', future: false };
   }
 
-  function saveSeasonState(s: string, y: number, g: string) {
-    try { localStorage.setItem('anivault-season-state', JSON.stringify({ season: s, year: y, genre: g })); }
+  function saveSeasonState(s: string, y: number, g: string, f: boolean) {
+    try { localStorage.setItem('anivault-season-state', JSON.stringify({ season: s, year: y, genre: g, future: f })); }
     catch {}
   }
 
@@ -37,14 +50,19 @@
   let season = initial.season;
   let year = initial.year;
   let genre: string = initial.genre;
-  let entries: SeasonAnimeEntry[] = [];
+  let future = initial.future;
+  let entries: (SeasonAnimeEntry | FutureAnimeEntry)[] = [];
   let loading = true;
   let error: string | null = null;
   let libraryIds = new Set<number>();
 
   async function load() {
     loading = true; error = null;
-    try { entries = await getSeasonAnime(season, year, genre || undefined); }
+    try {
+      entries = future
+        ? await getFutureAnime(genre || undefined)
+        : await getSeasonAnime(season, year, genre || undefined);
+    }
     catch(e) { error = e instanceof Error ? e.message : String(e); }
     finally { loading = false; }
   }
@@ -74,6 +92,13 @@
   }
 
   function prevSeason() {
+    if (future) {
+      // Exit the future page back to the last browsable season (season/year
+      // still hold it — they don't advance while on the future page).
+      future = false;
+      load();
+      return;
+    }
     const idx = seasons.indexOf(season);
     if (idx === 0) { season = 'FALL'; year--; }
     else { season = seasons[idx - 1] ?? 'WINTER'; }
@@ -81,6 +106,12 @@
   }
 
   function nextSeason() {
+    const current = getCurrentSeason();
+    if (seasonOffset(season, year, current.season, current.year) >= BROWSABLE_SEASONS_AHEAD) {
+      future = true;
+      load();
+      return;
+    }
     const idx = seasons.indexOf(season);
     if (idx === 3) { season = 'WINTER'; year++; }
     else { season = seasons[idx + 1] ?? 'WINTER'; }
@@ -94,7 +125,7 @@
     return 'var(--color-error)';
   }
 
-  $: saveSeasonState(season, year, genre);
+  $: saveSeasonState(season, year, genre, future);
 
   async function loadAll() {
     await Promise.all([load(), loadLibraryIds()]);
@@ -106,8 +137,10 @@
   <div class="season-header">
     <div class="season-nav">
       <button class="nav-arrow" on:click={prevSeason} aria-label="Previous season"><ChevronLeft size={15} /></button>
-      <h2>{seasonLabels[season]} {year}</h2>
-      <button class="nav-arrow" on:click={nextSeason} aria-label="Next season"><ChevronRight size={15} /></button>
+      <h2>{future ? 'Future Seasons' : `${seasonLabels[season]} ${year}`}</h2>
+      {#if !future}
+        <button class="nav-arrow" on:click={nextSeason} aria-label="Next season"><ChevronRight size={15} /></button>
+      {/if}
     </div>
     <div class="season-controls">
       <select class="genre-select" bind:value={genre} on:change={load}>
@@ -124,7 +157,7 @@
   {:else if error}
     <div class="message error"><p>{error}</p><button class="action-btn" on:click={load}>Retry</button></div>
   {:else if entries.length === 0}
-    <p class="empty">No anime found for this season.</p>
+    <p class="empty">{future ? 'No far-future or TBA announcements found.' : 'No anime found for this season.'}</p>
   {:else}
     <div class="poster-grid">
       {#each entries as entry (entry.id)}
@@ -151,7 +184,9 @@
             <p class="poster-title">{entry.title}</p>
             <div class="poster-meta">
               <span class="poster-format">{entry.format ?? 'TV'}</span>
-              {#if entry.average_score}
+              {#if future}
+                <span class="poster-future">{futureLabel(entry)}</span>
+              {:else if entry.average_score}
                 <span class="poster-score" style="color: {scoreColor(entry.average_score)}">{entry.average_score}%</span>
               {/if}
             </div>
@@ -186,6 +221,7 @@
   .poster-meta { display: flex; gap: 0.5rem; font-size: 0.75rem; align-items: center; }
   .poster-format { color: var(--color-muted); }
   .poster-score { font-weight: 600; }
+  .poster-future { font-weight: 600; color: var(--color-accent); }
   .skeleton-poster { aspect-ratio: 3/4; border-radius: 10px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.7} }
   .empty { color: var(--color-muted); text-align: center; padding: 2rem; }

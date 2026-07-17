@@ -1217,6 +1217,108 @@ pub async fn get_season_anime(
         .map_err(command_error)
 }
 
+// ── Future seasons ───────────────────────────────────────────────────────────
+
+/// Seasons reachable with the normal prev/next season browser: the current
+/// season plus this many ahead. Anything further out — or with no season
+/// assigned at all — belongs on the "Future seasons" page instead.
+const BROWSABLE_SEASONS_AHEAD: i64 = 4;
+
+fn season_abs_index(season: &str, year: i32) -> Option<i64> {
+    let idx = match season {
+        "WINTER" => 0,
+        "SPRING" => 1,
+        "SUMMER" => 2,
+        "FALL" => 3,
+        _ => return None,
+    };
+    Some(year as i64 * 4 + idx)
+}
+
+/// Should an unreleased show appear on the future-seasons page? Yes when its
+/// season is missing/unparseable (TBA) or falls outside the browsable window —
+/// including unreleased shows still tagged with a past season (delayed).
+fn is_future_page_entry(season: Option<&str>, year: Option<i32>, current_abs: i64) -> bool {
+    match (season, year) {
+        (Some(s), Some(y)) => match season_abs_index(s, y) {
+            Some(abs) => abs < current_abs || abs > current_abs + BROWSABLE_SEASONS_AHEAD,
+            None => true,
+        },
+        _ => true,
+    }
+}
+
+fn current_season_abs_index() -> i64 {
+    use chrono::Datelike;
+    let now = chrono::Local::now();
+    let season = match now.month() {
+        1..=3 => "WINTER",
+        4..=6 => "SPRING",
+        7..=9 => "SUMMER",
+        _ => "FALL",
+    };
+    season_abs_index(season, now.year()).expect("known season name")
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FutureAnimeEntry {
+    pub id: i64,
+    pub title: String,
+    pub image_url: Option<String>,
+    pub episodes: Option<i32>,
+    pub status: Option<String>,
+    pub format: Option<String>,
+    pub average_score: Option<i32>,
+    pub popularity: Option<i32>,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
+    pub start_year: Option<i32>,
+}
+
+pub async fn get_future_anime_inner(
+    state: &EngineState,
+    genre: Option<String>,
+) -> anyhow::Result<Vec<FutureAnimeEntry>> {
+    let token = crate::engine::anilist::auth::load_token(&state.storage)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("not connected"))?;
+    let client = AniListClient::new(token);
+    let entries = client.fetch_future_anime(genre.as_deref()).await?;
+    let current = current_season_abs_index();
+    Ok(entries
+        .into_iter()
+        .filter(|e| is_future_page_entry(e.season.as_deref(), e.season_year, current))
+        .map(|e| FutureAnimeEntry {
+            id: e.id,
+            title: e
+                .title
+                .as_ref()
+                .and_then(|t| t.english.clone())
+                .or_else(|| e.title.as_ref().and_then(|t| t.romaji.clone()))
+                .unwrap_or_else(|| format!("#{}", e.id)),
+            image_url: e.cover_image.and_then(|c| c.large),
+            episodes: e.episodes,
+            status: e.status,
+            format: e.format,
+            average_score: e.average_score,
+            popularity: e.popularity,
+            season: e.season,
+            season_year: e.season_year,
+            start_year: e.start_date.and_then(|d| d.year),
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn get_future_anime(
+    genre: Option<String>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<FutureAnimeEntry>, String> {
+    get_future_anime_inner(&state, genre)
+        .await
+        .map_err(command_error)
+}
+
 // ── Anime Relations ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -2547,6 +2649,29 @@ mod tests {
             time_until_airing: None,
             has_file: false,
         }
+    }
+
+    #[test]
+    fn future_page_keeps_only_shows_beyond_the_browsable_window() {
+        // Current season: Summer 2026 (absolute index 2026*4 + 2).
+        let current = season_abs_index("SUMMER", 2026).unwrap();
+
+        // Inside the browsable window (current .. current+4): excluded.
+        assert!(!is_future_page_entry(Some("SUMMER"), Some(2026), current));
+        assert!(!is_future_page_entry(Some("FALL"), Some(2026), current));
+        assert!(!is_future_page_entry(Some("SUMMER"), Some(2027), current));
+
+        // Beyond the window: included.
+        assert!(is_future_page_entry(Some("FALL"), Some(2027), current));
+        assert!(is_future_page_entry(Some("WINTER"), Some(2029), current));
+
+        // No season assigned (TBA), or unknown season string: included.
+        assert!(is_future_page_entry(None, None, current));
+        assert!(is_future_page_entry(Some("WINTER"), None, current));
+        assert!(is_future_page_entry(None, Some(2028), current));
+
+        // Unreleased but tagged with a past season (delayed show): included.
+        assert!(is_future_page_entry(Some("SPRING"), Some(2025), current));
     }
 
     #[test]

@@ -528,6 +528,48 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
         Ok(entries)
     }
 
+    /// Fetch announced-but-unaired anime (status NOT_YET_RELEASED) by
+    /// popularity, with optional genre filter. Fetches up to two pages: the
+    /// top of the popularity ranking is dominated by next-season shows, which
+    /// the future-seasons page filters out again.
+    pub async fn fetch_future_anime(&self, genre: Option<&str>) -> anyhow::Result<Vec<FutureAnime>> {
+        let query_str = "query ($genre: String, $page: Int) { \
+             Page(page: $page, perPage: 50) { \
+             pageInfo { hasNextPage } \
+             media(type: ANIME, status: NOT_YET_RELEASED, genre: $genre, sort: POPULARITY_DESC) { \
+             id title { romaji english } coverImage { large } episodes status format \
+             averageScore popularity season seasonYear startDate { year } } } }";
+
+        let mut out: Vec<FutureAnime> = Vec::new();
+        for page in 1..=2 {
+            let mut variables = serde_json::json!({ "page": page });
+            if let Some(g) = genre {
+                variables["genre"] = serde_json::Value::String(g.to_string());
+            }
+            let raw: serde_json::Value = self.query(query_str, variables).await?;
+            let page_obj = raw.get("data").and_then(|d| d.get("Page"));
+            let media_list = page_obj
+                .and_then(|p| p.get("media"))
+                .and_then(|m| m.as_array())
+                .cloned()
+                .unwrap_or_default();
+            out.extend(
+                media_list
+                    .into_iter()
+                    .filter_map(|m| serde_json::from_value::<FutureAnime>(m).ok()),
+            );
+            let has_next = page_obj
+                .and_then(|p| p.get("pageInfo"))
+                .and_then(|pi| pi.get("hasNextPage"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if !has_next {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
     /// Search anime by title.
     pub async fn search_anime(&self, query: &str) -> anyhow::Result<Vec<SearchAnimeResult>> {
         let query_str = "query ($search: String) { Page(page: 1, perPage: 20) { \
@@ -618,6 +660,30 @@ pub struct SeasonAnime {
     #[serde(rename = "averageScore")]
     pub average_score: Option<i32>,
     pub popularity: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StartDate {
+    pub year: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FutureAnime {
+    pub id: i64,
+    pub title: Option<MediaTitle>,
+    #[serde(rename = "coverImage")]
+    pub cover_image: Option<CoverImage>,
+    pub episodes: Option<i32>,
+    pub status: Option<String>,
+    pub format: Option<String>,
+    #[serde(rename = "averageScore")]
+    pub average_score: Option<i32>,
+    pub popularity: Option<i32>,
+    pub season: Option<String>,
+    #[serde(rename = "seasonYear")]
+    pub season_year: Option<i32>,
+    #[serde(rename = "startDate")]
+    pub start_date: Option<StartDate>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
