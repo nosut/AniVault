@@ -49,8 +49,11 @@
   function prevMonth() { viewDate = new Date(year, month - 1, 1); }
   function nextMonth() { viewDate = new Date(year, month + 1, 1); }
 
-  // Get entries for a specific day of the viewed month.
-  function entriesForDay(day: number): CalendarEntry[] {
+  // Get entries for a specific day of the viewed month. The viewed month and
+  // entry list come in as arguments (not closure reads) so the template's
+  // {@const} call re-evaluates when they change — legacy-mode Svelte only
+  // tracks dependencies it can see in the template expression itself.
+  function entriesForDay(day: number, entries: CalendarEntry[], year: number, month: number): CalendarEntry[] {
     return entries.filter(e => {
       if (!e.airing_at) return false;
       const d = new Date(e.airing_at * 1000);
@@ -184,7 +187,7 @@
       {/each}
       {#each Array(daysInMonth) as _, i}
         {@const d = i + 1}
-        {@const dayEntries = entriesForDay(d)}
+        {@const dayEntries = entriesForDay(d, entries, year, month)}
         <div class="cal-day-cell" class:today={isToday(d)} class:has-entries={dayEntries.length > 0}>
           <span class="cal-day-num">{d}</span>
           {#each dayEntries as entry}
