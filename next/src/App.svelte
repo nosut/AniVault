@@ -11,6 +11,7 @@
   import HistoryView from './lib/HistoryView.svelte';
   import SeasonView from './lib/SeasonView.svelte';
   import SearchView from './lib/SearchView.svelte';
+  import { loadStartPage } from './lib/startPage';
   import bannerUrl from './assets/banner.png';
   import iconUrl from '../src-tauri/icons/icon.png';
   import {
@@ -50,8 +51,8 @@
     settings: SettingsIcon,
   };
 
-  let currentView: View = 'dashboard';
-  let previousView: View = 'dashboard';
+  let currentView: View = loadStartPage();
+  let previousView: View = currentView;
   let detailAnimeId: number | null = null;
   let searchQuery = '';
   let searchEntries: SeasonAnimeEntry[] = [];

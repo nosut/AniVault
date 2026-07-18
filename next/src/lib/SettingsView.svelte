@@ -13,8 +13,11 @@
   import FileManager from './FileManager.svelte';
   import SonarrRemap from './SonarrRemap.svelte';
   import { listSonarrSeries, type SonarrSeriesListRow } from './api';
+  import { loadStartPage, saveStartPage, START_PAGE_OPTIONS } from './startPage';
 
   export let events: EngineEvent[] = [];
+
+  let startPage = loadStartPage();
 
   // Real app version from the Tauri bundle, so About never drifts from the build.
   let appVersion = '';
@@ -454,6 +457,15 @@
               </button>
             </div>
             <p class="hint">When enabled, launching on Windows startup opens AniVault directly to the tray (no window). Open it any time from the tray icon.</p>
+            <div class="toggle-row">
+              <span class="label">Open to page</span>
+              <select class="start-page-select" bind:value={startPage} on:change={() => saveStartPage(startPage)}>
+                {#each START_PAGE_OPTIONS as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            </div>
+            <p class="hint">Which page AniVault shows when it opens.</p>
           {/if}
         </section>
       </div>
@@ -1060,6 +1072,16 @@
     font-size: 0.9rem;
     color: var(--color-text);
   }
+
+  .start-page-select {
+    border: 1px solid rgba(var(--color-accent-rgb), 0.2);
+    border-radius: 999px;
+    padding: 0.4rem 0.8rem;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-text);
+    font-size: 0.85rem;
+  }
+  .start-page-select option { background: #141820; }
 
   .switch {
     position: relative;
