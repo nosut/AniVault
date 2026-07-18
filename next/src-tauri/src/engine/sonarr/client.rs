@@ -180,4 +180,62 @@ impl SonarrClient {
         let body: Vec<SonarrCalendarEntry> = resp.json().await?;
         Ok(body)
     }
+
+    /// All episodes of a series, for resolving an absolute episode number to a
+    /// Sonarr episode id.
+    pub async fn list_episodes(&self, series_id: i64) -> anyhow::Result<Vec<SonarrEpisode>> {
+        let url = format!("{}/api/v3/episode?seriesId={}", self.url, series_id);
+        let resp = self.http.get(&url).headers(self.headers()).send().await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr episodes HTTP {}: {}", status, body));
+        }
+        Ok(resp.json().await?)
+    }
+
+    /// Ask Sonarr to search its indexers for the given episodes.
+    pub async fn search_episodes(&self, episode_ids: &[i64]) -> anyhow::Result<()> {
+        let url = format!("{}/api/v3/command", self.url);
+        let resp = self
+            .http
+            .post(&url)
+            .headers(self.headers())
+            .json(&serde_json::json!({ "name": "EpisodeSearch", "episodeIds": episode_ids }))
+            .send()
+            .await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr episode search HTTP {}: {}", status, body));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SonarrEpisode {
+    pub id: i64,
+    #[serde(rename = "seasonNumber")]
+    pub season_number: i32,
+    #[serde(rename = "episodeNumber")]
+    pub episode_number: i32,
+    #[serde(rename = "absoluteEpisodeNumber")]
+    #[serde(default)]
+    pub absolute_episode_number: Option<i32>,
+}
+
+/// Sonarr episode id for an AniList (absolute) episode number: prefer the
+/// absolute-number match; fall back to the plain episode number in a regular
+/// season (skipping season-0 specials) for series without absolute numbering.
+pub fn find_episode_id(episodes: &[SonarrEpisode], target: i32) -> Option<i64> {
+    episodes
+        .iter()
+        .find(|e| e.absolute_episode_number == Some(target))
+        .or_else(|| {
+            episodes
+                .iter()
+                .find(|e| e.season_number > 0 && e.episode_number == target)
+        })
+        .map(|e| e.id)
 }

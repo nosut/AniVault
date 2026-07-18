@@ -39,6 +39,7 @@ import {
   restoreDatabase,
   runMigration,
   searchLibrary,
+  searchSonarrEpisode,
   setKnownFileMappings,
   setLaunchOnStartup,
   setSetting,
@@ -63,6 +64,12 @@ describe('api wrappers', () => {
     expect(invoke).toHaveBeenCalledWith('get_future_anime', { genre: 'Action' });
     await getFutureAnime(undefined, invoke);
     expect(invoke).toHaveBeenLastCalledWith('get_future_anime', { genre: null });
+  });
+
+  it('searches a Sonarr episode through invoke', async () => {
+    const invoke = vi.fn().mockResolvedValue('Search started for episode 29');
+    await expect(searchSonarrEpisode(42, 29, invoke)).resolves.toBe('Search started for episode 29');
+    expect(invoke).toHaveBeenCalledWith('search_sonarr_episode', { animeId: 42, episode: 29 });
   });
 
   it('checks for updates through invoke', async () => {

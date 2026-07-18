@@ -33,9 +33,12 @@ vi.mock('./api', () => ({
   ]),
   getAniListConnectionStatus: vi.fn(async () => true),
   getSyncStatus: vi.fn(async () => ({ pending: 0, failed: 0, blocked: 0, last_sync_at: 1000 })),
+  getSonarrStatus: vi.fn(async () => ({ connected: true, series_count: 2, mapped_count: 2, last_sync_at: null })),
+  searchSonarrEpisode: vi.fn(async () => 'Search started for episode 29'),
   confirmIdentification: vi.fn(async () => {}),
 }));
 
+import { searchSonarrEpisode } from './api';
 import DashboardView from './DashboardView.svelte';
 
 async function settle() {
@@ -92,6 +95,23 @@ describe('DashboardView home layout', () => {
 
     // The old stat tiles are gone.
     expect(document.body.textContent).not.toContain('Plan to Watch');
+
+    await unmount(app);
+  });
+
+  it('sends a Sonarr search from a missing-download row', async () => {
+    const app = mount(DashboardView, { target: document.getElementById('app')!, props: { events: [] } });
+    await settle();
+
+    // Oldest missing entry first: Sakamoto Days Ep 29.
+    const get = document.querySelector<HTMLButtonElement>('[data-testid="missing-downloads"] .get-btn')!;
+    expect(get).not.toBeNull();
+    get.click();
+    flushSync();
+    await settle();
+
+    expect(searchSonarrEpisode).toHaveBeenCalledWith(3, 29);
+    expect(sectionText('missing-downloads')).toContain('Sent');
 
     await unmount(app);
   });

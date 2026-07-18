@@ -551,6 +551,10 @@ export interface ContinueWatchingEntry {
   last_watched_at: number;
 }
 
+export function searchSonarrEpisode(animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<string> {
+  return invokeFn<string>('search_sonarr_episode', { animeId, episode });
+}
+
 export interface UpdateInfo {
   current: string;
   latest: string;

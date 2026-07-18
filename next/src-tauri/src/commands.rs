@@ -1692,6 +1692,50 @@ pub async fn continue_watching_inner(
     state.storage.continue_watching(10).await
 }
 
+// ── Sonarr episode search ────────────────────────────────────────────────────
+
+/// Configured Sonarr client from settings, or None when not connected.
+async fn sonarr_client_from_settings(
+    state: &EngineState,
+) -> Option<crate::engine::sonarr::client::SonarrClient> {
+    let url_raw = state.storage.get_setting("sonarr.url").await.ok().flatten()?;
+    let api_key_enc = state.storage.get_setting("sonarr.api_key").await.ok().flatten()?;
+    let url = serde_json::from_str::<String>(&url_raw).ok()?;
+    let api_key = crate::engine::secrets::unprotect_secret(&api_key_enc).ok()?;
+    Some(crate::engine::sonarr::client::SonarrClient::new(url, api_key))
+}
+
+pub async fn search_sonarr_episode_inner(
+    state: &EngineState,
+    anime_id: i64,
+    episode: i32,
+) -> anyhow::Result<String> {
+    let mapping = state
+        .storage
+        .sonarr_mapping_by_anime(anime_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("This show is not linked to a Sonarr series"))?;
+    let client = sonarr_client_from_settings(state)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
+    let episodes = client.list_episodes(mapping.sonarr_id).await?;
+    let episode_id = crate::engine::sonarr::client::find_episode_id(&episodes, episode)
+        .ok_or_else(|| anyhow::anyhow!("Episode {episode} not found in Sonarr"))?;
+    client.search_episodes(&[episode_id]).await?;
+    Ok(format!("Search started for episode {episode}"))
+}
+
+#[tauri::command]
+pub async fn search_sonarr_episode(
+    anime_id: i64,
+    episode: i32,
+    state: tauri::State<'_, EngineState>,
+) -> Result<String, String> {
+    search_sonarr_episode_inner(&state, anime_id, episode)
+        .await
+        .map_err(command_error)
+}
+
 // ── Update check ─────────────────────────────────────────────────────────────
 
 /// Numeric semver-style comparison of the running version against a release

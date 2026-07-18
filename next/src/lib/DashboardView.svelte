@@ -2,7 +2,7 @@
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import {
     getLibraryStats, getContinueWatching, getReadyToWatch, getCalendar,
-    getAniListConnectionStatus, getSyncStatus,
+    getAniListConnectionStatus, getSyncStatus, getSonarrStatus, searchSonarrEpisode,
     type LibraryStats, type ContinueWatchingEntry, type ReadyToWatchEntry,
     type CalendarEntry, type AniListSyncStatus, type EngineEvent,
   } from './api';
@@ -20,7 +20,24 @@
   let calendarEntries: CalendarEntry[] = [];
   let connected = false;
   let syncStatus: AniListSyncStatus | null = null;
+  let sonarrConnected = false;
   let loading = true;
+
+  // Per-row state for the Get (Sonarr search) buttons on missing rows.
+  let fetchState: Record<string, 'searching' | 'sent' | 'error'> = {};
+
+  async function requestEpisode(animeId: number, episode: number) {
+    const key = `${animeId}:${episode}`;
+    fetchState = { ...fetchState, [key]: 'searching' };
+    try {
+      await searchSonarrEpisode(animeId, episode);
+      fetchState = { ...fetchState, [key]: 'sent' };
+    } catch {
+      fetchState = { ...fetchState, [key]: 'error' };
+    }
+  }
+
+  const fetchLabels = { searching: '…', sent: 'Sent ✓', error: 'Failed' } as const;
 
   let now = Math.floor(Date.now() / 1000);
   let ticker: ReturnType<typeof setInterval>;
@@ -28,9 +45,9 @@
   async function load() {
     loading = true;
     // Each source is independent; a failure in one leaves the others alive.
-    const [statsR, contR, readyR, calR, connR, syncR] = await Promise.allSettled([
+    const [statsR, contR, readyR, calR, connR, syncR, sonarrR] = await Promise.allSettled([
       getLibraryStats(), getContinueWatching(), getReadyToWatch(), getCalendar(),
-      getAniListConnectionStatus(), getSyncStatus(),
+      getAniListConnectionStatus(), getSyncStatus(), getSonarrStatus(),
     ]);
     if (statsR.status === 'fulfilled') stats = statsR.value;
     if (contR.status === 'fulfilled') continueEntries = contR.value;
@@ -38,6 +55,7 @@
     if (calR.status === 'fulfilled') calendarEntries = calR.value;
     if (connR.status === 'fulfilled') connected = connR.value;
     if (syncR.status === 'fulfilled') syncStatus = syncR.value;
+    if (sonarrR.status === 'fulfilled') sonarrConnected = sonarrR.value.connected;
     loading = false;
   }
 
@@ -198,12 +216,29 @@
       {:else}
         <div class="missing-list">
           {#each missingEntries as entry (`${entry.anime_id}:${entry.next_episode}`)}
-            <button class="missing-row" on:click={() => select(entry.anime_id)}>
+            {@const state = fetchState[`${entry.anime_id}:${entry.next_episode}`]}
+            <div
+              class="missing-row"
+              role="button"
+              tabindex="0"
+              on:click={() => select(entry.anime_id)}
+              on:keydown={(e) => e.key === 'Enter' && select(entry.anime_id)}
+            >
               <span class="dot missing"></span>
               <span class="missing-title">{entry.title}</span>
               {#if entry.next_episode}<span class="missing-ep">Ep {entry.next_episode}</span>{/if}
               {#if entry.airing_at != null}<span class="aired-ago">{airedAgoShort(entry.airing_at, now)}</span>{/if}
-            </button>
+              {#if sonarrConnected && entry.next_episode}
+                <button
+                  class="get-btn"
+                  class:sent={state === 'sent'}
+                  class:failed={state === 'error'}
+                  disabled={state === 'searching' || state === 'sent'}
+                  title="Ask Sonarr to search for this episode"
+                  on:click|stopPropagation={() => entry.next_episode && requestEpisode(entry.anime_id, entry.next_episode)}
+                >{state ? fetchLabels[state] : 'Get'}</button>
+              {/if}
+            </div>
           {/each}
         </div>
       {/if}
@@ -259,6 +294,15 @@
   .missing-row:hover { border-color: rgba(var(--color-warning-rgb),0.5); }
   .missing-ep { color: var(--color-warning); font-weight: 600; flex-shrink: 0; }
   .aired-ago { color: var(--color-muted); font-size: 0.72rem; flex-shrink: 0; }
+  .get-btn {
+    flex-shrink: 0; font-size: 0.72rem; font-weight: 600; cursor: pointer;
+    border: 1px solid rgba(var(--color-accent-rgb),0.35); border-radius: 999px;
+    padding: 0.15rem 0.6rem; background: rgba(var(--color-accent-rgb),0.12); color: var(--color-text);
+  }
+  .get-btn:hover:not(:disabled) { background: rgba(var(--color-accent-rgb),0.25); }
+  .get-btn:disabled { cursor: default; opacity: 0.8; }
+  .get-btn.sent { color: var(--color-success); border-color: rgba(var(--color-success-rgb),0.4); background: rgba(var(--color-success-rgb),0.1); }
+  .get-btn.failed { color: var(--color-error); border-color: rgba(var(--color-error-rgb),0.4); }
 
   .cols { display: grid; grid-template-columns: 3fr 2fr; gap: 1.2rem; align-items: start; }
 
