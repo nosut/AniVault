@@ -1403,7 +1403,7 @@ pub async fn queue_anilist_sync(
 
 // ── Calendar ─────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CalendarEntry {
     pub anime_id: i64,
     pub title: String,
@@ -1416,6 +1416,67 @@ pub struct CalendarEntry {
     pub has_file: bool,
 }
 
+/// The airing calendar changes slowly but was refetched from AniList on every
+/// Calendar/Home view load. Cache the assembled schedule and serve it while
+/// fresh; a stale cache still beats an empty calendar when the remote sources
+/// fail (rate limit, offline). Download status is never cached — it reflects
+/// the local file index at read time.
+const CALENDAR_CACHE_KEY: &str = "calendar.cache";
+const CALENDAR_CACHE_TTL_SECS: i64 = 15 * 60;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CalendarCache {
+    fetched_at: i64,
+    entries: Vec<CalendarEntry>,
+}
+
+async fn load_calendar_cache(state: &EngineState) -> Option<CalendarCache> {
+    let raw = state.storage.get_setting(CALENDAR_CACHE_KEY).await.ok().flatten()?;
+    serde_json::from_str(&raw).ok()
+}
+
+async fn save_calendar_cache(state: &EngineState, fetched_at: i64, entries: &[CalendarEntry]) {
+    let cache = CalendarCache { fetched_at, entries: entries.to_vec() };
+    match serde_json::to_string(&cache) {
+        Ok(json) => {
+            if let Err(e) = state.storage.set_setting(CALENDAR_CACHE_KEY, &json, fetched_at).await {
+                tracing::warn!("failed to persist calendar cache: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("failed to serialize calendar cache: {e}"),
+    }
+}
+
+fn refresh_time_until_airing(entries: &mut [CalendarEntry], now: i64) {
+    for e in entries.iter_mut() {
+        e.time_until_airing = e.airing_at.map(|a| (a - now).max(0));
+    }
+}
+
+/// Mark entries whose episode exists in the local file index (computed fresh
+/// on every call, including cache hits).
+async fn attach_download_status(state: &EngineState, entries: &mut [CalendarEntry]) {
+    let marker_ids: std::collections::HashSet<i64> = entries
+        .iter()
+        .filter(|e| e.next_episode.is_some())
+        .map(|e| e.anime_id)
+        .collect();
+    let mut have: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
+    for id in marker_ids {
+        if let Ok(rows) = state.storage.file_index_by_anime(id).await {
+            for row in rows {
+                if row.ignored {
+                    continue;
+                }
+                if let Some(ep) = row.episode {
+                    have.insert((id, ep));
+                }
+            }
+        }
+    }
+    apply_has_file(entries, &have);
+}
+
 /// Mark entries whose airing episode already exists in the local file index.
 fn apply_has_file(entries: &mut [CalendarEntry], files: &std::collections::HashSet<(i64, i32)>) {
     for e in entries.iter_mut() {
@@ -1426,14 +1487,25 @@ fn apply_has_file(entries: &mut [CalendarEntry], files: &std::collections::HashS
 }
 
 pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<CalendarEntry>> {
-    // Universe of the airing calendar: the shows you're watching or plan to watch.
-    let calendar_ids: Vec<i64> = state.storage.calendar_anime_ids().await.unwrap_or_default();
-    let calendar_id_set: std::collections::HashSet<i64> = calendar_ids.iter().copied().collect();
-
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
+
+    // Fresh cache: no network at all.
+    let cache = load_calendar_cache(state).await;
+    if let Some(ref c) = cache {
+        if now - c.fetched_at < CALENDAR_CACHE_TTL_SECS {
+            let mut entries = c.entries.clone();
+            refresh_time_until_airing(&mut entries, now);
+            attach_download_status(state, &mut entries).await;
+            return Ok(entries);
+        }
+    }
+
+    // Universe of the airing calendar: the shows you're watching or plan to watch.
+    let calendar_ids: Vec<i64> = state.storage.calendar_anime_ids().await.unwrap_or_default();
+    let calendar_id_set: std::collections::HashSet<i64> = calendar_ids.iter().copied().collect();
     // Cover the previous ~month through ~2 months ahead so the month grid the
     // user pages through (prev / current / next) is populated.
     let window_start = now - 31 * 86_400;
@@ -1564,6 +1636,19 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
 
     result.sort_by_key(|e| e.airing_at.unwrap_or(i64::MAX));
 
+    if !result.is_empty() {
+        save_calendar_cache(state, now, &result).await;
+    } else if let Some(c) = cache {
+        // Remote sources came back empty (rate limit, offline) but an expired
+        // cache exists — stale data beats a blank calendar.
+        tracing::info!(
+            "Calendar remote sources empty; serving stale cache from {}",
+            c.fetched_at
+        );
+        result = c.entries;
+        refresh_time_until_airing(&mut result, now);
+    }
+
     // ── LAST RESORT: no airing data from either source → local watching list ──
     if result.is_empty() {
         let watching = state.storage.continue_watching(50).await?;
@@ -1587,26 +1672,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
         );
     }
 
-    // ── Download status: mark episodes already present in the file index ──────
-    let marker_ids: std::collections::HashSet<i64> = result
-        .iter()
-        .filter(|e| e.next_episode.is_some())
-        .map(|e| e.anime_id)
-        .collect();
-    let mut have: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
-    for id in marker_ids {
-        if let Ok(rows) = state.storage.file_index_by_anime(id).await {
-            for row in rows {
-                if row.ignored {
-                    continue;
-                }
-                if let Some(ep) = row.episode {
-                    have.insert((id, ep));
-                }
-            }
-        }
-    }
-    apply_has_file(&mut result, &have);
+    attach_download_status(state, &mut result).await;
 
     Ok(result)
 }

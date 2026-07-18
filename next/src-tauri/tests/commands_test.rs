@@ -1,6 +1,6 @@
 use anivault_core::commands::{
-    delete_setting_inner, drain_engine_events_inner, get_engine_status_inner, get_setting_inner,
-    set_setting_inner,
+    delete_setting_inner, drain_engine_events_inner, get_calendar_inner, get_engine_status_inner,
+    get_setting_inner, set_setting_inner,
 };
 use anivault_core::engine::events::EngineEvent;
 use anivault_core::engine::runtime::initialize_engine_at;
@@ -11,6 +11,77 @@ async fn test_state(name: &str) -> anivault_core::engine::runtime::EngineState {
         std::fs::remove_dir_all(&root).unwrap();
     }
     initialize_engine_at(root.join("anivault.db"), None).await.unwrap()
+}
+
+fn calendar_cache_json(fetched_at: i64, airing_at: i64) -> String {
+    serde_json::json!({
+        "fetched_at": fetched_at,
+        "entries": [{
+            "anime_id": 5, "title": "Cached Show", "image_url": null, "episode_count": 12,
+            "progress": null, "next_episode": 3, "airing_at": airing_at,
+            "time_until_airing": 0, "has_file": false
+        }]
+    })
+    .to_string()
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
+
+#[tokio::test]
+async fn calendar_serves_fresh_cache_and_marks_downloads_live() {
+    let state = test_state("calfresh").await;
+    let now = unix_now();
+
+    // A fresh cache (1 min old) with one aired episode; the file for it exists
+    // locally, so has_file must be recomputed fresh even on the cache path.
+    state
+        .storage
+        .set_setting("calendar.cache", &calendar_cache_json(now - 60, now - 3600), now)
+        .await
+        .unwrap();
+    state.storage.insert_minimal_anime(5, "Cached Show").await.unwrap();
+    state
+        .storage
+        .upsert_file_index(
+            "Y:/Anime/Cached Show/ep3.mkv",
+            Some(5),
+            3,
+            100,
+            anivault_core::engine::storage::MappingSource::Manual,
+            now,
+        )
+        .await
+        .unwrap();
+
+    let entries = get_calendar_inner(&state).await.unwrap();
+
+    assert_eq!(entries.len(), 1, "the cached calendar should be served");
+    assert_eq!(entries[0].title, "Cached Show");
+    assert!(entries[0].has_file, "download status is computed fresh, not cached");
+}
+
+#[tokio::test]
+async fn calendar_falls_back_to_stale_cache_when_remote_is_empty() {
+    let state = test_state("calstale").await;
+    let now = unix_now();
+
+    // Cache is a day old (expired); with no AniList token and no Sonarr the
+    // remote fetch yields nothing — stale data beats an empty calendar.
+    state
+        .storage
+        .set_setting("calendar.cache", &calendar_cache_json(now - 86_400, now + 3600), now)
+        .await
+        .unwrap();
+
+    let entries = get_calendar_inner(&state).await.unwrap();
+
+    assert_eq!(entries.len(), 1, "stale cache should be served when remote sources return nothing");
+    assert_eq!(entries[0].title, "Cached Show");
 }
 
 #[tokio::test]
