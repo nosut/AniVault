@@ -118,6 +118,12 @@
     load();
   }
 
+  // The grid holds a union of season/future entries; only future entries carry
+  // season fields, which futureLabel treats as optional.
+  function labelFor(entry: SeasonAnimeEntry | FutureAnimeEntry): string {
+    return futureLabel(entry as FutureAnimeEntry);
+  }
+
   function scoreColor(score: number | null): string {
     if (!score) return 'var(--color-muted)';
     if (score >= 80) return 'var(--color-success)';
@@ -153,7 +159,7 @@
   </div>
 
   {#if loading}
-    <div class="poster-grid">{#each Array(12) as _}<div class="skeleton-poster" />{/each}</div>
+    <div class="poster-grid">{#each Array(12) as _}<div class="skeleton-poster"></div>{/each}</div>
   {:else if error}
     <div class="message error"><p>{error}</p><button class="action-btn" on:click={load}>Retry</button></div>
   {:else if entries.length === 0}
@@ -173,7 +179,7 @@
           {#if entry.image_url}
             <img class="poster-img" src={entry.image_url} alt={entry.title} loading="lazy" />
           {:else}
-            <div class="poster-img placeholder" />
+            <div class="poster-img placeholder"></div>
           {/if}
           {#if libraryIds.has(entry.id)}
             <span class="in-library-badge">In Library</span>
@@ -185,7 +191,7 @@
             <div class="poster-meta">
               <span class="poster-format">{entry.format ?? 'TV'}</span>
               {#if future}
-                <span class="poster-future">{futureLabel(entry)}</span>
+                <span class="poster-future">{labelFor(entry)}</span>
               {:else if entry.average_score}
                 <span class="poster-score" style="color: {scoreColor(entry.average_score)}">{entry.average_score}%</span>
               {/if}

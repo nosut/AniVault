@@ -80,7 +80,7 @@
         currentKey = key;
         groups.push({ label: dayLabel(d), items: [] });
       }
-      groups[groups.length - 1].items.push(e);
+      groups[groups.length - 1]?.items.push(e);
     }
     return groups;
   })();

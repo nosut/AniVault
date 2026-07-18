@@ -180,7 +180,7 @@
       if ('ProgressAdvanced' in ev && ev.ProgressAdvanced.anime_id === animeId) {
         const ne = ev.ProgressAdvanced.new_episode;
         if (detail.watched_episodes == null || ne > detail.watched_episodes) {
-          const completed = detail.episode_count != null && ne >= detail.episode_count;
+          const completed: boolean = detail.episode_count != null && ne >= detail.episode_count;
           detail = {
             ...detail,
             watched_episodes: ne,
@@ -365,7 +365,7 @@
 
   function seasonOf(path: string): number {
     const m = path.match(/[\\/ ._-]S(\d{1,2})E\d{1,3}/i) ?? path.match(/[\\/ ]Season\s*(\d{1,2})[\\/ ]/i);
-    return m ? parseInt(m[1], 10) : 1;
+    return m?.[1] ? parseInt(m[1], 10) : 1;
   }
 
   // Sort files by (season, episode) so Season 1 always lists before Season 2.
@@ -390,7 +390,8 @@
   $: multiSeason = episodesBySeason.length > 1;
 
   function openFolder() {
-    if (episodeFiles.length > 0) openContainingFolder(episodeFiles[0].file_path);
+    const first = episodeFiles[0];
+    if (first) openContainingFolder(first.file_path);
   }
 
   function clearSaveOkSoon() {
@@ -561,7 +562,7 @@
         <div class="detail-header">
           <h1 class="title">
             {pickTitle(detail)}
-            <button class="anilist-link" on:click={() => openEpisodeFile(`https://anilist.co/anime/${detail.anime_id}`)} title="View on AniList" aria-label="View on AniList"><ExternalLink size={14} /></button>
+            <button class="anilist-link" on:click={() => openEpisodeFile(`https://anilist.co/anime/${detail?.anime_id}`)} title="View on AniList" aria-label="View on AniList"><ExternalLink size={14} /></button>
           </h1>
           {#if titles.english && titles.english !== (titles.romaji ?? '')}
             <p class="alt-title">English: {titles.english}</p>

@@ -97,12 +97,12 @@
   function seriesKey(path: string): string {
     const name = basename(path).replace(/\.[^.]+$/, '');
     const m = name.match(/^(.*?)[ ._-]+S(\d{1,2})E\d{1,3}/i);
-    if (m && m[1].trim()) {
+    if (m?.[1]?.trim()) {
       const title = m[1].replace(/[._]+/g, ' ').trim();
-      return `${title} — Season ${parseInt(m[2], 10)}`;
+      return `${title} — Season ${parseInt(m[2] ?? '1', 10)}`;
     }
     const parts = path.split(/[\\/]/);
-    if (parts.length >= 2) return parts[parts.length - 2];
+    if (parts.length >= 2) return parts[parts.length - 2] ?? name;
     return name;
   }
 

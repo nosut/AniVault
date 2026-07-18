@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "tsc --noEmit",
+    "check:svelte": "svelte-check --threshold error",
     "test": "vitest run",
     "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1",
     "bundle": "npm run build && pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/bundle.ps1"
@@ -21,6 +22,7 @@
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@types/node": "^22.13.14",
     "jsdom": "^29.1.1",
+    "svelte-check": "^4.7.3",
     "typescript": "^5.8.2",
     "vite": "^6.2.3",
     "vitest": "^3.0.9"

@@ -56,7 +56,7 @@
   </div>
 
   {#if loading}
-    <div class="poster-grid">{#each Array(8) as _}<div class="skeleton-poster" />{/each}</div>
+    <div class="poster-grid">{#each Array(8) as _}<div class="skeleton-poster"></div>{/each}</div>
   {:else if error}
     <div class="message error"><p>{error}</p></div>
   {:else if hasSearched && entries.length === 0}
@@ -74,7 +74,7 @@
           {#if entry.image_url}
             <img class="poster-img" src={entry.image_url} alt={entry.title} loading="lazy" />
           {:else}
-            <div class="poster-img placeholder" />
+            <div class="poster-img placeholder"></div>
           {/if}
           {#if libraryIds.has(entry.id)}
             <span class="in-library-badge">In Library</span>

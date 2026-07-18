@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 npm run check
+npm run check:svelte
 npm run test
 
 $cargo = Get-Command cargo -ErrorAction SilentlyContinue

@@ -479,8 +479,8 @@
     if (f) playCtxPath(f.path);
   }
   function ctxOpenFolder() {
-    const files = ctxFiles();
-    if (files.length > 0) openContainingFolder(files[0].path);
+    const first = ctxFiles()[0];
+    if (first) openContainingFolder(first.path);
     closeContextMenu();
   }
   async function ctxDelete() {
@@ -1391,7 +1391,6 @@
   .ctx-item.danger:hover:not(:disabled) { background: rgba(var(--color-danger-rgb), 0.15); }
 
   .ctx-dim { color: var(--color-muted); font-size: 0.75rem; }
-  .ctx-arrow { margin-left: auto; color: var(--color-muted); flex-shrink: 0; }
 
   .ctx-sep {
     height: 1px;

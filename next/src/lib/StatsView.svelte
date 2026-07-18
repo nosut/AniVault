@@ -26,7 +26,7 @@
 
   {#if loading}
     <div class="skeleton-grid">
-      {#each Array(4) as _}<div class="skeleton-card" />{/each}
+      {#each Array(4) as _}<div class="skeleton-card"></div>{/each}
     </div>
   {:else if error}
     <div class="message error" role="alert"><p>{error}</p><button class="action-btn" on:click={load}>Retry</button></div>
@@ -50,7 +50,7 @@
           <div class="score-row">
             <span class="score-label">{bucket.range}</span>
             <div class="score-bar-wrap">
-              <div class="score-bar" style="width: {bucket.count / maxScoreCount() * 100}%" />
+              <div class="score-bar" style="width: {bucket.count / maxScoreCount() * 100}%"></div>
             </div>
             <span class="score-count">{bucket.count}</span>
           </div>

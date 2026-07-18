@@ -52,7 +52,7 @@
 
   {#if loading && entries.length === 0}
     <div class="skeleton-list">
-      {#each Array(8) as _}<div class="skeleton-row" />{/each}
+      {#each Array(8) as _}<div class="skeleton-row"></div>{/each}
     </div>
   {:else if error}
     <div class="message error" role="alert"><p>{error}</p><button class="action-btn" on:click={() => load(true)}>Retry</button></div>
