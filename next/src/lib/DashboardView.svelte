@@ -1,97 +1,133 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { createEventDispatcher } from 'svelte';
-  import { getLibraryStats, getContinueWatching, type LibraryStats, type ContinueWatchingEntry, type EngineEvent } from './api';
-
-  const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
+  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+  import {
+    getLibraryStats, getContinueWatching, getReadyToWatch, getCalendar,
+    getAniListConnectionStatus, getSyncStatus,
+    type LibraryStats, type ContinueWatchingEntry, type ReadyToWatchEntry,
+    type CalendarEntry, type AniListSyncStatus, type EngineEvent,
+  } from './api';
+  import { episodeMarker } from './calendarUi';
+  import { airedAgoShort, isSameLocalDay, syncPill, todayRowLabel } from './homeUi';
   import RecognitionCard from './RecognitionCard.svelte';
-  import AniListConnect from './AniListConnect.svelte';
-  import SyncStatus from './SyncStatus.svelte';
-  import KnownFiles from './KnownFiles.svelte';
+
+  const dispatch = createEventDispatcher<{ select: { anime_id: number }; navigate: { view: string } }>();
 
   export let events: EngineEvent[] = [];
 
   let stats: LibraryStats | null = null;
+  let continueEntries: ContinueWatchingEntry[] = [];
+  let readyEntries: ReadyToWatchEntry[] = [];
+  let calendarEntries: CalendarEntry[] = [];
+  let connected = false;
+  let syncStatus: AniListSyncStatus | null = null;
   let loading = true;
-  let error: string | null = null;
 
-  async function loadStats() {
+  let now = Math.floor(Date.now() / 1000);
+  let ticker: ReturnType<typeof setInterval>;
+
+  async function load() {
     loading = true;
-    error = null;
-    try {
-      stats = await getLibraryStats();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      loading = false;
-    }
+    // Each source is independent; a failure in one leaves the others alive.
+    const [statsR, contR, readyR, calR, connR, syncR] = await Promise.allSettled([
+      getLibraryStats(), getContinueWatching(), getReadyToWatch(), getCalendar(),
+      getAniListConnectionStatus(), getSyncStatus(),
+    ]);
+    if (statsR.status === 'fulfilled') stats = statsR.value;
+    if (contR.status === 'fulfilled') continueEntries = contR.value;
+    if (readyR.status === 'fulfilled') readyEntries = readyR.value;
+    if (calR.status === 'fulfilled') calendarEntries = calR.value;
+    if (connR.status === 'fulfilled') connected = connR.value;
+    if (syncR.status === 'fulfilled') syncStatus = syncR.value;
+    loading = false;
   }
 
   onMount(() => {
-    void loadStats();
-    void loadContinue();
+    load();
+    ticker = setInterval(() => { now = Math.floor(Date.now() / 1000); }, 1000);
   });
+  onDestroy(() => clearInterval(ticker));
 
-  let knownFilesRef: KnownFiles | null = null;
+  $: pill = syncPill(connected, syncStatus);
 
-  let continueEntries: ContinueWatchingEntry[] = [];
-  let continueLoading = true;
-  let continueError: string | null = null;
+  $: todayEntries = calendarEntries
+    .filter(e => e.airing_at != null && isSameLocalDay(e.airing_at, now))
+    .sort((a, b) => (a.airing_at ?? 0) - (b.airing_at ?? 0));
 
-  async function loadContinue() {
-    continueLoading = true;
-    continueError = null;
-    try {
-      continueEntries = await getContinueWatching();
-    } catch (e) {
-      continueError = e instanceof Error ? e.message : String(e);
-    } finally {
-      continueLoading = false;
-    }
+  // Next upcoming episode after today, for the "nothing airs today" hint.
+  $: nextUpcoming = calendarEntries
+    .filter(e => e.airing_at != null && e.airing_at > now && !isSameLocalDay(e.airing_at, now))
+    .sort((a, b) => (a.airing_at ?? 0) - (b.airing_at ?? 0))[0] ?? null;
+
+  $: missingEntries = calendarEntries
+    .filter(e => e.airing_at != null && e.airing_at <= now && !e.has_file)
+    .sort((a, b) => (a.airing_at ?? 0) - (b.airing_at ?? 0))
+    .slice(0, 8);
+
+  // anime_id → ready info, for the "Ep N ready" label on continue cards.
+  $: readyById = new Map(readyEntries.map(r => [r.anime_id, r]));
+  // (anime_id, episode) aired without a file, for the "not downloaded" label.
+  $: missingSet = new Set(
+    calendarEntries
+      .filter(e => e.airing_at != null && e.airing_at <= now && !e.has_file && e.next_episode != null)
+      .map(e => `${e.anime_id}:${e.next_episode}`),
+  );
+
+  function nextEpLabel(entry: ContinueWatchingEntry): { text: string; ready: boolean } | null {
+    const ready = readyById.get(entry.anime_id);
+    if (ready) return { text: `Ep ${ready.next_episode} ready ▸`, ready: true };
+    const next = entry.watched_episodes + 1;
+    if (missingSet.has(`${entry.anime_id}:${next}`)) return { text: `Ep ${next} not downloaded`, ready: false };
+    return null;
   }
 
-  function handleConfirmed() {
-    knownFilesRef?.load();
+  function select(animeId: number) {
+    if (animeId > 0) dispatch('select', { anime_id: animeId });
   }
 
-  const statDefs = [
-    { key: 'total' as const, label: 'Total' },
-    { key: 'watching' as const, label: 'Watching' },
-    { key: 'completed' as const, label: 'Completed' },
-    { key: 'on_hold' as const, label: 'On Hold' },
-    { key: 'dropped' as const, label: 'Dropped' },
-    { key: 'plan_to_watch' as const, label: 'Plan to Watch' },
-  ];
+  const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const shortDayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
 </script>
 
-<div class="dashboard">
-  <header class="dash-header">
-    <h1 class="dash-title">Dashboard</h1>
+<div class="home">
+  <header class="home-head">
+    <h1>Home</h1>
+    <div class="head-right">
+      <button class="pill" on:click={() => dispatch('navigate', { view: 'settings' })}>
+        AniList <span class="pill-state" class:ok={pill.ok} class:bad={!pill.ok}>● {pill.text}</span>
+      </button>
+      {#if stats}
+        <span class="pill">{stats.total} in library</span>
+      {/if}
+    </div>
   </header>
 
-  <section class="continue-watching">
-    <h3>Continue Watching</h3>
-    {#if continueLoading}
-      <div class="skeleton-row" />
-    {:else if continueError}
-      <p class="muted">Could not load.</p>
+  <RecognitionCard {events} />
+
+  <section data-testid="jump-back-in">
+    <h3>Jump back in</h3>
+    {#if loading}
+      <div class="skeleton-row"></div>
     {:else if continueEntries.length === 0}
       <p class="muted">No anime in progress. Start watching to see them here.</p>
     {:else}
-      <div class="continue-grid">
-        {#each continueEntries as entry}
-          <div class="continue-card" tabindex="0" on:click={() => dispatch('select', { anime_id: entry.anime_id })} on:keydown={(e) => e.key === 'Enter' && dispatch('select', { anime_id: entry.anime_id })}>
+      <div class="cw-grid">
+        {#each continueEntries as entry (entry.anime_id)}
+          {@const label = nextEpLabel(entry)}
+          <div class="cw-card" tabindex="0" role="button" on:click={() => select(entry.anime_id)} on:keydown={(e) => e.key === 'Enter' && select(entry.anime_id)}>
             {#if entry.image_url}
-              <img class="continue-thumb" src={entry.image_url} alt={entry.anime_title} loading="lazy" />
+              <img class="thumb" src={entry.image_url} alt={entry.anime_title} loading="lazy" />
             {:else}
-              <div class="continue-thumb placeholder" />
+              <div class="thumb placeholder"></div>
             {/if}
-            <div class="continue-info">
-              <p class="continue-title">{entry.anime_title}</p>
-              <div class="continue-progress-wrap">
-                <div class="continue-progress-bar" style="width: {entry.episode_count ? (entry.watched_episodes / entry.episode_count * 100) : 0}%" />
+            <div class="cw-info">
+              <p class="cw-title">{entry.anime_title}</p>
+              <div class="bar"><i style="width: {entry.episode_count ? Math.min(100, entry.watched_episodes / entry.episode_count * 100) : 0}%"></i></div>
+              <div class="cw-meta">
+                <span>{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
+                {#if label}
+                  <span class:next-up={label.ready} class:muted={!label.ready}>{label.text}</span>
+                {/if}
               </div>
-              <span class="continue-episodes">{entry.watched_episodes} / {entry.episode_count ?? '?'}</span>
             </div>
           </div>
         {/each}
@@ -99,279 +135,140 @@
     {/if}
   </section>
 
-  <section class="stats-section" aria-label="Library stats">
+  <section data-testid="airing-today">
+    <h3>Airing today <span class="count">{dayFmt.format(new Date(now * 1000))}</span></h3>
     {#if loading}
-      <div class="stats-grid">
-        {#each Array(6) as _, i (i)}
-          <div class="stat-card skeleton">
-            <div class="skeleton-eyebrow"></div>
-            <div class="skeleton-value"></div>
-          </div>
-        {/each}
-      </div>
-    {:else if error}
-      <div class="stats-error">
-        <p class="error-msg">{error}</p>
-        <button type="button" class="btn-retry" on:click={loadStats}>Retry</button>
-      </div>
-    {:else if stats && stats.total === 0}
-      <div class="stats-empty">
-        <p>No anime yet. Connect AniList to import.</p>
-      </div>
-    {:else if stats}
-      <div class="stats-grid">
-        {#each statDefs as def (def.key)}
-          <div class="stat-card">
-            <p class="eyebrow">{def.label}</p>
-            <p class="stat-value">{stats[def.key]}</p>
-          </div>
+      <div class="skeleton-row"></div>
+    {:else if todayEntries.length === 0}
+      <p class="muted">
+        Nothing airs today{#if nextUpcoming} — next: {nextUpcoming.title}, {shortDayFmt.format(new Date((nextUpcoming.airing_at ?? 0) * 1000))}{/if}
+      </p>
+    {:else}
+      <div class="today-list">
+        {#each todayEntries as entry (`${entry.anime_id}:${entry.next_episode}`)}
+          {@const marker = episodeMarker(entry, now)}
+          <button class="today-row" on:click={() => select(entry.anime_id)}>
+            <span class="dot {marker}"></span>
+            <span class="today-title">{entry.title}</span>
+            {#if entry.next_episode}<span class="today-ep">Ep {entry.next_episode}</span>{/if}
+            {#if entry.airing_at != null}
+              <span class="when" class:soon={entry.airing_at > now}>{todayRowLabel(entry.airing_at, now)}</span>
+            {/if}
+          </button>
         {/each}
       </div>
     {/if}
   </section>
 
-  <section class="widgets-grid" aria-label="Widgets">
-    <RecognitionCard {events} onConfirmed={handleConfirmed} />
-    <AniListConnect />
-    <SyncStatus />
-    <KnownFiles bind:this={knownFilesRef} />
-  </section>
+  <div class="cols">
+    <section data-testid="ready-to-watch">
+      <h3>Ready to watch <span class="count">unwatched episodes in your library</span></h3>
+      {#if loading}
+        <div class="skeleton-row"></div>
+      {:else if readyEntries.length === 0}
+        <p class="muted">Nothing queued up — new downloads show here when the next unwatched episode is on disk.</p>
+      {:else}
+        <div class="ready-grid">
+          {#each readyEntries as entry (entry.anime_id)}
+            <div class="ready-card" tabindex="0" role="button" on:click={() => select(entry.anime_id)} on:keydown={(e) => e.key === 'Enter' && select(entry.anime_id)}>
+              {#if entry.image_url}
+                <img class="thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
+              {:else}
+                <div class="thumb placeholder"></div>
+              {/if}
+              <div class="cw-info">
+                <p class="cw-title">{entry.title}</p>
+                <div class="cw-meta">
+                  <span>{entry.ready_count === 1 ? 'Next unwatched' : `${entry.ready_count} episodes ready`}</span>
+                </div>
+              </div>
+              <span class="ep-chip">Ep {entry.next_episode}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </section>
+
+    <section data-testid="missing-downloads">
+      <h3>Missing downloads <span class="count">aired, not in library</span></h3>
+      {#if loading}
+        <div class="skeleton-row"></div>
+      {:else if missingEntries.length === 0}
+        <p class="muted">All caught up — every aired episode is in your library.</p>
+      {:else}
+        <div class="missing-list">
+          {#each missingEntries as entry (`${entry.anime_id}:${entry.next_episode}`)}
+            <button class="missing-row" on:click={() => select(entry.anime_id)}>
+              <span class="dot missing"></span>
+              <span class="missing-title">{entry.title}</span>
+              {#if entry.next_episode}<span class="missing-ep">Ep {entry.next_episode}</span>{/if}
+              {#if entry.airing_at != null}<span class="aired-ago">{airedAgoShort(entry.airing_at, now)}</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </section>
+  </div>
 </div>
 
 <style>
-  .dashboard {
-    display: grid;
-    gap: 1.5rem;
-    padding: 1.25rem;
-  }
+  .home { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.25rem; }
 
-  .dash-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
+  .home-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .home-head h1 { margin: 0; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
+  .head-right { display: flex; align-items: center; gap: 0.6rem; }
+  .pill { font-size: 0.75rem; padding: 0.25rem 0.7rem; border-radius: 999px; border: 1px solid rgba(var(--color-accent-rgb),0.25); color: var(--color-muted); background: transparent; }
+  button.pill { cursor: pointer; }
+  button.pill:hover { background: rgba(var(--color-accent-rgb),0.1); }
+  .pill-state.ok { color: var(--color-success); }
+  .pill-state.bad { color: var(--color-warning); }
 
-  .dash-title {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--color-text);
-    letter-spacing: -0.01em;
-  }
+  h3 { font-size: 0.95rem; margin: 0 0 0.6rem; }
+  .count { color: var(--color-muted); font-weight: 400; font-size: 0.85rem; margin-left: 0.4rem; }
+  .muted { color: var(--color-muted); font-size: 0.85rem; }
 
-  .stats-section {
-    display: grid;
-    gap: 0.75rem;
-  }
+  .cw-grid, .ready-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.7rem; }
+  .cw-card, .ready-card { display: flex; gap: 0.7rem; padding: 0.55rem; border: 1px solid rgba(var(--color-accent-rgb),0.12); border-radius: 10px; background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s; }
+  .cw-card:hover, .ready-card:hover { border-color: rgba(var(--color-accent-rgb),0.3); }
+  .ready-card { border-color: rgba(var(--color-success-rgb),0.25); background: rgba(var(--color-success-rgb),0.05); }
+  .ready-card:hover { border-color: rgba(var(--color-success-rgb),0.55); }
 
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-    gap: 0.75rem;
-  }
+  .thumb { width: 3rem; height: 4.2rem; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+  .thumb.placeholder { background: rgba(var(--color-accent-rgb),0.12); }
+  .cw-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 0.3rem; justify-content: center; }
+  .cw-title { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0; }
+  .bar { height: 0.3rem; border-radius: 2px; background: rgba(255,255,255,0.08); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: rgba(var(--color-accent-rgb),0.55); }
+  .cw-meta { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.72rem; color: var(--color-muted); }
+  .next-up { color: var(--color-success); font-weight: 600; }
+  .ep-chip { align-self: center; flex-shrink: 0; font-size: 0.72rem; font-weight: 700; color: var(--color-success); background: rgba(var(--color-success-rgb),0.15); border-radius: 999px; padding: 0.2rem 0.55rem; }
 
-  .stat-card {
-    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
-    border-radius: var(--radius-card);
-    background: rgba(255, 255, 255, 0.04);
-    padding: 1.25rem;
-    display: grid;
-    gap: 0.5rem;
-    min-width: 0;
-  }
+  .today-list, .missing-list { display: flex; flex-direction: column; gap: 0.45rem; }
+  .today-row, .missing-row { display: flex; align-items: center; gap: 0.7rem; width: 100%; text-align: left; padding: 0.5rem 0.65rem; border: 1px solid rgba(var(--color-accent-rgb),0.1); border-radius: 10px; background: rgba(var(--color-accent-rgb),0.03); color: var(--color-text); font-size: 0.85rem; cursor: pointer; }
+  .today-row:hover, .missing-row:hover { border-color: rgba(var(--color-accent-rgb),0.3); }
+  .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; box-sizing: border-box; }
+  .dot.have { background: var(--color-success); }
+  .dot.missing { background: transparent; border: 1.5px solid var(--color-warning); }
+  .dot.future { background: rgba(var(--color-accent-rgb),0.25); }
+  .today-title, .missing-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .today-ep { color: var(--color-muted); flex-shrink: 0; }
+  .when { flex-shrink: 0; font-size: 0.75rem; font-variant-numeric: tabular-nums; color: var(--color-muted); padding: 0.15rem 0.55rem; border-radius: 999px; border: 1px solid rgba(var(--color-accent-rgb),0.15); }
+  .when.soon { color: var(--color-accent); border-color: rgba(var(--color-accent-rgb),0.4); }
 
-  .eyebrow {
-    color: var(--color-accent);
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-    font-size: 0.78rem;
-    font-weight: 800;
-    margin: 0;
-  }
+  .missing-row { border-color: rgba(var(--color-warning-rgb),0.25); background: rgba(var(--color-warning-rgb),0.05); }
+  .missing-row:hover { border-color: rgba(var(--color-warning-rgb),0.5); }
+  .missing-ep { color: var(--color-warning); font-weight: 600; flex-shrink: 0; }
+  .aired-ago { color: var(--color-muted); font-size: 0.72rem; flex-shrink: 0; }
 
-  .stat-value {
-    margin: 0;
-    font-size: 1.6rem;
-    font-weight: 700;
-    color: var(--color-text);
-    font-variant-numeric: tabular-nums;
-  }
+  .cols { display: grid; grid-template-columns: 3fr 2fr; gap: 1.2rem; align-items: start; }
 
-  .skeleton {
-    opacity: 0.6;
-  }
+  .skeleton-row { height: 4.75rem; border-radius: 10px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-  .skeleton-row {
-    height: 4.75rem;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.04);
-    animation: pulse 2s infinite;
+  @media (max-width: 800px) {
+    .cols { grid-template-columns: 1fr; }
   }
-
-  .skeleton-eyebrow {
-    height: 0.78rem;
-    width: 40%;
-    background: rgba(var(--color-accent-rgb), 0.15);
-    border-radius: 999px;
-    animation: pulse 2s infinite;
-  }
-
-  .skeleton-value {
-    height: 1.6rem;
-    width: 60%;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 999px;
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-
-  .stats-error {
-    border: 1px solid rgba(var(--color-error-rgb), 0.25);
-    border-radius: var(--radius-card);
-    background: rgba(var(--color-error-rgb), 0.06);
-    padding: 1.25rem;
-    display: grid;
-    gap: 0.75rem;
-    justify-items: start;
-  }
-
-  .error-msg {
-    color: var(--color-error);
-    font-size: 0.85rem;
-    margin: 0;
-  }
-
-  .btn-retry {
-    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
-    border-radius: 999px;
-    padding: 0.5rem 0.85rem;
-    font-size: 0.78rem;
-    cursor: pointer;
-    background: rgba(var(--color-accent-rgb), 0.18);
-    color: #e9eefc;
-  }
-
-  .btn-retry:hover {
-    background: rgba(var(--color-accent-rgb), 0.28);
-  }
-
-  .btn-retry:focus {
-    outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
-    outline-offset: 2px;
-  }
-
-  .stats-empty {
-    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
-    border-radius: var(--radius-card);
-    background: rgba(255, 255, 255, 0.04);
-    padding: 1.25rem;
-    color: var(--color-muted);
-    font-size: 0.85rem;
-  }
-
-  .widgets-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-    gap: 0.75rem;
-    align-items: start;
-  }
-
-  .continue-watching {
-    margin-bottom: 1rem;
-  }
-
-  .continue-watching h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-  }
-
-  .continue-watching .muted {
-    color: var(--color-muted);
-    font-size: 0.85rem;
-  }
-
-  .continue-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
-    gap: 0.6rem;
-  }
-
-  .continue-card {
-    display: flex;
-    gap: 0.6rem;
-    align-items: center;
-    padding: 0.5rem;
-    border: 1px solid rgba(var(--color-accent-rgb),0.1);
-    border-radius: 8px;
-    background: rgba(255,255,255,0.03);
-    cursor: pointer;
-    transition: border-color 0.15s;
-  }
-
-  .continue-card:hover {
-    border-color: rgba(var(--color-accent-rgb),0.3);
-  }
-
-  .continue-thumb {
-    width: 2.5rem;
-    height: 3.5rem;
-    border-radius: 4px;
-    object-fit: cover;
-    flex-shrink: 0;
-  }
-
-  .continue-thumb.placeholder {
-    background: rgba(var(--color-accent-rgb),0.08);
-  }
-
-  .continue-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .continue-title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 0.25rem;
-  }
-
-  .continue-progress-wrap {
-    height: 0.3rem;
-    border-radius: 2px;
-    background: rgba(255,255,255,0.08);
-    overflow: hidden;
-    margin-bottom: 0.2rem;
-  }
-
-  .continue-progress-bar {
-    height: 100%;
-    border-radius: 2px;
-    background: rgba(var(--color-accent-rgb),0.5);
-  }
-
-  .continue-episodes {
-    font-size: 0.72rem;
-    color: var(--color-muted);
-  }
-
   @media (max-width: 480px) {
-    .dashboard {
-      padding: 0.75rem;
-      gap: 1rem;
-    }
-    .stats-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .widgets-grid {
-      grid-template-columns: 1fr;
-    }
+    .home { padding: 0.75rem; gap: 1rem; }
   }
 </style>

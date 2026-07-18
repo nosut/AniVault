@@ -1626,6 +1626,82 @@ pub async fn continue_watching_inner(
     state.storage.continue_watching(10).await
 }
 
+// ── Ready to watch ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ReadyToWatchEntry {
+    pub anime_id: i64,
+    pub title: String,
+    pub image_url: Option<String>,
+    pub next_episode: i32,
+    pub ready_count: i32,
+    pub watched_episodes: i32,
+    pub episode_count: Option<i32>,
+}
+
+/// Shows whose next unwatched episode exists in the file index, ordered by
+/// most recently watched. `ready_count` is the total number of unwatched
+/// episodes on disk (not necessarily consecutive).
+fn ready_to_watch_entries(
+    watching: Vec<ContinueWatchingRow>,
+    files: &std::collections::HashMap<i64, std::collections::HashSet<i32>>,
+) -> Vec<ReadyToWatchEntry> {
+    let mut out: Vec<(i64, ReadyToWatchEntry)> = watching
+        .into_iter()
+        .filter_map(|w| {
+            let eps = files.get(&w.anime_id)?;
+            let next = w.watched_episodes + 1;
+            if !eps.contains(&next) {
+                return None;
+            }
+            let ready_count = eps.iter().filter(|&&e| e > w.watched_episodes).count() as i32;
+            Some((
+                w.last_watched_at,
+                ReadyToWatchEntry {
+                    anime_id: w.anime_id,
+                    title: w.anime_title,
+                    image_url: w.image_url,
+                    next_episode: next,
+                    ready_count,
+                    watched_episodes: w.watched_episodes,
+                    episode_count: w.episode_count,
+                },
+            ))
+        })
+        .collect();
+    out.sort_by_key(|(last_watched, _)| -*last_watched);
+    out.into_iter().map(|(_, e)| e).collect()
+}
+
+pub async fn get_ready_to_watch_inner(
+    state: &EngineState,
+) -> anyhow::Result<Vec<ReadyToWatchEntry>> {
+    let watching = state.storage.continue_watching(50).await?;
+    let mut files: std::collections::HashMap<i64, std::collections::HashSet<i32>> =
+        std::collections::HashMap::new();
+    for w in &watching {
+        if let Ok(rows) = state.storage.file_index_by_anime(w.anime_id).await {
+            let eps = files.entry(w.anime_id).or_default();
+            for row in rows {
+                if row.ignored {
+                    continue;
+                }
+                if let Some(ep) = row.episode {
+                    eps.insert(ep);
+                }
+            }
+        }
+    }
+    Ok(ready_to_watch_entries(watching, &files))
+}
+
+#[tauri::command]
+pub async fn get_ready_to_watch(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<ReadyToWatchEntry>, String> {
+    get_ready_to_watch_inner(&state).await.map_err(command_error)
+}
+
 #[tauri::command]
 pub async fn continue_watching(
     state: tauri::State<'_, EngineState>,
@@ -2649,6 +2725,55 @@ mod tests {
             time_until_airing: None,
             has_file: false,
         }
+    }
+
+    fn watching_row(anime_id: i64, title: &str, watched: i32, last_watched_at: i64) -> ContinueWatchingRow {
+        ContinueWatchingRow {
+            anime_id,
+            anime_title: title.to_string(),
+            image_url: None,
+            watched_episodes: watched,
+            episode_count: None,
+            last_watched_at,
+        }
+    }
+
+    #[test]
+    fn ready_to_watch_lists_shows_whose_next_unwatched_episode_has_a_file() {
+        let watching = vec![
+            watching_row(1, "Next Ready", 2, 300),   // eps 3,4 on disk → ready, count 2
+            watching_row(2, "Gap Only", 5, 200),     // only ep 8 on disk → next (6) not ready
+            watching_row(3, "Nothing New", 4, 100),  // only watched eps on disk
+        ];
+        let mut files: std::collections::HashMap<i64, std::collections::HashSet<i32>> =
+            std::collections::HashMap::new();
+        files.insert(1, [3, 4].into_iter().collect());
+        files.insert(2, [8].into_iter().collect());
+        files.insert(3, [1, 2, 3, 4].into_iter().collect());
+
+        let ready = ready_to_watch_entries(watching, &files);
+
+        assert_eq!(ready.len(), 1, "only the show with its next episode on disk is ready");
+        assert_eq!(ready[0].anime_id, 1);
+        assert_eq!(ready[0].next_episode, 3);
+        assert_eq!(ready[0].ready_count, 2, "counts all unwatched episodes on disk");
+    }
+
+    #[test]
+    fn ready_to_watch_orders_by_most_recently_watched() {
+        let watching = vec![
+            watching_row(1, "Older", 1, 100),
+            watching_row(2, "Newer", 1, 900),
+        ];
+        let mut files: std::collections::HashMap<i64, std::collections::HashSet<i32>> =
+            std::collections::HashMap::new();
+        files.insert(1, [2].into_iter().collect());
+        files.insert(2, [2].into_iter().collect());
+
+        let ready = ready_to_watch_entries(watching, &files);
+
+        let ids: Vec<i64> = ready.iter().map(|r| r.anime_id).collect();
+        assert_eq!(ids, vec![2, 1]);
     }
 
     #[test]

@@ -197,7 +197,11 @@
 
   <section class="content">
     {#if currentView === 'dashboard'}
-      <DashboardView events={latestEvents} />
+      <DashboardView
+        events={latestEvents}
+        on:select={handleLibrarySelect}
+        on:navigate={(e) => { previousView = currentView; currentView = e.detail.view as View; }}
+      />
     {:else if currentView === 'library'}
       <LibraryView events={latestEvents} on:select={handleLibrarySelect} />
     {:else if currentView === 'season'}

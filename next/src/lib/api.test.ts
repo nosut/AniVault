@@ -16,6 +16,7 @@ import {
   getLaunchOnStartup,
   getLibraryIds,
   getLibraryStats,
+  getReadyToWatch,
   getSessionState,
   getSetting,
   getSonarrAvailability,
@@ -61,6 +62,16 @@ describe('api wrappers', () => {
     expect(invoke).toHaveBeenCalledWith('get_future_anime', { genre: 'Action' });
     await getFutureAnime(undefined, invoke);
     expect(invoke).toHaveBeenLastCalledWith('get_future_anime', { genre: null });
+  });
+
+  it('gets ready-to-watch entries through invoke', async () => {
+    const entries = [{
+      anime_id: 7, title: 'Ready Show', image_url: null,
+      next_episode: 3, ready_count: 2, watched_episodes: 2, episode_count: 12,
+    }];
+    const invoke = vi.fn().mockResolvedValue(entries);
+    await expect(getReadyToWatch(invoke)).resolves.toEqual(entries);
+    expect(invoke).toHaveBeenCalledWith('get_ready_to_watch');
   });
 
   it('gets engine status through invoke', async () => {

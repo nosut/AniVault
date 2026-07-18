@@ -216,6 +216,7 @@ pub fn run() {
             commands::get_engine_status,
             commands::get_episode_files,
             commands::get_future_anime,
+            commands::get_ready_to_watch,
             commands::get_season_anime,
             commands::get_launch_on_startup,
             commands::get_library_folders,

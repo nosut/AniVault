@@ -551,6 +551,20 @@ export interface ContinueWatchingEntry {
   last_watched_at: number;
 }
 
+export interface ReadyToWatchEntry {
+  anime_id: number;
+  title: string;
+  image_url: string | null;
+  next_episode: number;
+  ready_count: number;
+  watched_episodes: number;
+  episode_count: number | null;
+}
+
+export function getReadyToWatch(invokeFn: InvokeFn = tauriInvoke): Promise<ReadyToWatchEntry[]> {
+  return invokeFn<ReadyToWatchEntry[]>('get_ready_to_watch');
+}
+
 export function getContinueWatching(invokeFn: InvokeFn = tauriInvoke): Promise<ContinueWatchingEntry[]> {
   return invokeFn<ContinueWatchingEntry[]>('continue_watching');
 }
