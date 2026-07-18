@@ -1398,7 +1398,9 @@ impl Storage {
              WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? \
                 OR json_extract(a.titles_json, '$.english') LIKE ? \
                 OR json_extract(a.titles_json, '$.japanese') LIKE ? \
-                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?))",
+                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?)) \
+             AND (le.anime_id IS NOT NULL \
+                OR EXISTS (SELECT 1 FROM file_index fi WHERE fi.anime_id = a.id AND fi.ignored = 0))",
         );
 
         let use_filter = status_filter.is_some_and(|s| !s.is_empty());
@@ -1473,7 +1475,9 @@ impl Storage {
              COALESCE(SUM(CASE WHEN le.status = 'dropped' THEN 1 ELSE 0 END), 0) as dropped, \
              COALESCE(SUM(CASE WHEN le.status = 'plan_to_watch' THEN 1 ELSE 0 END), 0) as plan_to_watch \
              FROM anime a \
-             LEFT JOIN list_entry le ON a.id = le.anime_id",
+             LEFT JOIN list_entry le ON a.id = le.anime_id \
+             WHERE le.anime_id IS NOT NULL \
+                OR EXISTS (SELECT 1 FROM file_index fi WHERE fi.anime_id = a.id AND fi.ignored = 0)",
         )
         .fetch_one(&self.pool)
         .await?;

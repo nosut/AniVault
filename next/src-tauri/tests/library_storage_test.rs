@@ -1,4 +1,33 @@
-use anivault_core::engine::storage::Tests;
+use anivault_core::engine::storage::{MappingSource, Tests};
+
+#[tokio::test]
+async fn browsing_cache_rows_stay_out_of_the_library() {
+    let storage = Tests::new_in_memory().await;
+
+    // 1: metadata cached by opening a detail view — no list entry, no files.
+    storage.insert_minimal_anime(1, "Browsed Only").await.unwrap();
+    // 2: actually in the list.
+    storage.insert_minimal_anime(2, "Listed Show").await.unwrap();
+    storage
+        .upsert_list_entry_full(2, "watching", 1, None, "", 1000, 1000)
+        .await
+        .unwrap();
+    // 3: not listed, but has a mapped local file — the legitimate "Unlisted" case.
+    storage.insert_minimal_anime(3, "Files Only").await.unwrap();
+    storage
+        .upsert_file_index("D:/anime/files-only/ep1.mkv", Some(3), 1, 90, MappingSource::Automatic, 1000)
+        .await
+        .unwrap();
+
+    let results = storage.search_library("", None, 10, 0).await.unwrap();
+    let mut ids: Vec<i64> = results.iter().map(|r| r.anime_id).collect();
+    ids.sort();
+    assert_eq!(ids, vec![2, 3], "cache-only anime must not appear in the library");
+
+    let stats = storage.library_stats().await.unwrap();
+    assert_eq!(stats.total, 2, "cache-only anime must not count toward the library total");
+    assert_eq!(stats.watching, 1);
+}
 
 #[tokio::test]
 async fn search_library_finds_by_title() {
