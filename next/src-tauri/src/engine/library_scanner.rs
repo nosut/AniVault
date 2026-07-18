@@ -547,6 +547,14 @@ async fn index_new_files_in_dir(
         // (confidence 0). Ignored files are tombstoned — never re-index them.
         let existing = storage.get_file_index(&file_path_str).await?;
         if let Some(ref ex) = existing {
+            // The lookup is case-insensitive: a hit under a different spelling
+            // is the same file after a case-only rename. Follow the on-disk
+            // casing so the row (and its mapping) survives the rename.
+            if ex.file_path != file_path_str {
+                storage
+                    .update_file_index_path(&ex.file_path, &file_path_str)
+                    .await?;
+            }
             if ex.ignored || ex.confidence > 0 {
                 report.skipped += 1;
                 continue;

@@ -676,6 +676,7 @@ impl Storage {
         mapping_source: MappingSource,
         indexed_at: i64,
     ) -> anyhow::Result<()> {
+        self.repath_case_variant(file_path).await?;
         sqlx::query(
             "INSERT INTO file_index (file_path, anime_id, episode, confidence, mapping_source, indexed_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -735,10 +736,40 @@ impl Storage {
         Ok(repaired)
     }
 
+    /// Point an index row keyed by a stale spelling of a path at the current
+    /// on-disk spelling. Windows filesystems are case-insensitive, so a
+    /// case-only rename leaves the old row resolving to the same file — it
+    /// must be re-pathed, never duplicated.
+    pub async fn update_file_index_path(&self, old: &str, new: &str) -> anyhow::Result<()> {
+        sqlx::query("UPDATE file_index SET file_path = ?2 WHERE file_path = ?1")
+            .bind(old)
+            .bind(new)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Re-key any row whose path differs from `file_path` only by case, so a
+    /// following `ON CONFLICT(file_path)` upsert updates it instead of
+    /// inserting a case-variant duplicate.
+    async fn repath_case_variant(&self, file_path: &str) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE file_index SET file_path = ?1
+             WHERE file_path = ?1 COLLATE NOCASE AND file_path <> ?1",
+        )
+        .bind(file_path)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_file_index(&self, file_path: &str) -> anyhow::Result<Option<FileIndexRow>> {
+        // Case-insensitive (exact match preferred): on Windows a path that
+        // differs only by case is the same file.
         let row = sqlx::query(
             "SELECT file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored
-             FROM file_index WHERE file_path = ?1",
+             FROM file_index WHERE file_path = ?1 COLLATE NOCASE
+             ORDER BY (file_path = ?1) DESC LIMIT 1",
         )
         .bind(file_path)
         .fetch_optional(&self.pool)
@@ -1085,6 +1116,15 @@ impl Storage {
         }
         let mut tx = self.pool.begin().await?;
         for (file_path, anime_id, episode) in mappings {
+            // Same-file case variant (Windows): re-key it so the upsert below
+            // updates rather than duplicates.
+            sqlx::query(
+                "UPDATE file_index SET file_path = ?1
+                 WHERE file_path = ?1 COLLATE NOCASE AND file_path <> ?1",
+            )
+            .bind(file_path)
+            .execute(&mut *tx)
+            .await?;
             sqlx::query(
                 "INSERT INTO file_index (file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored)
                  VALUES (?1, ?2, ?3, 100, ?4, ?5, 0)

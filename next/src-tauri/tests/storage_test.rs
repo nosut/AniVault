@@ -47,6 +47,99 @@ async fn mapping_source_migration_backfills_legacy_rows() {
     assert_eq!(source, "legacy");
 }
 
+#[tokio::test]
+async fn case_dedupe_migration_keeps_the_best_row_per_path() {
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    sqlx::query(
+        "CREATE TABLE file_index (
+            file_path TEXT PRIMARY KEY,
+            anime_id INTEGER,
+            episode INTEGER,
+            confidence INTEGER NOT NULL DEFAULT 0,
+            indexed_at INTEGER NOT NULL,
+            ignored INTEGER NOT NULL DEFAULT 0,
+            mapping_source TEXT NOT NULL DEFAULT 'legacy'
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    for (path, anime_id, indexed_at) in [
+        // Pair 1: unmapped newer vs mapped older → the mapped row wins.
+        ("Y:/A/Show - 01.mkv", None::<i64>, 200),
+        ("Y:/A/SHOW - 01.mkv", Some(7), 100),
+        // Pair 2: both mapped → the newest wins.
+        ("Y:/A/Show - 02.mkv", Some(7), 100),
+        ("Y:/A/SHOW - 02.mkv", Some(7), 200),
+        // Untouched singleton.
+        ("Y:/A/Show - 03.mkv", Some(7), 100),
+    ] {
+        sqlx::query(
+            "INSERT INTO file_index (file_path, anime_id, episode, confidence, indexed_at) VALUES (?1, ?2, 1, 90, ?3)",
+        )
+        .bind(path)
+        .bind(anime_id)
+        .bind(indexed_at)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    for statement in include_str!("../migrations/0008_file_index_case_dedupe.sql")
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        sqlx::query(statement).execute(&pool).await.unwrap();
+    }
+
+    let survivors: Vec<String> =
+        sqlx::query_scalar("SELECT file_path FROM file_index ORDER BY file_path")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        survivors,
+        vec![
+            "Y:/A/SHOW - 01.mkv".to_string(),
+            "Y:/A/SHOW - 02.mkv".to_string(),
+            "Y:/A/Show - 03.mkv".to_string(),
+        ],
+    );
+}
+
+#[tokio::test]
+async fn upsert_treats_case_variant_paths_as_the_same_file() {
+    use anivault_core::engine::storage::Tests;
+    let storage = Tests::new_in_memory().await;
+    storage.insert_minimal_anime(7, "Show").await.unwrap();
+
+    // Indexed once, then the file is renamed on disk with only a case change
+    // (Windows: same file) and re-upserted under the new spelling.
+    storage
+        .upsert_file_index("Y:/Anime/Show/Show - 01.mkv", Some(7), 1, 100, MappingSource::Manual, 100)
+        .await
+        .unwrap();
+    storage
+        .upsert_file_index("Y:/Anime/Show/SHOW - 01.mkv", Some(7), 1, 90, MappingSource::Automatic, 200)
+        .await
+        .unwrap();
+
+    let rows = storage.file_index_by_anime(7).await.unwrap();
+    assert_eq!(rows.len(), 1, "a case-only rename must not create a second row");
+    assert_eq!(rows[0].file_path, "Y:/Anime/Show/SHOW - 01.mkv", "the row follows the newest casing");
+
+    // Lookups find the row regardless of casing.
+    let hit = storage.get_file_index("y:/anime/show/show - 01.mkv").await.unwrap();
+    assert!(hit.is_some(), "index lookup should be case-insensitive");
+}
+
 #[test]
 fn mapping_source_unknown_values_fail_closed_as_legacy() {
     assert_eq!(MappingSource::from_db("manual"), MappingSource::Manual);

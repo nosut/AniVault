@@ -25,6 +25,50 @@ fn now() -> i64 {
 }
 
 #[tokio::test]
+async fn case_only_rename_repaths_the_row_instead_of_duplicating() {
+    let storage = Tests::new_in_memory().await;
+    storage.insert_minimal_anime(42, "Black Torch").await.unwrap();
+    let dir = unique_temp_dir("caserename");
+    let old_path = dir.join("Black Torch - S01E01.mkv");
+    fs::write(&old_path, b"x").unwrap();
+
+    set_library_folders(&storage, vec![dir.to_string_lossy().to_string()])
+        .await
+        .unwrap();
+
+    // The file is indexed and mapped (as if the user mapped it manually).
+    storage
+        .upsert_file_index(
+            &old_path.to_string_lossy(),
+            Some(42),
+            1,
+            100,
+            MappingSource::Manual,
+            now(),
+        )
+        .await
+        .unwrap();
+
+    // Rename in place changing only the casing (same file on Windows).
+    let new_path = dir.join("BLACK TORCH - S01E01.mkv");
+    fs::rename(&old_path, &new_path).unwrap();
+
+    let report = scan_library_folders(&storage).await.unwrap();
+
+    let rows = storage.file_index_by_anime(42).await.unwrap();
+    assert_eq!(rows.len(), 1, "the renamed file must not appear as a duplicate");
+    assert_eq!(
+        rows[0].file_path,
+        new_path.to_string_lossy(),
+        "the row should follow the on-disk casing"
+    );
+    assert_eq!(rows[0].mapping_source, MappingSource::Manual, "the mapping survives the rename");
+    assert_eq!(report.removed, 0, "nothing was deleted from disk");
+
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[tokio::test]
 async fn scan_prunes_files_deleted_from_disk() {
     let storage = Tests::new_in_memory().await;
     let dir = unique_temp_dir("prune");
