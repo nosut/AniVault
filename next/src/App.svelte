@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { drainEngineEvents, type EngineEvent, type SeasonAnimeEntry, type WatchHistoryEntry } from './lib/api';
+  import { drainEngineEvents, checkForUpdate, openEpisodeFile, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry } from './lib/api';
+  import { dismissUpdate, loadDismissedUpdate, shouldShowUpdate } from './lib/updateUi';
   import NowPlaying from './lib/NowPlaying.svelte';
   import DashboardView from './lib/DashboardView.svelte';
   import LibraryView from './lib/LibraryView.svelte';
@@ -144,11 +145,25 @@
     }
   }
 
+  let update: UpdateInfo | null = null;
+  let updateDismissed = loadDismissedUpdate();
+
+  function openUpdate() {
+    if (update) openEpisodeFile(update.url);
+  }
+  function hideUpdate() {
+    if (!update) return;
+    dismissUpdate(update.latest);
+    updateDismissed = update.latest;
+  }
+
   onMount(() => {
     eventIntervalId = setInterval(pollEvents, 3000);
     railMediaQuery = window.matchMedia('(min-width: 769px)');
     updateIsDesktopRail();
     railMediaQuery.addEventListener('change', updateIsDesktopRail);
+    // Best-effort; offline or rate-limited just means no banner.
+    checkForUpdate().then((u) => { update = u; }).catch(() => {});
   });
 
   onDestroy(() => {
@@ -196,6 +211,13 @@
   </aside>
 
   <section class="content">
+    {#if update && shouldShowUpdate(update, updateDismissed)}
+      <div class="update-banner" role="status">
+        <span>AniVault {update.latest} is available</span>
+        <button class="update-link" on:click={openUpdate}>View release</button>
+        <button class="update-dismiss" aria-label="Dismiss update notice" on:click={hideUpdate}>×</button>
+      </div>
+    {/if}
     {#if currentView === 'dashboard'}
       <DashboardView
         events={latestEvents}
@@ -401,6 +423,41 @@
     overflow-x: hidden;
     max-width: 100%;
   }
+
+  .update-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0.9rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
+    border-radius: 10px;
+    background: rgba(var(--color-accent-rgb), 0.1);
+    font-size: 0.85rem;
+    color: var(--color-text);
+  }
+
+  .update-link {
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
+    background: rgba(var(--color-accent-rgb), 0.18);
+    color: var(--color-text);
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .update-link:hover { background: rgba(var(--color-accent-rgb), 0.3); }
+
+  .update-dismiss {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 0 0.3rem;
+  }
+  .update-dismiss:hover { color: var(--color-text); }
 
   @media (max-width: 768px) {
     .shell {

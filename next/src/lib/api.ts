@@ -551,6 +551,17 @@ export interface ContinueWatchingEntry {
   last_watched_at: number;
 }
 
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+  url: string;
+  update_available: boolean;
+}
+
+export function checkForUpdate(invokeFn: InvokeFn = tauriInvoke): Promise<UpdateInfo> {
+  return invokeFn<UpdateInfo>('check_for_update');
+}
+
 export interface ReadyToWatchEntry {
   anime_id: number;
   title: string;

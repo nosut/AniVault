@@ -1692,6 +1692,65 @@ pub async fn continue_watching_inner(
     state.storage.continue_watching(10).await
 }
 
+// ── Update check ─────────────────────────────────────────────────────────────
+
+/// Numeric semver-style comparison of the running version against a release
+/// tag (leading `v` optional). Malformed tags are never "newer".
+fn is_newer_version(current: &str, latest_tag: &str) -> bool {
+    fn parse(v: &str) -> Option<Vec<i64>> {
+        let v = v.trim().trim_start_matches('v');
+        if v.is_empty() {
+            return None;
+        }
+        v.split('.').map(|p| p.parse::<i64>().ok()).collect()
+    }
+    match (parse(current), parse(latest_tag)) {
+        (Some(cur), Some(latest)) => latest > cur,
+        _ => false,
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UpdateInfo {
+    pub current: String,
+    pub latest: String,
+    pub url: String,
+    pub update_available: bool,
+}
+
+pub async fn check_for_update_inner() -> anyhow::Result<UpdateInfo> {
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    let raw: serde_json::Value = client
+        .get("https://api.github.com/repos/nosut/AniVault/releases/latest")
+        // GitHub's API rejects requests without a User-Agent.
+        .header("User-Agent", "AniVault")
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let latest = raw
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let url = raw
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("https://github.com/nosut/AniVault/releases")
+        .to_string();
+    let update_available = is_newer_version(&current, &latest);
+    Ok(UpdateInfo { current, latest, url, update_available })
+}
+
+#[tauri::command]
+pub async fn check_for_update() -> Result<UpdateInfo, String> {
+    check_for_update_inner().await.map_err(command_error)
+}
+
 // ── Ready to watch ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -2840,6 +2899,20 @@ mod tests {
 
         let ids: Vec<i64> = ready.iter().map(|r| r.anime_id).collect();
         assert_eq!(ids, vec![2, 1]);
+    }
+
+    #[test]
+    fn newer_version_compares_numerically_and_tolerates_junk() {
+        assert!(is_newer_version("1.0.7", "v1.0.8"));
+        assert!(is_newer_version("1.0.7", "1.0.8"), "leading v is optional");
+        assert!(is_newer_version("1.0.9", "v1.0.10"), "numeric, not lexicographic");
+        assert!(is_newer_version("1.0.7", "v2.0.0"));
+        assert!(is_newer_version("1.0.7", "v1.1.0"));
+
+        assert!(!is_newer_version("1.0.7", "v1.0.7"));
+        assert!(!is_newer_version("1.1.0", "v1.0.9"));
+        assert!(!is_newer_version("1.0.7", "not-a-version"));
+        assert!(!is_newer_version("1.0.7", ""));
     }
 
     #[test]

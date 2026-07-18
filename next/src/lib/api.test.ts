@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   backupDatabase,
+  checkForUpdate,
   confirmIdentification,
   connectSonarr,
   deepMatchViaAnilist,
@@ -62,6 +63,13 @@ describe('api wrappers', () => {
     expect(invoke).toHaveBeenCalledWith('get_future_anime', { genre: 'Action' });
     await getFutureAnime(undefined, invoke);
     expect(invoke).toHaveBeenLastCalledWith('get_future_anime', { genre: null });
+  });
+
+  it('checks for updates through invoke', async () => {
+    const info = { current: '1.0.7', latest: 'v1.0.8', url: 'https://example.com/rel', update_available: true };
+    const invoke = vi.fn().mockResolvedValue(info);
+    await expect(checkForUpdate(invoke)).resolves.toEqual(info);
+    expect(invoke).toHaveBeenCalledWith('check_for_update');
   });
 
   it('gets ready-to-watch entries through invoke', async () => {

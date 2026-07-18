@@ -214,6 +214,7 @@ pub fn run() {
             commands::queue_anilist_sync,
             commands::get_statistics,
             commands::get_engine_status,
+            commands::check_for_update,
             commands::get_episode_files,
             commands::get_future_anime,
             commands::get_ready_to_watch,
