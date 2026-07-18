@@ -79,4 +79,29 @@ describe('CalendarView month paging', () => {
 
     await unmount(app);
   });
+
+  it('jumps back to the current month via the Today button', async () => {
+    const app = mount(CalendarView, { target: document.getElementById('app')! });
+    await settle();
+
+    const next = document.querySelector<HTMLButtonElement>('button[aria-label="Next month"]')!;
+    next.click();
+    flushSync();
+    next.click();
+    flushSync();
+    await tick();
+    expect(headerText()).toBe('September 2026');
+
+    const today = document.querySelector<HTMLButtonElement>('button[aria-label="Go to current month"]')!;
+    expect(today).not.toBeNull();
+    today.click();
+    flushSync();
+    await tick();
+
+    const now = new Date();
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    expect(headerText()).toBe(`${monthNames[now.getMonth()]} ${now.getFullYear()}`);
+
+    await unmount(app);
+  });
 });

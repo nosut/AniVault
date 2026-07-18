@@ -48,6 +48,8 @@
 
   function prevMonth() { viewDate = new Date(year, month - 1, 1); }
   function nextMonth() { viewDate = new Date(year, month + 1, 1); }
+  function goToday() { viewDate = new Date(); }
+  $: viewingCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
 
   // Get entries for a specific day of the viewed month. The viewed month and
   // entry list come in as arguments (not closure reads) so the template's
@@ -161,6 +163,9 @@
       <button on:click={prevMonth} aria-label="Previous month"><ChevronLeft size={16} /></button>
       <h2>{monthNames[month]} {year}</h2>
       <button on:click={nextMonth} aria-label="Next month"><ChevronRight size={16} /></button>
+      {#if !viewingCurrentMonth}
+        <button class="today-btn" on:click={goToday} aria-label="Go to current month">Today</button>
+      {/if}
     {:else}
       <h2>Agenda</h2>
     {/if}
@@ -286,6 +291,7 @@
   .cal-nav button { display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(var(--color-accent-rgb),0.2); border-radius: 999px; padding: 0.35rem 0.65rem; background: transparent; color: var(--color-muted); cursor: pointer; }
   .cal-nav button:hover { background: rgba(var(--color-accent-rgb),0.1); color: var(--color-text); }
   .cal-subtitle { color: var(--color-muted); font-size: 0.85rem; }
+  .today-btn { font-size: 0.78rem; padding: 0.35rem 0.8rem; }
 
   .view-toggle { margin-left: auto; display: inline-flex; border: 1px solid rgba(var(--color-accent-rgb),0.2); border-radius: 999px; overflow: hidden; }
   .view-toggle button { border: none; border-radius: 0; padding: 0.35rem 0.9rem; background: transparent; color: var(--color-muted); font-size: 0.8rem; }
