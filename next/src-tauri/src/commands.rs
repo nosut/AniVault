@@ -1935,7 +1935,7 @@ pub async fn get_collection_inner(state: &EngineState) -> anyhow::Result<Vec<Col
     // search_library("", None, …) returns every listed anime plus any anime with
     // non-ignored files (see its WHERE clause), so it is a superset of the
     // collection; collection_entry drops the ones without files.
-    let library = state.storage.search_library("", None, 5000, 0).await?;
+    let library = state.storage.search_library("", None, i64::MAX, 0).await?;
     let mut out = Vec::new();
     for row in &library {
         let files = state.storage.file_index_by_anime(row.anime_id).await?;
