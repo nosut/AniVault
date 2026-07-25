@@ -39,6 +39,9 @@
   let trackingSaveState: 'idle' | 'saving' | 'saved' = 'idle';
   let trackingSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
+  let upNextToast = true;
+  let upNextNotify = true;
+
   let engineStatus: EngineStatus | null = null;
   let engineLoading = false;
   let engineError: string | null = null;
@@ -206,6 +209,25 @@
       trackingError = e instanceof Error ? e.message : String(e);
       trackingEnabled = !next;
     }
+  }
+
+  async function loadUpNext() {
+    try {
+      upNextToast = (await getSetting<boolean>('up_next_toast_enabled')) ?? true;
+      upNextNotify = (await getSetting<boolean>('up_next_notification_enabled')) ?? true;
+    } catch { /* defaults stand */ }
+  }
+
+  async function toggleUpNextToast() {
+    upNextToast = !upNextToast;
+    try { await setSetting('up_next_toast_enabled', upNextToast); }
+    catch { upNextToast = !upNextToast; }
+  }
+
+  async function toggleUpNextNotify() {
+    upNextNotify = !upNextNotify;
+    try { await setSetting('up_next_notification_enabled', upNextNotify); }
+    catch { upNextNotify = !upNextNotify; }
   }
 
   async function loadEngineStatus() {
@@ -381,6 +403,7 @@
   onMount(() => {
     loadStartup();
     loadTracking();
+    loadUpNext();
     loadLibraryFolders();
     loadEngineStatus();
     loadSonarrStatus();
@@ -504,6 +527,19 @@
               </button>
             </div>
             <p class="hint">Automatically detect and record playback progress.</p>
+
+            <div class="toggle-row">
+              <span class="label">Show an in-app "Up Next" prompt when the next episode is ready</span>
+              <button type="button" role="switch" aria-checked={upNextToast} class="switch" on:click={toggleUpNextToast}>
+                <span class="switch-thumb" />
+              </button>
+            </div>
+            <div class="toggle-row">
+              <span class="label">Also send a Windows notification for "Up Next"</span>
+              <button type="button" role="switch" aria-checked={upNextNotify} class="switch" on:click={toggleUpNextNotify}>
+                <span class="switch-thumb" />
+              </button>
+            </div>
           {/if}
         </section>
       </div>
