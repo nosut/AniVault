@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
+  import { formatBytes } from './fileSize';
   import { onDestroy } from 'svelte';
   import SonarrRemap from './SonarrRemap.svelte';
   import { mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
@@ -22,6 +23,7 @@
 
   let episodeFiles: FileIndexEntry[] = [];
   let episodeFilesLoading = false;
+  let diskSizeBytes: number | null = null;
   let rescanning = false;
 
   let fileScanReport: LibraryScanReport | null = null;
@@ -202,6 +204,7 @@
     fileActionError = null;
     fileActionMessage = null;
     repairConfirming = false;
+    diskSizeBytes = null;
     try {
       const d = await fetchAnimeDetail(requestedId);
       if (requestedId !== animeId) return; // a newer anime is now showing
@@ -244,6 +247,7 @@
     } finally {
       if (requestedId === animeId) episodeFilesLoading = false;
     }
+    getSeriesDiskSize(requestedId).then((b) => { if (requestedId === animeId) diskSizeBytes = b; }).catch(() => {});
   }
 
   async function loadRelations() {
@@ -572,6 +576,9 @@
           {/if}
           {#if titles.synonyms && titles.synonyms.length > 0}
             <p class="alt-title">Also known as: {titles.synonyms.filter(s => s !== titles.romaji).join(', ')}</p>
+          {/if}
+          {#if diskSizeBytes !== null && diskSizeBytes > 0}
+            <span class="disk-size" title="Total size of downloaded files on disk">{formatBytes(diskSizeBytes)} on disk</span>
           {/if}
         </div>
 
@@ -1052,6 +1059,14 @@
     opacity: 0.7;
   }
   .anilist-link:hover { opacity: 1; }
+
+  .disk-size {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+    margin-top: 0.15rem;
+  }
 
   .synopsis {
     margin: 0;
