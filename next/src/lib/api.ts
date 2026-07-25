@@ -747,6 +747,10 @@ export function getEpisodeFiles(animeId: number, invokeFn: InvokeFn = tauriInvok
   return invokeFn<FileIndexEntry[]>('get_episode_files', { animeId });
 }
 
+export function getSeriesDiskSize(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('get_series_disk_size', { animeId });
+}
+
 export function repairAnimeFileMappings(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<FileMappingRepairReport> {
   return invokeFn<FileMappingRepairReport>('repair_anime_file_mappings', { animeId });
 }

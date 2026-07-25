@@ -19,6 +19,7 @@ import {
   getLibraryIds,
   getLibraryStats,
   getReadyToWatch,
+  getSeriesDiskSize,
   getSessionState,
   getSetting,
   getSonarrAvailability,
@@ -472,5 +473,12 @@ describe('api wrappers', () => {
     const res = await getCollection(fake);
     expect(fake).toHaveBeenCalledWith('get_collection');
     expect(res[0]!.title).toBe('Frieren');
+  });
+
+  it('getSeriesDiskSize passes animeId and returns bytes', async () => {
+    const fake = vi.fn().mockResolvedValue(3500);
+    const res = await getSeriesDiskSize(42, fake);
+    expect(fake).toHaveBeenCalledWith('get_series_disk_size', { animeId: 42 });
+    expect(res).toBe(3500);
   });
 });
