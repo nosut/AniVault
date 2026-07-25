@@ -269,6 +269,8 @@ pub fn run() {
             commands::set_launch_on_startup,
             commands::get_start_in_tray,
             commands::set_start_in_tray,
+            commands::get_up_next,
+            commands::notify_up_next,
             commands::set_library_folders,
             commands::set_setting,
             commands::start_tracking,

@@ -472,6 +472,33 @@ impl Storage {
         }))
     }
 
+    /// Minimal metadata for the Up Next prompt: display title (English→romaji
+    /// fallback), poster, and watched-episode count. `None` if the anime row is
+    /// absent.
+    pub async fn up_next_meta(
+        &self,
+        anime_id: i64,
+    ) -> anyhow::Result<Option<(String, Option<String>, i32)>> {
+        let row = sqlx::query(
+            "SELECT COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), \
+                    json_extract(a.titles_json, '$.romaji'), 'Unknown') as title, \
+                    a.image_url as image_url, \
+                    COALESCE(le.watched_episodes, 0) as watched_episodes \
+             FROM anime a LEFT JOIN list_entry le ON a.id = le.anime_id \
+             WHERE a.id = ?1",
+        )
+        .bind(anime_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| {
+            (
+                r.get::<String, _>("title"),
+                r.get::<Option<String>, _>("image_url"),
+                r.get::<i32, _>("watched_episodes"),
+            )
+        }))
+    }
+
     pub async fn list_all_watch_history(
         &self,
         limit: i64,

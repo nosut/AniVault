@@ -90,6 +90,15 @@ pub struct SonarrAvailabilityResponse {
     pub sonarr_status: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UpNext {
+    pub anime_id: i64,
+    pub title: String,
+    pub image_url: Option<String>,
+    pub episode: i32,
+    pub file_path: String,
+}
+
 fn command_error(error: anyhow::Error) -> String {
     error.to_string()
 }
@@ -2981,6 +2990,68 @@ pub async fn set_start_in_tray(
         .map_err(command_error)
 }
 
+/// First downloaded, non-ignored episode strictly greater than `watched`.
+pub fn up_next_from(
+    anime_id: i64,
+    title: String,
+    image_url: Option<String>,
+    watched: i32,
+    files: &[FileIndexRow],
+) -> Option<UpNext> {
+    let mut cands: Vec<(i32, &str)> = files
+        .iter()
+        .filter(|f| !f.ignored)
+        .filter_map(|f| f.episode.map(|e| (e, f.file_path.as_str())))
+        .collect();
+    cands.sort_by_key(|(e, _)| *e);
+    cands
+        .into_iter()
+        .find(|(e, _)| *e > watched)
+        .map(|(episode, path)| UpNext {
+            anime_id,
+            title,
+            image_url,
+            episode,
+            file_path: path.to_string(),
+        })
+}
+
+pub async fn get_up_next_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<Option<UpNext>> {
+    let Some((title, image_url, watched)) = state.storage.up_next_meta(anime_id).await? else {
+        return Ok(None);
+    };
+    let files = state.storage.file_index_by_anime(anime_id).await?;
+    Ok(up_next_from(anime_id, title, image_url, watched, &files))
+}
+
+#[tauri::command]
+pub async fn get_up_next(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Option<UpNext>, String> {
+    get_up_next_inner(&state, anime_id).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn notify_up_next(
+    title: String,
+    episode: i32,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    if let Some(ref handle) = state.app_handle {
+        let _ = handle
+            .notification()
+            .builder()
+            .title("Up Next")
+            .body(format!("{title} — Episode {episode} is ready to play"))
+            .show();
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3186,5 +3257,24 @@ mod tests {
         ];
         assert_eq!(sum_file_sizes(&paths), 3500);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn up_next_picks_first_downloaded_episode_after_watched() {
+        let files = vec![
+            file_row(1, Some(11), 10, false),
+            file_row(1, Some(12), 20, false),
+            file_row(1, Some(13), 30, false),
+            file_row(1, Some(14), 40, true), // ignored — skip
+        ];
+        let un = up_next_from(1, "Show".into(), None, 12, &files).expect("has next");
+        assert_eq!(un.episode, 13);
+        assert!(un.file_path.contains("e13"));
+    }
+
+    #[test]
+    fn up_next_none_when_no_unwatched_file() {
+        let files = vec![file_row(1, Some(1), 10, false), file_row(1, Some(2), 20, false)];
+        assert!(up_next_from(1, "Show".into(), None, 5, &files).is_none());
     }
 }
