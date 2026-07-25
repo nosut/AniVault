@@ -26,6 +26,7 @@ import {
   getSonarrStatus,
   getSyncStatus,
   getTrackingStatus,
+  getUpNext,
   getWatchHistory,
   identifyFile,
   importAniListLibrary,
@@ -35,6 +36,7 @@ import {
   listRecentHistory,
   mapFolderToAnime,
   markEpisodeWatched,
+  notifyUpNext,
   previewMigration,
   remapSonarr,
   repairAnimeFileMappings,
@@ -480,5 +482,18 @@ describe('api wrappers', () => {
     const res = await getSeriesDiskSize(42, fake);
     expect(fake).toHaveBeenCalledWith('get_series_disk_size', { animeId: 42 });
     expect(res).toBe(3500);
+  });
+
+  it('getUpNext passes animeId and returns the prompt or null', async () => {
+    const fake = vi.fn().mockResolvedValue({ anime_id: 1, title: 'Frieren', image_url: null, episode: 13, file_path: 'C:/x/e13.mkv' });
+    const res = await getUpNext(1, fake);
+    expect(fake).toHaveBeenCalledWith('get_up_next', { animeId: 1 });
+    expect(res?.episode).toBe(13);
+  });
+
+  it('notifyUpNext forwards title and episode', async () => {
+    const fake = vi.fn().mockResolvedValue(undefined);
+    await notifyUpNext('Frieren', 13, fake);
+    expect(fake).toHaveBeenCalledWith('notify_up_next', { title: 'Frieren', episode: 13 });
   });
 });

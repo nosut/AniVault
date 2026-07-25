@@ -770,3 +770,19 @@ export function pickFolder(invokeFn: InvokeFn = tauriInvoke): Promise<string | n
 export function mapFolderToAnime(folder: string, animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<number> {
   return invokeFn<number>('map_folder_to_anime', { folder, animeId });
 }
+
+export interface UpNext {
+  anime_id: number;
+  title: string;
+  image_url: string | null;
+  episode: number;
+  file_path: string;
+}
+
+export function getUpNext(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<UpNext | null> {
+  return invokeFn<UpNext | null>('get_up_next', { animeId });
+}
+
+export function notifyUpNext(title: string, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('notify_up_next', { title, episode });
+}
