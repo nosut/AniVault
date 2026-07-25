@@ -225,6 +225,7 @@ pub fn run() {
             commands::get_library_folders,
             commands::get_library_ids,
             commands::get_library_stats,
+            commands::get_series_disk_size,
             commands::get_session_state,
             commands::get_sonarr_availability,
             commands::get_sonarr_status,

@@ -906,6 +906,34 @@ pub async fn open_episode_file_inner(path: String) -> anyhow::Result<()> {
     library_scanner::open_file(&path)
 }
 
+/// Sum the on-disk byte size of the given paths. Missing/unreadable files
+/// contribute 0 so a moved file never breaks the total.
+pub fn sum_file_sizes(paths: &[String]) -> u64 {
+    paths
+        .iter()
+        .filter_map(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .sum()
+}
+
+#[tauri::command]
+pub async fn get_series_disk_size(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<u64, String> {
+    let files = state
+        .storage
+        .file_index_by_anime(anime_id)
+        .await
+        .map_err(command_error)?;
+    let paths: Vec<String> = files
+        .into_iter()
+        .filter(|f| !f.ignored)
+        .map(|f| f.file_path)
+        .collect();
+    Ok(sum_file_sizes(&paths))
+}
+
 // ── Sonarr command inner functions ──────────────────────────────────────────
 
 async fn load_sonarr_connection(state: &EngineState) -> Option<(String, String)> {
@@ -3139,5 +3167,24 @@ mod tests {
         assert!(!entries[1].has_file, "anime 10 ep 4 has no file");
         assert!(!entries[2].has_file, "ep 3 of a different anime has no file");
         assert!(!entries[3].has_file, "entry without an episode number");
+    }
+
+    #[test]
+    fn sum_file_sizes_totals_existing_files_and_ignores_missing() {
+        let dir = std::env::temp_dir().join(format!("av_size_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.bin");
+        let b = dir.join("b.bin");
+        std::fs::write(&a, vec![0u8; 1000]).unwrap();
+        std::fs::write(&b, vec![0u8; 2500]).unwrap();
+        let missing = dir.join("gone.bin").to_string_lossy().to_string();
+
+        let paths = vec![
+            a.to_string_lossy().to_string(),
+            b.to_string_lossy().to_string(),
+            missing,
+        ];
+        assert_eq!(sum_file_sizes(&paths), 3500);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
