@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { drainEngineEvents, checkForUpdate, openEpisodeFile, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry } from './lib/api';
+  import { drainEngineEvents, checkForUpdate, openEpisodeFile, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
   import { dismissUpdate, loadDismissedUpdate, shouldShowUpdate } from './lib/updateUi';
+  import { latestProgressAdvance, samePrompt, type PromptKey } from './lib/upNext';
   import NowPlaying from './lib/NowPlaying.svelte';
   import DashboardView from './lib/DashboardView.svelte';
   import LibraryView from './lib/LibraryView.svelte';
@@ -98,9 +99,40 @@
     try {
       const events = await drainEngineEvents();
       latestEvents = events;
+      void maybePromptUpNext(events);
     } catch {
       // Keep polling alive; individual errors are surfaced by consumers if needed.
     }
+  }
+
+  let upNextPrompt: UpNext | null = null;
+  let lastPromptKey: PromptKey | null = null;
+
+  async function maybePromptUpNext(events: EngineEvent[]) {
+    try {
+      const adv = latestProgressAdvance(events);
+      if (!adv) return;
+      const toastOn = (await getSetting<boolean>('up_next_toast_enabled')) ?? true;
+      const notifyOn = (await getSetting<boolean>('up_next_notification_enabled')) ?? true;
+      if (!toastOn && !notifyOn) return;
+      const next = await getUpNext(adv.anime_id);
+      if (!next) return;
+      const key: PromptKey = { anime_id: next.anime_id, episode: next.episode };
+      if (samePrompt(key, lastPromptKey)) return; // already surfaced this one
+      lastPromptKey = key;
+      if (toastOn) upNextPrompt = next;
+      if (notifyOn) void notifyUpNext(next.title, next.episode);
+    } catch {
+      // Best-effort; a failed lookup just means no prompt this cycle.
+    }
+  }
+
+  function playUpNext() {
+    if (upNextPrompt) openEpisodeFile(upNextPrompt.file_path);
+    upNextPrompt = null;
+  }
+  function dismissUpNext() {
+    upNextPrompt = null;
   }
 
   function handleLibrarySelect(event: CustomEvent<{ anime_id: number }>) {
@@ -254,6 +286,23 @@
       <SettingsView events={latestEvents} />
     {/if}
   </section>
+
+  {#if upNextPrompt}
+    <div class="up-next-toast" role="dialog" aria-label="Up next">
+      {#if upNextPrompt.image_url}
+        <img class="un-thumb" src={upNextPrompt.image_url} alt="" />
+      {/if}
+      <div class="un-body">
+        <span class="un-eyebrow">Up Next</span>
+        <span class="un-title">{upNextPrompt.title}</span>
+        <span class="un-ep">Episode {upNextPrompt.episode}</span>
+      </div>
+      <div class="un-actions">
+        <button class="un-play" on:click={playUpNext}>▶ Play</button>
+        <button class="un-dismiss" aria-label="Dismiss" on:click={dismissUpNext}>×</button>
+      </div>
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -470,6 +519,24 @@
     padding: 0 0.3rem;
   }
   .update-dismiss:hover { color: var(--color-text); }
+
+  .up-next-toast {
+    position: fixed; right: 1.25rem; bottom: 1.25rem; z-index: 50;
+    display: flex; align-items: center; gap: 0.75rem; max-width: 22rem;
+    padding: 0.7rem 0.9rem; border-radius: 12px;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
+    background: rgba(16, 21, 32, 0.98); box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+  }
+  .un-thumb { width: 40px; height: 56px; object-fit: cover; border-radius: 6px; flex: 0 0 auto; }
+  .un-body { display: flex; flex-direction: column; min-width: 0; }
+  .un-eyebrow { font-size: 0.66rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-accent); }
+  .un-title { font-size: 0.85rem; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .un-ep { font-size: 0.72rem; color: var(--color-muted); }
+  .un-actions { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+  .un-play { border: 1px solid rgba(var(--color-accent-rgb), 0.35); border-radius: 999px; padding: 0.35rem 0.75rem; background: rgba(var(--color-accent-rgb), 0.18); color: var(--color-text); font-size: 0.78rem; cursor: pointer; white-space: nowrap; }
+  .un-play:hover { background: rgba(var(--color-accent-rgb), 0.3); }
+  .un-dismiss { border: none; background: transparent; color: var(--color-muted); font-size: 1.1rem; cursor: pointer; padding: 0 0.25rem; }
+  .un-dismiss:hover { color: var(--color-text); }
 
   @media (max-width: 768px) {
     .shell {
