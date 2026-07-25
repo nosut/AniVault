@@ -580,6 +580,24 @@ export function getReadyToWatch(invokeFn: InvokeFn = tauriInvoke): Promise<Ready
   return invokeFn<ReadyToWatchEntry[]>('get_ready_to_watch');
 }
 
+export interface CollectionEntry {
+  anime_id: number;
+  title: string;
+  image_url: string | null;
+  status: string;
+  watched_episodes: number;
+  episode_count: number | null;
+  downloaded_count: number;
+  max_downloaded_episode: number;
+  next_unwatched_episode: number | null;
+  new_count: number;
+  last_indexed_at: number;
+}
+
+export function getCollection(invokeFn: InvokeFn = tauriInvoke): Promise<CollectionEntry[]> {
+  return invokeFn<CollectionEntry[]>('get_collection');
+}
+
 export function getContinueWatching(invokeFn: InvokeFn = tauriInvoke): Promise<ContinueWatchingEntry[]> {
   return invokeFn<ContinueWatchingEntry[]>('continue_watching');
 }

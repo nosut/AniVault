@@ -12,6 +12,7 @@ import {
   drainEngineEvents,
   exportDatabase,
   fetchAnimeDetail,
+  getCollection,
   getEngineStatus,
   getFutureAnime,
   getLaunchOnStartup,
@@ -460,5 +461,16 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(1);
     await expect(setKnownFileMappings(mappings, invoke)).resolves.toBe(1);
     expect(invoke).toHaveBeenCalledWith('set_known_file_mappings', { mappings });
+  });
+
+  it('getCollection calls get_collection and returns entries', async () => {
+    const fake = vi.fn().mockResolvedValue([
+      { anime_id: 1, title: 'Frieren', image_url: null, status: 'watching', watched_episodes: 2,
+        episode_count: 4, downloaded_count: 4, max_downloaded_episode: 4,
+        next_unwatched_episode: 3, new_count: 2, last_indexed_at: 400 },
+    ]);
+    const res = await getCollection(fake);
+    expect(fake).toHaveBeenCalledWith('get_collection');
+    expect(res[0]!.title).toBe('Frieren');
   });
 });
