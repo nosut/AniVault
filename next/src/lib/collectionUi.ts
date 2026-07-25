@@ -1,7 +1,6 @@
 import type { CollectionEntry } from './api';
 
 export type CollectionFilter = 'all' | 'new' | 'complete' | 'incomplete';
-export type CollectionSort = 'recent' | 'title' | 'progress';
 
 /** Every episode of a known-length series is on disk. */
 export function isComplete(e: CollectionEntry): boolean {
@@ -25,13 +24,4 @@ export function filterCollection(
   });
 }
 
-export function sortCollection(entries: CollectionEntry[], sort: CollectionSort): CollectionEntry[] {
-  const list = [...entries];
-  switch (sort) {
-    case 'title': list.sort((a, b) => a.title.localeCompare(b.title)); break;
-    case 'progress': list.sort((a, b) => b.watched_episodes - a.watched_episodes); break;
-    case 'recent':
-    default: list.sort((a, b) => b.last_indexed_at - a.last_indexed_at); break;
-  }
-  return list;
-}
+

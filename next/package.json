@@ -1,6 +1,6 @@
 {
   "name": "anivault",
-  "version": "1.0.9",
+  "version": "1.0.11",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,8 +10,8 @@
     "check": "tsc --noEmit",
     "check:svelte": "svelte-check --threshold error",
     "test": "vitest run",
-    "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1",
-    "bundle": "npm run build && pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/bundle.ps1"
+    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify.ps1",
+    "bundle": "npm run build && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/bundle.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

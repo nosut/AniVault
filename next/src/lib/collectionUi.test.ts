@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isComplete, filterCollection, sortCollection } from './collectionUi';
+import { isComplete, filterCollection } from './collectionUi';
 import type { CollectionEntry } from './api';
 
 function e(p: Partial<CollectionEntry>): CollectionEntry {
@@ -35,23 +35,4 @@ describe('filterCollection', () => {
   });
 });
 
-describe('sortCollection', () => {
-  const list = [
-    e({ anime_id: 1, title: 'Bravo', last_indexed_at: 100, watched_episodes: 5 }),
-    e({ anime_id: 2, title: 'Alpha', last_indexed_at: 300, watched_episodes: 1 }),
-  ];
-  it('recent sorts by last_indexed_at desc', () => {
-    expect(sortCollection(list, 'recent').map((x) => x.anime_id)).toEqual([2, 1]);
-  });
-  it('title sorts alphabetically', () => {
-    expect(sortCollection(list, 'title').map((x) => x.anime_id)).toEqual([2, 1]);
-  });
-  it('progress sorts by watched desc', () => {
-    expect(sortCollection(list, 'progress').map((x) => x.anime_id)).toEqual([1, 2]);
-  });
-  it('does not mutate its input array', () => {
-    const before = [...list];
-    sortCollection(list, 'title');
-    expect(list).toEqual(before);
-  });
-});
+

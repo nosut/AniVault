@@ -417,7 +417,7 @@
 </script>
 
 <div class="settings-view">
-  <nav class="tab-bar" role="tablist" aria-label="Settings sections">
+  <div class="tab-bar" role="tablist" aria-label="Settings sections">
     {#each [{id: 'general', label: 'General'}, {id: 'tracking', label: 'Tracking'}, {id: 'library', label: 'Library'}, {id: 'files', label: 'Files'}, {id: 'anilist', label: 'AniList'}, {id: 'sonarr', label: 'Sonarr'}, {id: 'migration', label: 'Migration'}, {id: 'about', label: 'About'}] as tab}
       <button
         type="button"
@@ -432,7 +432,7 @@
         {tab.label}
       </button>
     {/each}
-  </nav>
+  </div>
 
   <div class="panels">
     {#if activeTab === 'general'}
@@ -461,10 +461,11 @@
                 type="button"
                 role="switch"
                 aria-checked={startupEnabled}
+                aria-label="Launch AniVault when Windows starts"
                 class="switch"
                 on:click={handleStartupToggle}
               >
-                <span class="switch-thumb" />
+                <span class="switch-thumb"></span>
               </button>
             </div>
             <div class="toggle-row">
@@ -473,10 +474,11 @@
                 type="button"
                 role="switch"
                 aria-checked={startInTray}
+                aria-label="Start minimized to the system tray"
                 class="switch"
                 on:click={handleStartInTrayToggle}
               >
-                <span class="switch-thumb" />
+                <span class="switch-thumb"></span>
               </button>
             </div>
             <p class="hint">When enabled, launching on Windows startup opens AniVault directly to the tray (no window). Open it any time from the tray icon.</p>
@@ -520,10 +522,11 @@
                 type="button"
                 role="switch"
                 aria-checked={trackingEnabled}
+                aria-label="Enable tracking"
                 class="switch"
                 on:click={handleToggle}
               >
-                <span class="switch-thumb" />
+                <span class="switch-thumb"></span>
               </button>
             </div>
             <p class="hint">Automatically detect and record playback progress.</p>
@@ -534,14 +537,14 @@
                independent of that status. -->
           <div class="toggle-row">
             <span class="label">Show an in-app "Up Next" prompt when the next episode is ready</span>
-            <button type="button" role="switch" aria-checked={upNextToast} class="switch" on:click={toggleUpNextToast}>
-              <span class="switch-thumb" />
+            <button type="button" role="switch" aria-checked={upNextToast} aria-label={'Show an in-app "Up Next" prompt when the next episode is ready'} class="switch" on:click={toggleUpNextToast}>
+              <span class="switch-thumb"></span>
             </button>
           </div>
           <div class="toggle-row">
             <span class="label">Also send a Windows notification for "Up Next"</span>
-            <button type="button" role="switch" aria-checked={upNextNotify} class="switch" on:click={toggleUpNextNotify}>
-              <span class="switch-thumb" />
+            <button type="button" role="switch" aria-checked={upNextNotify} aria-label={'Also send a Windows notification for "Up Next"'} class="switch" on:click={toggleUpNextNotify}>
+              <span class="switch-thumb"></span>
             </button>
           </div>
         </section>
@@ -862,8 +865,8 @@
           </div>
           <p class="hint">Import v1 data into AniVault. A backup is created automatically.</p>
           <div class="form-group">
-            <label class="form-label">Duplicate strategy</label>
-            <select class="form-input" bind:value={migrationStrategy}>
+            <label class="form-label" for="migration-strategy">Duplicate strategy</label>
+            <select id="migration-strategy" class="form-input" bind:value={migrationStrategy}>
               <option value="Skip">Skip existing</option>
               <option value="Merge">Merge (update metadata)</option>
             </select>
@@ -905,8 +908,8 @@
           {/if}
 
           <div class="form-group" style="margin-top: 1rem;">
-            <label class="form-label">Restore from backup path</label>
-            <input class="form-input" type="text" bind:value={migrationRestorePath} placeholder="Path to backup file" />
+            <label class="form-label" for="migration-restore">Restore from backup path</label>
+            <input id="migration-restore" class="form-input" type="text" bind:value={migrationRestorePath} placeholder="Path to backup file" />
           </div>
           <div class="form-actions">
             <button class="action-btn danger" on:click={handleRestore} disabled={migrationRestoring || !migrationRestorePath.trim()}>
@@ -943,8 +946,8 @@
           {/if}
 
           <div class="form-group" style="margin-top: 1rem;">
-            <label class="form-label">Import from JSON</label>
-            <textarea class="form-input" bind:value={migrationImportJson} placeholder="Paste exported JSON here" rows={3}></textarea>
+            <label class="form-label" for="migration-import">Import from JSON</label>
+            <textarea id="migration-import" class="form-input" bind:value={migrationImportJson} placeholder="Paste exported JSON here" rows={3}></textarea>
           </div>
           <div class="form-actions">
             <button class="action-btn" on:click={handleImport} disabled={migrationImporting || !migrationImportJson.trim()}>
@@ -1299,6 +1302,13 @@
     background: rgba(255, 255, 255, 0.06);
     color: var(--color-text);
     font-size: 0.9rem;
+  }
+
+  /* Solid dark popup background for the <select> variant — avoids
+     white-on-white option text against the system default. */
+  .form-input option {
+    background: #141820;
+    color: var(--color-text);
   }
 
   .form-input:focus {

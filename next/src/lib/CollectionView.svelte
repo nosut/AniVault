@@ -14,12 +14,10 @@
   } from './api';
   import {
     filterCollection,
-    sortCollection,
     isComplete,
     type CollectionFilter,
-    type CollectionSort,
   } from './collectionUi';
-  import { Play, FolderOpen, Info, Trash2, ChevronRight, ChevronLeft } from 'lucide-svelte';
+  import { Play, FolderOpen, Info, Trash2, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, LayoutGrid, List } from 'lucide-svelte';
 
   export let events: EngineEvent[] = [];
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
@@ -32,13 +30,34 @@
   let error = '';
   let query = loadPref('anivault-collection-query', '');
   let filter = loadPref('anivault-collection-filter', 'all') as CollectionFilter;
-  let sort = loadPref('anivault-collection-sort', 'recent') as CollectionSort;
+  let viewMode = loadPref('anivault-collection-viewmode', 'grid') as 'grid' | 'table';
+  let compact = loadPref('anivault-collection-compact', 'false') === 'true';
+  let sortKey = loadPref('anivault-collection-sortkey', 'recent') as 'recent' | 'title' | 'status' | 'progress';
+  let sortDir = loadPref('anivault-collection-sortdir', 'desc') as 'asc' | 'desc';
   let episodeFilesMap = new Map<number, FileIndexEntry[]>();
 
   $: persistPref('anivault-collection-query', query);
   $: persistPref('anivault-collection-filter', filter);
-  $: persistPref('anivault-collection-sort', sort);
-  $: visible = sortCollection(filterCollection(entries, filter, query), sort);
+  $: persistPref('anivault-collection-sortkey', sortKey);
+  $: persistPref('anivault-collection-sortdir', sortDir);
+  $: persistPref('anivault-collection-viewmode', viewMode);
+  $: persistPref('anivault-collection-compact', compact ? 'true' : 'false');
+  $: visible = (() => {
+    const list = filterCollection(entries, filter, query);
+    const dir = sortDir === 'desc' ? -1 : 1;
+    list.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'title': cmp = a.title.localeCompare(b.title); break;
+        case 'status': cmp = a.status.localeCompare(b.status); break;
+        case 'progress': cmp = a.watched_episodes - b.watched_episodes; break;
+        case 'recent':
+        default: cmp = a.last_indexed_at - b.last_indexed_at; break;
+      }
+      return cmp * dir;
+    });
+    return list;
+  })();
 
   const FILTERS: { value: CollectionFilter; label: string }[] = [
     { value: 'all', label: 'All' },
@@ -68,6 +87,30 @@
   function completeness(e: CollectionEntry): number {
     if (e.episode_count && e.episode_count > 0) return Math.min(100, (e.max_downloaded_episode / e.episode_count) * 100);
     return 100;
+  }
+
+  // Table-view helpers (mirror LibraryView's table columns).
+  function formatStatus(status: string): string {
+    return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+  function totalLabel(e: CollectionEntry): string | number {
+    return e.episode_count && e.episode_count > 0 ? e.episode_count : '?';
+  }
+  function watchPct(e: CollectionEntry): number {
+    const total = Math.max(e.episode_count ?? 0, e.watched_episodes);
+    return total > 0 ? Math.min(100, (e.watched_episodes / total) * 100) : 0;
+  }
+  function fullyWatched(e: CollectionEntry): boolean {
+    return e.watched_episodes > 0 && e.episode_count != null && e.watched_episodes >= e.episode_count;
+  }
+
+  function setSort(key: 'recent' | 'title' | 'status' | 'progress') {
+    if (sortKey === key) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortKey = key;
+      sortDir = 'asc';
+    }
   }
 
   function playNext(e: CollectionEntry) {
@@ -168,11 +211,18 @@
         bind:value={query}
         aria-label="Search collection"
       />
-      <select class="sort-select" bind:value={sort} aria-label="Sort collection">
-        <option value="recent">Recently added</option>
-        <option value="title">Title</option>
-        <option value="progress">Progress</option>
-      </select>
+      <button class="view-toggle" on:click={() => (viewMode = viewMode === 'table' ? 'grid' : 'table')} aria-label="Toggle view">
+        {#if viewMode === 'table'}
+          <LayoutGrid size={14} /> Grid
+        {:else}
+          <List size={14} /> Table
+        {/if}
+      </button>
+      {#if viewMode === 'table'}
+        <button class="view-toggle" on:click={() => (compact = !compact)} aria-pressed={compact} title="Toggle compact list density">
+          {compact ? '≣ Comfortable' : '≡ Compact'}
+        </button>
+      {/if}
     </div>
     <div class="status-tabs">
       {#each FILTERS as f}
@@ -199,7 +249,7 @@
     <div class="poster-grid">
       {#each Array.from({ length: 10 }) as _, i (i)}
         <div class="poster-card skeleton-card">
-          <div class="poster-thumb placeholder" />
+          <div class="poster-thumb placeholder"></div>
           <div class="poster-info">
             <div class="skeleton-line"></div>
             <div class="skeleton-line short"></div>
@@ -209,7 +259,7 @@
     </div>
   {:else if visible.length === 0}
     <p class="empty">No downloaded series yet.</p>
-  {:else}
+  {:else if viewMode === 'grid'}
     <div class="poster-grid">
       {#each visible as entry (entry.anime_id)}
         <div
@@ -224,7 +274,7 @@
           {#if entry.image_url}
             <img class="poster-thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
           {:else}
-            <div class="poster-thumb placeholder" />
+            <div class="poster-thumb placeholder"></div>
           {/if}
           {#if entry.new_count > 0}
             <span class="badge new-badge">{entry.new_count} new</span>
@@ -244,11 +294,131 @@
                 class="completeness-fill"
                 class:complete={isComplete(entry)}
                 style="width: {completeness(entry)}%"
-              />
+              ></div>
             </div>
           </div>
         </div>
       {/each}
+    </div>
+  {:else if viewMode === 'table'}
+    <div class="table-wrap">
+      <table class:compact>
+        <thead>
+          <tr>
+            <th class="col-thumb" scope="col"><span class="sr-only">Thumbnail</span></th>
+            <th
+              class="col-title"
+              scope="col"
+              aria-sort={sortKey === 'title'
+                ? sortDir === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
+            >
+              <button
+                type="button"
+                class="sort-btn"
+                aria-label="Sort by title"
+                on:click={() => setSort('title')}
+              >
+                Title
+                {#if sortKey === 'title'}
+                  <span aria-hidden="true" class="sort-arrow">
+                    {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                  </span>
+                {/if}
+              </button>
+            </th>
+            <th
+              class="col-status"
+              scope="col"
+              aria-sort={sortKey === 'status'
+                ? sortDir === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
+            >
+              <button
+                type="button"
+                class="sort-btn"
+                aria-label="Sort by status"
+                on:click={() => setSort('status')}
+              >
+                Status
+                {#if sortKey === 'status'}
+                  <span aria-hidden="true" class="sort-arrow">
+                    {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                  </span>
+                {/if}
+              </button>
+            </th>
+            <th
+              class="col-progress"
+              scope="col"
+              aria-sort={sortKey === 'progress'
+                ? sortDir === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
+            >
+              <button
+                type="button"
+                class="sort-btn"
+                aria-label="Sort by progress"
+                on:click={() => setSort('progress')}
+              >
+                Progress
+                {#if sortKey === 'progress'}
+                  <span aria-hidden="true" class="sort-arrow">
+                    {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                  </span>
+                {/if}
+              </button>
+            </th>
+            <th class="col-files" scope="col"><span class="sr-only">Files</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#if visible.length === 0}
+            <tr class="empty-row">
+              <td colspan="5"><p class="empty">No anime found.</p></td>
+            </tr>
+          {:else}
+            {#each visible as entry (entry.anime_id)}
+              <tr
+                class="data-row"
+                tabindex="0"
+                on:click={() => open(entry)}
+                on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && open(entry)}
+                on:contextmenu={(e) => openContextMenu(e, entry)}
+              >
+                <td>
+                  {#if entry.image_url}
+                    <img class="thumb" src={entry.image_url} alt="" width="24" height="24" loading="lazy" />
+                  {:else}
+                    <div class="thumb fallback" aria-hidden="true"></div>
+                  {/if}
+                </td>
+                <td class="title-cell" class:has-new={entry.new_count > 0}>{entry.title}</td>
+                <td><span class="badge">{formatStatus(entry.status)}</span></td>
+                <td class="num-cell progress-cell" class:completed={fullyWatched(entry)}>
+                  <div class="progress-wrap">
+                    <div class="progress-bar" style="width: {watchPct(entry)}%"></div>
+                    <div class="progress-inner">
+                      <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
+                    </div>
+                  </div>
+                </td>
+                <td class="col-files">
+                  {#if entry.next_episode_path}
+                    <button class="play-inline-btn" on:click|stopPropagation={() => playNext(entry)} title="Play next episode">&#9654;</button>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          {/if}
+        </tbody>
+      </table>
     </div>
   {/if}
 
@@ -331,15 +501,27 @@
     box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.25);
   }
 
-  .sort-select {
-    border-radius: var(--radius-card);
-    color: var(--color-text);
-    padding: 0.55rem 0.8rem;
-    font-family: var(--font-ui);
-    font-size: 0.85rem;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
+  .sort-btn {
+    all: unset;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     cursor: pointer;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    border-radius: 6px;
+    padding: 0.15rem 0.3rem;
+    margin: -0.15rem -0.3rem;
+  }
+  .sort-btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .sort-arrow {
+    display: inline-flex;
+    align-items: center;
   }
 
   .status-tabs {
@@ -457,6 +639,7 @@
     line-height: 1.3;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
@@ -661,5 +844,177 @@
       padding: 1rem 0 0.5rem;
       margin: -1rem 0 -0.25rem;
     }
+  }
+
+  /* ===== Table-view styles (ported from LibraryView) ===== */
+  .view-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
+    border-radius: 999px;
+    padding: 0.45rem 0.8rem;
+    background: rgba(var(--color-accent-rgb), 0.06);
+    color: var(--color-muted);
+    cursor: pointer;
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+  .view-toggle:hover {
+    background: rgba(var(--color-accent-rgb), 0.15);
+    color: var(--color-text);
+  }
+  .table-wrap {
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
+    border-radius: var(--radius-card);
+    background: rgba(255, 255, 255, 0.04);
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 640px;
+    font-size: 0.9rem;
+  }
+  thead th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    color: var(--color-muted);
+    font-weight: 600;
+    font-size: 0.78rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(var(--color-accent-rgb), 0.18);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 0.6rem 1rem;
+    vertical-align: middle;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  table.compact { font-size: 0.82rem; }
+  table.compact thead th { padding: 0.4rem 0.7rem; }
+  table.compact tbody td { padding: 0.12rem 0.7rem; }
+  table.compact .thumb,
+  table.compact .thumb.fallback { width: 18px; height: 18px; }
+  table.compact .badge { padding: 0.04rem 0.4rem; font-size: 0.66rem; }
+  table.compact .progress-wrap { height: 1.15rem; }
+  table.compact .progress-text { font-size: 0.72rem; min-width: 2.4rem; }
+  table.compact .play-inline-btn { padding: 0.05rem 0.35rem; }
+  .data-row {
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .data-row:hover,
+  .data-row:focus {
+    background: rgba(var(--color-accent-rgb), 0.08);
+  }
+  .data-row:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
+  }
+  .thumb {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    object-fit: cover;
+    display: block;
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .thumb.fallback {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .title-cell {
+    font-weight: 500;
+    color: var(--color-text);
+    max-width: 20rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .title-cell.has-new {
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+  .num-cell {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+  }
+  .progress-cell {
+    white-space: nowrap;
+  }
+  .progress-wrap {
+    position: relative;
+    width: 100%;
+    height: 1.55rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+  }
+  .progress-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: rgba(var(--color-accent-rgb), 0.25);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  .progress-cell.completed .progress-bar {
+    background: rgba(var(--color-success-rgb), 0.25);
+  }
+  .progress-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    height: 100%;
+    padding: 0 0.3rem;
+  }
+  .progress-text {
+    font-size: 0.8rem;
+    font-weight: 500;
+    min-width: 3rem;
+    text-align: center;
+  }
+  .col-thumb {
+    width: 2.2rem;
+  }
+  .col-files {
+    width: 2rem;
+    text-align: center;
+  }
+  .play-inline-btn {
+    border: none;
+    background: rgba(var(--color-accent-rgb), 0.15);
+    color: var(--color-accent);
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+  .play-inline-btn:hover {
+    background: rgba(var(--color-accent-rgb), 0.3);
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+  .empty-row td {
+    text-align: center;
+    padding: 2.5rem 1rem;
+  }
+  table .empty {
+    margin: 0;
   }
 </style>

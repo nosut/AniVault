@@ -223,7 +223,7 @@
   .poster-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
   .poster-img.placeholder { background: rgba(var(--color-accent-rgb),0.08); }
   .poster-info { padding: 0.5rem 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }
-  .poster-title { font-size: 0.82rem; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .poster-title { font-size: 0.82rem; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .poster-meta { display: flex; gap: 0.5rem; font-size: 0.75rem; align-items: center; }
   .poster-format { color: var(--color-muted); }
   .poster-score { font-weight: 600; }

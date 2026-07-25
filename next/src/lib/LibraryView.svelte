@@ -624,13 +624,13 @@
           {#if entry.image_url}
             <img class="poster-thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
           {:else}
-            <div class="poster-thumb placeholder" />
+            <div class="poster-thumb placeholder"></div>
           {/if}
           <div class="poster-info">
             <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
             <span class="badge">{formatStatus(entry.status)}</span>
             <div class="progress-wrap poster-progress">
-              <div class="progress-bar" style="width: {progressPct(entry)}%" />
+              <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
               <div class="progress-inner">
                 <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
                 <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
@@ -643,14 +643,17 @@
                   {@const ep = i + 1}
                   {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
                   {@const watched = ep <= entry.watched_episodes}
-                  <div
+                  <button
+                    type="button"
                     class="ep-segment"
                     class:downloaded={hasFile}
                     class:watched={watched}
+                    disabled={!hasFile}
                     title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
-                    on:click|stopPropagation={() => hasFile && playEpisode(entry.anime_id, ep)}
+                    aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
+                    on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
                     style="cursor: {hasFile ? 'pointer' : 'default'}"
-                  />
+                  ></button>
                 {/each}
                 {#if effectiveCount(entry) > 50}
                   <span class="ep-more">+{effectiveCount(entry) - 50}</span>
@@ -672,16 +675,19 @@
             <th class="col-thumb" scope="col">
               <span class="sr-only">Thumbnail</span>
             </th>
-            <th class="col-title" scope="col">
+            <th
+              class="col-title"
+              scope="col"
+              aria-sort={sortKey === 'title'
+                ? sortDir === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
+            >
               <button
                 type="button"
                 class="sort-btn"
                 aria-label="Sort by title"
-                aria-sort={sortKey === 'title'
-                  ? sortDir === 'asc'
-                    ? 'ascending'
-                    : 'descending'
-                  : 'none'}
                 on:click={() => setSort('title')}
               >
                 Title
@@ -692,16 +698,19 @@
                 {/if}
               </button>
             </th>
-            <th class="col-status" scope="col">
+            <th
+              class="col-status"
+              scope="col"
+              aria-sort={sortKey === 'status'
+                ? sortDir === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
+            >
               <button
                 type="button"
                 class="sort-btn"
                 aria-label="Sort by status"
-                aria-sort={sortKey === 'status'
-                  ? sortDir === 'asc'
-                    ? 'ascending'
-                    : 'descending'
-                  : 'none'}
                 on:click={() => setSort('status')}
               >
                 Status
@@ -713,12 +722,15 @@
               </button>
             </th>
             {#if showSeason}
-              <th class="col-season" scope="col">
+              <th
+                class="col-season"
+                scope="col"
+                aria-sort={sortKey === 'season' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
                 <button
                   type="button"
                   class="sort-btn"
                   aria-label="Sort by season"
-                  aria-sort={sortKey === 'season' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                   on:click={() => setSort('season')}
                 >
                   Season
@@ -730,16 +742,19 @@
                 </button>
               </th>
             {/if}
-            <th class="col-progress" scope="col">
+            <th
+              class="col-progress"
+              scope="col"
+              aria-sort={sortKey === 'progress'
+                ? sortDir === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
+            >
               <button
                 type="button"
                 class="sort-btn"
                 aria-label="Sort by progress"
-                aria-sort={sortKey === 'progress'
-                  ? sortDir === 'asc'
-                    ? 'ascending'
-                    : 'descending'
-                  : 'none'}
                 on:click={() => setSort('progress')}
               >
                 Progress
@@ -810,7 +825,7 @@
                 {/if}
                 <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
                   <div class="progress-wrap">
-                    <div class="progress-bar" style="width: {progressPct(entry)}%" />
+                    <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
                     <div class="progress-inner">
                       <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
                       <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
@@ -823,14 +838,17 @@
                         {@const ep = i + 1}
                         {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
                         {@const watched = ep <= entry.watched_episodes}
-                        <div
+                        <button
+                          type="button"
                           class="ep-segment"
                           class:downloaded={hasFile}
                           class:watched={watched}
+                          disabled={!hasFile}
                           title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
-                          on:click|stopPropagation={() => hasFile && playEpisode(entry.anime_id, ep)}
+                          aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
+                          on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
                           style="cursor: {hasFile ? 'pointer' : 'default'}"
-                        />
+                        ></button>
                       {/each}
                       {#if effectiveCount(entry) > 50}
                         <span class="ep-more">+{effectiveCount(entry) - 50}</span>
@@ -1317,6 +1335,7 @@
     line-height: 1.3;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
@@ -1547,6 +1566,11 @@
     border-radius: 1px;
     background: rgba(255, 255, 255, 0.08);
     transition: background 0.15s;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    appearance: none;
+    -webkit-appearance: none;
   }
 
   .ep-segment.downloaded {

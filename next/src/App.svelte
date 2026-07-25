@@ -382,12 +382,6 @@
     outline-offset: 2px;
   }
 
-  .brand {
-    font-weight: 800;
-    letter-spacing: -0.04em;
-    font-size: 1.1rem;
-  }
-
   .brand-block {
     display: flex;
     flex-direction: column;
@@ -431,10 +425,6 @@
     font-family: inherit;
     font-size: 0.9rem;
     transition: background 0.15s ease, color 0.15s ease;
-  }
-
-  .nav-icon {
-    flex-shrink: 0;
   }
 
   .nav-label {

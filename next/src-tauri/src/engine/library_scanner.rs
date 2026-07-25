@@ -54,6 +54,20 @@ struct FileQueries {
     all: Vec<String>,
 }
 
+/// Returns true when `name` (after lowercasing) is a pure season-marker
+/// folder name like "season 2" or "s01". These contribute no title signal
+/// and cause false matches when used as search queries against anime titles.
+fn is_season_marker(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    // "season N" where N is one or more ASCII digits (e.g. "season 2", "season 12")
+    if let Some(rest) = lower.strip_prefix("season ") {
+        return !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit());
+    }
+    // "sN" or "sNN" exactly (e.g. "s1", "s02", "S12") — 2-3 total characters
+    matches!(lower.len(), 2 | 3) && lower.starts_with('s')
+        && lower[1..].chars().all(|c| c.is_ascii_digit())
+}
+
 fn file_queries(file_path: &Path) -> FileQueries {
     let file_path_str = file_path.to_string_lossy().to_string();
     let file_name = file_path
@@ -93,7 +107,7 @@ fn file_queries(file_path: &Path) -> FileQueries {
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ");
-        if !cleaned.is_empty() {
+        if !cleaned.is_empty() && !is_season_marker(&cleaned) {
             all.push(cleaned);
         }
     }
@@ -773,4 +787,65 @@ pub fn open_containing_folder(path: &str) -> anyhow::Result<()> {
         .arg(dir.as_os_str())
         .spawn()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// Helper: assert that no query in `all` is a pure season marker.
+    fn assert_no_season_marker(all: &[String]) {
+        assert!(
+            !all.iter().any(|s| is_season_marker(s)),
+            "season marker leaked into queries: {:?}",
+            all
+        );
+    }
+
+    #[test]
+    fn filters_season_2_parent_folder() {
+        // "Season 2" parent folder must NOT appear in queries.
+        let path = PathBuf::from(
+            r"Y:\Anime\One-Punch Man\Season 2\One-Punch Man - S02E01 - Return of the Hero.mkv",
+        );
+        let fq = file_queries(&path);
+        assert_no_season_marker(&fq.all);
+        // Grandparent "One-Punch Man" should still be present.
+        assert!(fq.all.iter().any(|s| s.contains("One-Punch")),
+            "expected grandparent 'One-Punch Man' in queries, got {:?}", fq.all);
+    }
+
+    #[test]
+    fn filters_season_2_parent_folder_camp_camp() {
+        let path = PathBuf::from(
+            r"Y:\Anime\Camp Camp\Season 2\Camp Camp - S02E01 - Cult Camp.mkv",
+        );
+        let fq = file_queries(&path);
+        assert_no_season_marker(&fq.all);
+        assert!(fq.all.iter().any(|s| s.contains("Camp Camp")),
+            "expected grandparent 'Camp Camp' in queries, got {:?}", fq.all);
+    }
+
+    #[test]
+    fn filters_s01_parent_folder() {
+        let path = PathBuf::from(r"Y:\Anime\Some Show\S01\S01E01.mkv");
+        let fq = file_queries(&path);
+        assert_no_season_marker(&fq.all);
+        assert!(fq.all.iter().any(|s| s.contains("Some Show")),
+            "expected grandparent 'Some Show' in queries, got {:?}", fq.all);
+    }
+
+    #[test]
+    fn keeps_series_folder_with_season_in_name() {
+        // "One Punch Man Season 2" is a real series folder name, not a pure
+        // season marker — it must NOT be filtered.
+        let path = PathBuf::from(r"Y:\Anime\One Punch Man Season 2\ep01.mkv");
+        let fq = file_queries(&path);
+        assert!(
+            fq.all.iter().any(|s| s.contains("One Punch Man")),
+            "expected series folder 'One Punch Man Season 2' in queries, got {:?}",
+            fq.all
+        );
+    }
 }

@@ -504,12 +504,12 @@
 
   {#if loading && !detail}
     <div class="skeleton-wrap" aria-busy="true" aria-label="Loading anime detail">
-      <div class="skeleton-cover" />
+      <div class="skeleton-cover"></div>
       <div class="skeleton-lines">
-        <div class="skeleton-line short" />
-        <div class="skeleton-line" />
-        <div class="skeleton-line" />
-        <div class="skeleton-line medium" />
+        <div class="skeleton-line short"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line medium"></div>
       </div>
     </div>
   {:else if error && !detail}
