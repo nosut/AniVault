@@ -13,6 +13,11 @@ describe('latestProgressAdvance', () => {
   it('returns the last ProgressAdvanced in the batch', () => {
     expect(latestProgressAdvance([pa(1, 3), pa(2, 5)])).toEqual({ anime_id: 2, new_episode: 5 });
   });
+  it('returns the last ProgressAdvanced even when a non-ProgressAdvanced event trails it', () => {
+    expect(
+      latestProgressAdvance([pa(1, 3), { LibraryUpdated: { indexed: 1, removed: 0 } } as EngineEvent]),
+    ).toEqual({ anime_id: 1, new_episode: 3 });
+  });
 });
 
 describe('samePrompt', () => {

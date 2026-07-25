@@ -590,6 +590,7 @@ export interface CollectionEntry {
   downloaded_count: number;
   max_downloaded_episode: number;
   next_unwatched_episode: number | null;
+  next_episode_path: string | null;
   new_count: number;
   last_indexed_at: number;
 }

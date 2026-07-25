@@ -1928,6 +1928,7 @@ pub struct CollectionEntry {
     pub downloaded_count: i32,
     pub max_downloaded_episode: i32,
     pub next_unwatched_episode: Option<i32>,
+    pub next_episode_path: Option<String>,
     pub new_count: i32,
     pub last_indexed_at: i64,
 }
@@ -1953,6 +1954,13 @@ pub fn collection_entry(row: &LibraryRow, files: &[FileIndexRow]) -> Option<Coll
     eps.sort_unstable();
     eps.dedup();
     let watched = row.watched_episodes;
+    let next_unwatched_episode = eps.iter().copied().find(|&e| e > watched);
+    let next_episode_path = next_unwatched_episode.and_then(|next| {
+        files
+            .iter()
+            .find(|f| !f.ignored && f.episode == Some(next))
+            .map(|f| f.file_path.clone())
+    });
     Some(CollectionEntry {
         anime_id: row.anime_id,
         title: row.title.clone(),
@@ -1962,7 +1970,8 @@ pub fn collection_entry(row: &LibraryRow, files: &[FileIndexRow]) -> Option<Coll
         episode_count: row.episode_count,
         downloaded_count: eps.len() as i32,
         max_downloaded_episode: *eps.last().unwrap(),
-        next_unwatched_episode: eps.iter().copied().find(|&e| e > watched),
+        next_unwatched_episode,
+        next_episode_path,
         new_count: eps.iter().filter(|&&e| e > watched).count() as i32,
         last_indexed_at,
     })
@@ -3123,6 +3132,8 @@ mod tests {
         assert_eq!(e.next_unwatched_episode, Some(3));
         assert_eq!(e.new_count, 2);
         assert_eq!(e.last_indexed_at, 400);
+        let path = e.next_episode_path.expect("has a next episode file");
+        assert!(path.contains("e3"), "path should point at episode 3's file: {path}");
     }
 
     #[test]
@@ -3132,6 +3143,18 @@ mod tests {
         // ignored / episode-less files don't count
         let junk = vec![file_row(2, None, 50, false), file_row(2, Some(1), 60, true)];
         assert!(collection_entry(&row, &junk).is_none());
+    }
+
+    #[test]
+    fn collection_entry_has_no_next_episode_path_when_fully_watched() {
+        let row = lib_row(4, "Caught Up", 2, Some(2));
+        let files = vec![
+            file_row(4, Some(1), 10, false),
+            file_row(4, Some(2), 20, false),
+        ];
+        let e = collection_entry(&row, &files).expect("has files");
+        assert_eq!(e.next_unwatched_episode, None);
+        assert_eq!(e.next_episode_path, None);
     }
 
     #[test]

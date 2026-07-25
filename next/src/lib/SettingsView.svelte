@@ -527,20 +527,23 @@
               </button>
             </div>
             <p class="hint">Automatically detect and record playback progress.</p>
-
-            <div class="toggle-row">
-              <span class="label">Show an in-app "Up Next" prompt when the next episode is ready</span>
-              <button type="button" role="switch" aria-checked={upNextToast} class="switch" on:click={toggleUpNextToast}>
-                <span class="switch-thumb" />
-              </button>
-            </div>
-            <div class="toggle-row">
-              <span class="label">Also send a Windows notification for "Up Next"</span>
-              <button type="button" role="switch" aria-checked={upNextNotify} class="switch" on:click={toggleUpNextNotify}>
-                <span class="switch-thumb" />
-              </button>
-            </div>
           {/if}
+
+          <!-- These two toggles must stay reachable regardless of tracking-status
+               load state (loading/error) — the Up Next prompt itself fires
+               independent of that status. -->
+          <div class="toggle-row">
+            <span class="label">Show an in-app "Up Next" prompt when the next episode is ready</span>
+            <button type="button" role="switch" aria-checked={upNextToast} class="switch" on:click={toggleUpNextToast}>
+              <span class="switch-thumb" />
+            </button>
+          </div>
+          <div class="toggle-row">
+            <span class="label">Also send a Windows notification for "Up Next"</span>
+            <button type="button" role="switch" aria-checked={upNextNotify} class="switch" on:click={toggleUpNextNotify}>
+              <span class="switch-thumb" />
+            </button>
+          </div>
         </section>
       </div>
     {/if}

@@ -470,7 +470,8 @@ describe('api wrappers', () => {
     const fake = vi.fn().mockResolvedValue([
       { anime_id: 1, title: 'Frieren', image_url: null, status: 'watching', watched_episodes: 2,
         episode_count: 4, downloaded_count: 4, max_downloaded_episode: 4,
-        next_unwatched_episode: 3, new_count: 2, last_indexed_at: 400 },
+        next_unwatched_episode: 3, next_episode_path: 'C:/lib/frieren/e3.mkv',
+        new_count: 2, last_indexed_at: 400 },
     ]);
     const res = await getCollection(fake);
     expect(fake).toHaveBeenCalledWith('get_collection');

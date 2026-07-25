@@ -6,7 +6,7 @@ function e(p: Partial<CollectionEntry>): CollectionEntry {
   return {
     anime_id: 1, title: 'A', image_url: null, status: 'watching', watched_episodes: 0,
     episode_count: null, downloaded_count: 1, max_downloaded_episode: 1,
-    next_unwatched_episode: 1, new_count: 1, last_indexed_at: 0, ...p,
+    next_unwatched_episode: 1, next_episode_path: null, new_count: 1, last_indexed_at: 0, ...p,
   };
 }
 
@@ -48,5 +48,10 @@ describe('sortCollection', () => {
   });
   it('progress sorts by watched desc', () => {
     expect(sortCollection(list, 'progress').map((x) => x.anime_id)).toEqual([1, 2]);
+  });
+  it('does not mutate its input array', () => {
+    const before = [...list];
+    sortCollection(list, 'title');
+    expect(list).toEqual(before);
   });
 });

@@ -57,15 +57,9 @@
 
   async function load() {
     loading = true; error = '';
+    episodeFilesMap = new Map();
     try {
       entries = await getCollection();
-      for (const e of entries.slice(0, 100)) {
-        try {
-          const files = await getEpisodeFiles(e.anime_id);
-          if (files.length > 0) episodeFilesMap.set(e.anime_id, files);
-        } catch {}
-      }
-      episodeFilesMap = new Map(episodeFilesMap);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally { loading = false; }
@@ -77,11 +71,7 @@
   }
 
   function playNext(e: CollectionEntry) {
-    const files = episodeFilesMap.get(e.anime_id);
-    if (!files) return;
-    const ep = e.next_unwatched_episode ?? e.max_downloaded_episode;
-    const f = files.find((x) => (x.episode ?? 0) === ep) ?? files[0];
-    if (f) openEpisodeFile(f.file_path);
+    if (e.next_episode_path) openEpisodeFile(e.next_episode_path);
   }
 
   function open(e: CollectionEntry) { dispatch('select', { anime_id: e.anime_id }); }
@@ -92,9 +82,18 @@
   // Right-click context menu.
   let ctxMenu: { x: number; y: number; entry: CollectionEntry } | null = null;
 
-  function openContextMenu(e: MouseEvent, entry: CollectionEntry) {
+  async function openContextMenu(e: MouseEvent, entry: CollectionEntry) {
     e.preventDefault();
     ctxMenu = { x: Math.min(e.clientX, window.innerWidth - 240), y: Math.min(e.clientY, window.innerHeight - 320), entry };
+    // Lazy-load this anime's full file list on demand — only the series being
+    // right-clicked, not the whole collection (see load()).
+    if (!episodeFilesMap.has(entry.anime_id)) {
+      try {
+        const files = await getEpisodeFiles(entry.anime_id);
+        episodeFilesMap.set(entry.anime_id, files);
+        episodeFilesMap = new Map(episodeFilesMap);
+      } catch { /* ignore */ }
+    }
   }
   function closeContextMenu() { ctxMenu = null; }
 
@@ -107,15 +106,17 @@
   }
   function playCtxPath(path: string) { openEpisodeFile(path); closeContextMenu(); }
   function ctxNextEp(): number | null {
-    if (!ctxMenu) return null;
+    const menu = ctxMenu;
+    if (!menu) return null;
     const files = ctxFiles();
-    const f = files.find((x) => x.ep === ctxMenu!.entry.watched_episodes + 1)
-      ?? files.find((x) => x.ep > ctxMenu!.entry.watched_episodes);
+    const f = files.find((x) => x.ep === menu.entry.watched_episodes + 1)
+      ?? files.find((x) => x.ep > menu.entry.watched_episodes);
     return f ? f.ep : null;
   }
   function ctxPrevEp(): number | null {
-    if (!ctxMenu) return null;
-    const want = ctxMenu.entry.watched_episodes;
+    const menu = ctxMenu;
+    if (!menu) return null;
+    const want = menu.entry.watched_episodes;
     const f = ctxFiles().filter((x) => x.ep <= want).sort((a, b) => b.ep - a.ep)[0];
     return f ? f.ep : null;
   }
