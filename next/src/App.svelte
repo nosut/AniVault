@@ -5,6 +5,7 @@
   import NowPlaying from './lib/NowPlaying.svelte';
   import DashboardView from './lib/DashboardView.svelte';
   import LibraryView from './lib/LibraryView.svelte';
+  import CollectionView from './lib/CollectionView.svelte';
   import DetailView from './lib/DetailView.svelte';
   import SettingsView from './lib/SettingsView.svelte';
   import CalendarView from './lib/CalendarView.svelte';
@@ -26,13 +27,15 @@
     Settings as SettingsIcon,
     ChevronLeft,
     ChevronRight,
+    HardDrive,
   } from 'lucide-svelte';
 
-  type View = 'dashboard' | 'library' | 'season' | 'search' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
+  type View = 'dashboard' | 'library' | 'collection' | 'season' | 'search' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
 
   const navItems = [
     { id: 'dashboard' as View, label: 'Dashboard' },
     { id: 'library' as View, label: 'Library' },
+    { id: 'collection' as View, label: 'Collection' },
     { id: 'season' as View, label: 'Season' },
     { id: 'search' as View, label: 'Search' },
     { id: 'calendar' as View, label: 'Calendar' },
@@ -44,6 +47,7 @@
   const navIcons: Partial<Record<View, typeof LayoutDashboard>> = {
     dashboard: LayoutDashboard,
     library: Library,
+    collection: HardDrive,
     season: CalendarRange,
     search: Search,
     calendar: Calendar,
@@ -100,6 +104,12 @@
   }
 
   function handleLibrarySelect(event: CustomEvent<{ anime_id: number }>) {
+    previousView = currentView;
+    detailAnimeId = event.detail.anime_id;
+    currentView = 'detail';
+  }
+
+  function handleCollectionSelect(event: CustomEvent<{ anime_id: number }>) {
     previousView = currentView;
     detailAnimeId = event.detail.anime_id;
     currentView = 'detail';
@@ -226,6 +236,8 @@
       />
     {:else if currentView === 'library'}
       <LibraryView events={latestEvents} on:select={handleLibrarySelect} />
+    {:else if currentView === 'collection'}
+      <CollectionView events={latestEvents} on:select={handleCollectionSelect} />
     {:else if currentView === 'season'}
       <SeasonView on:select={handleSeasonSelect} />
     {:else if currentView === 'search'}
