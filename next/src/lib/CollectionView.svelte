@@ -432,10 +432,6 @@
     transform: translateY(-2px);
   }
 
-  .poster-card:hover .play-next-btn {
-    opacity: 1;
-  }
-
   .poster-thumb {
     width: 100%;
     aspect-ratio: 3/4;
@@ -487,24 +483,41 @@
 
   .play-next-btn {
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    right: 0;
     bottom: calc(0.6rem * 2 + 1.6rem);
+    margin: auto;
+    width: 2.75rem;
+    height: 2.75rem;
     display: flex;
     align-items: center;
     justify-content: center;
     border: none;
-    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.55));
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.65);
     color: #fff;
     opacity: 0;
+    pointer-events: none;
     cursor: pointer;
-    transition: opacity 0.15s;
+    transition: opacity 0.15s, background-color 0.15s;
     padding: 0;
   }
 
+  .poster-card:hover .play-next-btn,
+  .poster-card:focus-within .play-next-btn,
   .play-next-btn:focus-visible {
     opacity: 1;
+    pointer-events: auto;
+  }
+
+  .play-next-btn:hover {
+    background: rgba(var(--color-accent-rgb), 0.9);
+  }
+
+  .play-next-btn:focus-visible {
     outline: 2px solid var(--color-accent);
-    outline-offset: -2px;
+    outline-offset: 2px;
   }
 
   .ep-download-bar {
