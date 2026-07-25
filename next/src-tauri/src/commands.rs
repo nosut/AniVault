@@ -1878,6 +1878,81 @@ pub async fn continue_watching(
     continue_watching_inner(&state).await.map_err(command_error)
 }
 
+// ── Collection ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CollectionEntry {
+    pub anime_id: i64,
+    pub title: String,
+    pub image_url: Option<String>,
+    pub status: String,
+    pub watched_episodes: i32,
+    pub episode_count: Option<i32>,
+    pub downloaded_count: i32,
+    pub max_downloaded_episode: i32,
+    pub next_unwatched_episode: Option<i32>,
+    pub new_count: i32,
+    pub last_indexed_at: i64,
+}
+
+/// Summarize one anime's downloaded episodes into a Collection row. Returns
+/// `None` when the anime has no usable (non-ignored, numbered) files on disk —
+/// those anime are not part of the downloaded collection.
+pub fn collection_entry(row: &LibraryRow, files: &[FileIndexRow]) -> Option<CollectionEntry> {
+    let mut eps: Vec<i32> = files
+        .iter()
+        .filter(|f| !f.ignored)
+        .filter_map(|f| f.episode)
+        .collect();
+    if eps.is_empty() {
+        return None;
+    }
+    let last_indexed_at = files
+        .iter()
+        .filter(|f| !f.ignored)
+        .map(|f| f.indexed_at)
+        .max()
+        .unwrap_or(0);
+    eps.sort_unstable();
+    eps.dedup();
+    let watched = row.watched_episodes;
+    Some(CollectionEntry {
+        anime_id: row.anime_id,
+        title: row.title.clone(),
+        image_url: row.image_url.clone(),
+        status: row.status.clone(),
+        watched_episodes: watched,
+        episode_count: row.episode_count,
+        downloaded_count: eps.len() as i32,
+        max_downloaded_episode: *eps.last().unwrap(),
+        next_unwatched_episode: eps.iter().copied().find(|&e| e > watched),
+        new_count: eps.iter().filter(|&&e| e > watched).count() as i32,
+        last_indexed_at,
+    })
+}
+
+pub async fn get_collection_inner(state: &EngineState) -> anyhow::Result<Vec<CollectionEntry>> {
+    // search_library("", None, …) returns every listed anime plus any anime with
+    // non-ignored files (see its WHERE clause), so it is a superset of the
+    // collection; collection_entry drops the ones without files.
+    let library = state.storage.search_library("", None, 5000, 0).await?;
+    let mut out = Vec::new();
+    for row in &library {
+        let files = state.storage.file_index_by_anime(row.anime_id).await?;
+        if let Some(entry) = collection_entry(row, &files) {
+            out.push(entry);
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn get_collection(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<CollectionEntry>, String> {
+    get_collection_inner(&state).await.map_err(command_error)
+}
+
 // Tauri command wrappers
 
 #[tauri::command]
@@ -2905,6 +2980,72 @@ mod tests {
             episode_count: None,
             last_watched_at,
         }
+    }
+
+    fn lib_row(anime_id: i64, title: &str, watched: i32, episode_count: Option<i32>) -> LibraryRow {
+        LibraryRow {
+            anime_id,
+            title: title.to_string(),
+            status: "watching".to_string(),
+            watched_episodes: watched,
+            episode_count,
+            score: None,
+            image_url: None,
+            season: None,
+            season_year: None,
+            airing_status: None,
+        }
+    }
+
+    fn file_row(anime_id: i64, episode: Option<i32>, indexed_at: i64, ignored: bool) -> FileIndexRow {
+        FileIndexRow {
+            file_path: format!("C:/lib/a{anime_id}/e{}.mkv", episode.unwrap_or(0)),
+            anime_id: Some(anime_id),
+            episode,
+            confidence: 100,
+            mapping_source: MappingSource::from_db("manual"),
+            indexed_at,
+            ignored,
+        }
+    }
+
+    #[test]
+    fn collection_entry_summarizes_downloaded_episodes() {
+        let row = lib_row(1, "Frieren", 2, Some(4));
+        let files = vec![
+            file_row(1, Some(1), 100, false),
+            file_row(1, Some(2), 200, false),
+            file_row(1, Some(3), 300, false),
+            file_row(1, Some(4), 400, false),
+        ];
+        let e = collection_entry(&row, &files).expect("has files");
+        assert_eq!(e.downloaded_count, 4);
+        assert_eq!(e.max_downloaded_episode, 4);
+        assert_eq!(e.next_unwatched_episode, Some(3));
+        assert_eq!(e.new_count, 2);
+        assert_eq!(e.last_indexed_at, 400);
+    }
+
+    #[test]
+    fn collection_entry_skips_anime_with_no_usable_files() {
+        let row = lib_row(2, "No Files", 0, Some(12));
+        assert!(collection_entry(&row, &[]).is_none());
+        // ignored / episode-less files don't count
+        let junk = vec![file_row(2, None, 50, false), file_row(2, Some(1), 60, true)];
+        assert!(collection_entry(&row, &junk).is_none());
+    }
+
+    #[test]
+    fn collection_entry_dedupes_and_handles_unknown_total() {
+        let row = lib_row(3, "Dupes", 0, None);
+        let files = vec![
+            file_row(3, Some(1), 10, false),
+            file_row(3, Some(1), 20, false), // duplicate episode number
+            file_row(3, Some(2), 30, false),
+        ];
+        let e = collection_entry(&row, &files).expect("has files");
+        assert_eq!(e.downloaded_count, 2, "duplicate episode counted once");
+        assert_eq!(e.next_unwatched_episode, Some(1));
     }
 
     #[test]
