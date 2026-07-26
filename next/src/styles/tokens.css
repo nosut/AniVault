@@ -88,6 +88,6 @@ body {
   white-space: nowrap;
 }
 
-.ctx-menu .ctx-item:hover {
+.ctx-menu .ctx-item:hover:not(:disabled) {
   background: rgb(255 255 255 / 8%);
 }

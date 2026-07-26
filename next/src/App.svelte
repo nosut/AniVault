@@ -127,7 +127,12 @@
 
   function openNavContextMenu(e: MouseEvent) {
     e.preventDefault();
-    navCtxMenu = { x: e.clientX, y: e.clientY };
+    // Clamp so a right-click near the window edge does not push the menu
+    // off-screen, matching LibraryView.svelte:451.
+    navCtxMenu = {
+      x: Math.min(e.clientX, window.innerWidth - 200),
+      y: Math.min(e.clientY, window.innerHeight - 80),
+    };
   }
 
   function resetNavOrder() {
@@ -351,17 +356,6 @@
       {/each}
     </nav>
     <div class="sr-only" aria-live="polite">{navAnnouncement}</div>
-    {#if navCtxMenu}
-      <div
-        class="ctx-backdrop"
-        role="presentation"
-        on:click={() => (navCtxMenu = null)}
-        on:contextmenu|preventDefault={() => (navCtxMenu = null)}
-      ></div>
-      <div class="ctx-menu" style="left: {navCtxMenu.x}px; top: {navCtxMenu.y}px;" role="menu">
-        <button class="ctx-item" role="menuitem" on:click={resetNavOrder}>Reset sidebar order</button>
-      </div>
-    {/if}
     <div class="now-playing-sidebar">
       <NowPlaying events={latestEvents} collapsed={collapsed && isDesktopRail} />
     </div>
@@ -402,6 +396,18 @@
     {/if}
   </section>
 
+  {#if navCtxMenu}
+    <div
+      class="ctx-backdrop"
+      role="presentation"
+      on:click={() => (navCtxMenu = null)}
+      on:contextmenu|preventDefault={() => (navCtxMenu = null)}
+    ></div>
+    <div class="ctx-menu" style="left: {navCtxMenu.x}px; top: {navCtxMenu.y}px;" role="menu">
+      <button class="ctx-item" role="menuitem" on:click={resetNavOrder}>Reset sidebar order</button>
+    </div>
+  {/if}
+
   {#if upNextPrompt}
     <div class="up-next-toast" role="dialog" aria-label="Up next">
       {#if upNextPrompt.image_url}
@@ -419,6 +425,8 @@
     </div>
   {/if}
 </main>
+
+<svelte:window on:keydown={(e) => { if (navCtxMenu && e.key === 'Escape') navCtxMenu = null; }} />
 
 <style>
   .shell {
