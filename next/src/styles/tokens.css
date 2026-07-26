@@ -49,3 +49,45 @@ body {
   white-space: nowrap;
   border-width: 0;
 }
+
+/* Shared context-menu chrome. LibraryView still carries its own scoped copy;
+   consolidating that is a separate cleanup. */
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 41;
+  min-width: 11rem;
+  background: rgba(16, 21, 32, 0.98);
+  border: 1px solid rgba(var(--color-accent-rgb), 0.25);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 0.35rem;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.ctx-menu .ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: 0.82rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ctx-menu .ctx-item:hover {
+  background: rgb(255 255 255 / 8%);
+}

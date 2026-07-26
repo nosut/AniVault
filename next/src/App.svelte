@@ -15,7 +15,7 @@
   import SeasonView from './lib/SeasonView.svelte';
   import SearchView from './lib/SearchView.svelte';
   import { loadStartPage } from './lib/startPage';
-  import { DEFAULT_NAV_ITEMS, loadNavOrder, moveNavItem, saveNavOrder, type NavId } from './lib/navOrder';
+  import { DEFAULT_NAV_ITEMS, clearNavOrder, loadNavOrder, moveNavItem, saveNavOrder, type NavId } from './lib/navOrder';
   import bannerUrl from './assets/banner.png';
   import iconUrl from '../src-tauri/icons/icon.png';
   import {
@@ -121,6 +121,20 @@
     // Focus follows the item, not the index it used to sit at.
     await tick();
     navButtons[to]?.focus();
+  }
+
+  let navCtxMenu: { x: number; y: number } | null = null;
+
+  function openNavContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    navCtxMenu = { x: e.clientX, y: e.clientY };
+  }
+
+  function resetNavOrder() {
+    navOrder = DEFAULT_NAV_ITEMS.map((item) => item.id);
+    clearNavOrder();
+    navAnnouncement = 'Sidebar order reset to default';
+    navCtxMenu = null;
   }
 
   const navIcons: Partial<Record<View, typeof LayoutDashboard>> = {
@@ -309,7 +323,7 @@
         <svelte:component this={collapsed ? ChevronRight : ChevronLeft} size={16} />
       </button>
     </div>
-    <nav class="nav-list">
+    <nav class="nav-list" on:contextmenu={openNavContextMenu}>
       {#each navItems as item, i (item.id)}
         <button
           type="button"
@@ -337,6 +351,17 @@
       {/each}
     </nav>
     <div class="sr-only" aria-live="polite">{navAnnouncement}</div>
+    {#if navCtxMenu}
+      <div
+        class="ctx-backdrop"
+        role="presentation"
+        on:click={() => (navCtxMenu = null)}
+        on:contextmenu|preventDefault={() => (navCtxMenu = null)}
+      ></div>
+      <div class="ctx-menu" style="left: {navCtxMenu.x}px; top: {navCtxMenu.y}px;" role="menu">
+        <button class="ctx-item" role="menuitem" on:click={resetNavOrder}>Reset sidebar order</button>
+      </div>
+    {/if}
     <div class="now-playing-sidebar">
       <NowPlaying events={latestEvents} collapsed={collapsed && isDesktopRail} />
     </div>
