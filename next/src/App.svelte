@@ -15,6 +15,7 @@
   import SeasonView from './lib/SeasonView.svelte';
   import SearchView from './lib/SearchView.svelte';
   import { loadStartPage } from './lib/startPage';
+  import { DEFAULT_NAV_ITEMS, loadNavOrder, type NavId } from './lib/navOrder';
   import bannerUrl from './assets/banner.png';
   import iconUrl from '../src-tauri/icons/icon.png';
   import {
@@ -33,17 +34,8 @@
 
   type View = 'dashboard' | 'library' | 'collection' | 'season' | 'search' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
 
-  const navItems = [
-    { id: 'dashboard' as View, label: 'Dashboard' },
-    { id: 'library' as View, label: 'Library' },
-    { id: 'collection' as View, label: 'Collection' },
-    { id: 'season' as View, label: 'Season' },
-    { id: 'search' as View, label: 'Search' },
-    { id: 'calendar' as View, label: 'Calendar' },
-    { id: 'history' as View, label: 'History' },
-    { id: 'stats' as View, label: 'Stats' },
-    { id: 'settings' as View, label: 'Settings' },
-  ];
+  let navOrder: NavId[] = loadNavOrder();
+  $: navItems = navOrder.map((id) => DEFAULT_NAV_ITEMS.find((item) => item.id === id)!);
 
   const navIcons: Partial<Record<View, typeof LayoutDashboard>> = {
     dashboard: LayoutDashboard,
@@ -232,7 +224,7 @@
       </button>
     </div>
     <nav class="nav-list">
-      {#each navItems as item}
+      {#each navItems as item, i (item.id)}
         <button
           type="button"
           class="nav-item"
