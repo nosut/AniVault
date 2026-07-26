@@ -45,7 +45,10 @@
   let justDragged = false;
 
   function handleNavDragStart(e: DragEvent, index: number) {
-    if (collapsed) return;
+    // Below 769px the rail lays the nav out horizontally (see the media query
+    // near the end of the style block). The drop math below is vertical-only,
+    // so dragging is restricted to the vertical desktop rail.
+    if (collapsed || !isDesktopRail) return;
     dragIndex = index;
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
@@ -78,22 +81,27 @@
       }
       justDragged = true;
     }
-    cancelNavDrag();
+    clearNavDragState();
   }
 
-  // Clears drag state without reordering. Runs on dragend, which fires after
+  // Clears drag state. Called on a successful drop (from commitNavDrop, after
+  // it has already committed the reorder) and on dragend, which fires after
   // drop on a successful drag (harmless — state is already clear) and on its
   // own when the drag is cancelled or released off-target.
-  function cancelNavDrag() {
+  function clearNavDragState() {
     dragIndex = null;
     dropIndex = null;
   }
 
-  function handleNavClick(id: NavId) {
-    if (justDragged) {
+  function handleNavClick(id: NavId, e: MouseEvent) {
+    // Only swallow a pointer-generated click. A keyboard activation (Enter or
+    // Space) arrives with detail === 0 and no preceding pointerdown, so it
+    // must never be eaten by a flag left over from a mouse drag.
+    if (justDragged && e.detail > 0) {
       justDragged = false;
       return;
     }
+    justDragged = false;
     setView(id);
   }
 
@@ -293,15 +301,15 @@
           class:dragging={dragIndex === i}
           class:drop-above={dragIndex !== null && dropIndex === i}
           class:drop-below={dragIndex !== null && dropIndex === navItems.length && i === navItems.length - 1}
-          draggable={!collapsed}
+          draggable={!collapsed && isDesktopRail}
           title={item.label}
           aria-label={item.label}
           on:pointerdown={() => (justDragged = false)}
           on:dragstart={(e) => handleNavDragStart(e, i)}
           on:dragover={(e) => handleNavDragOver(e, i)}
           on:drop|preventDefault={commitNavDrop}
-          on:dragend={cancelNavDrag}
-          on:click={() => handleNavClick(item.id)}
+          on:dragend={clearNavDragState}
+          on:click={(e) => handleNavClick(item.id, e)}
         >
           <svelte:component this={navIcons[item.id]} class="nav-icon" size={18} />
           <span class="nav-label">{item.label}</span>
