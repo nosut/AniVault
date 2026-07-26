@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { drainEngineEvents, checkForUpdate, openEpisodeFile, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
   import { dismissUpdate, loadDismissedUpdate, shouldShowUpdate } from './lib/updateUi';
   import { latestProgressAdvance, samePrompt, type PromptKey } from './lib/upNext';
@@ -103,6 +103,24 @@
     }
     justDragged = false;
     setView(id);
+  }
+
+  let navButtons: HTMLButtonElement[] = [];
+  let navAnnouncement = '';
+
+  async function handleNavKeydown(e: KeyboardEvent, index: number) {
+    if (collapsed) return;
+    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    const to = e.key === 'ArrowUp' ? index - 1 : index + 1;
+    if (to < 0 || to >= navOrder.length) return;
+    e.preventDefault();
+    const label = navItems[index]!.label;
+    navOrder = moveNavItem(navOrder, index, to);
+    saveNavOrder(navOrder);
+    navAnnouncement = `${label} moved to position ${to + 1} of ${navOrder.length}`;
+    // Focus follows the item, not the index it used to sit at.
+    await tick();
+    navButtons[to]?.focus();
   }
 
   const navIcons: Partial<Record<View, typeof LayoutDashboard>> = {
@@ -301,6 +319,7 @@
           class:dragging={dragIndex === i}
           class:drop-above={dragIndex !== null && dropIndex === i}
           class:drop-below={dragIndex !== null && dropIndex === navItems.length && i === navItems.length - 1}
+          bind:this={navButtons[i]}
           draggable={!collapsed && isDesktopRail}
           title={item.label}
           aria-label={item.label}
@@ -309,6 +328,7 @@
           on:dragover={(e) => handleNavDragOver(e, i)}
           on:drop|preventDefault={commitNavDrop}
           on:dragend={clearNavDragState}
+          on:keydown={(e) => handleNavKeydown(e, i)}
           on:click={(e) => handleNavClick(item.id, e)}
         >
           <svelte:component this={navIcons[item.id]} class="nav-icon" size={18} />
@@ -316,6 +336,7 @@
         </button>
       {/each}
     </nav>
+    <div class="sr-only" aria-live="polite">{navAnnouncement}</div>
     <div class="now-playing-sidebar">
       <NowPlaying events={latestEvents} collapsed={collapsed && isDesktopRail} />
     </div>
