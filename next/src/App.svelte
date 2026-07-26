@@ -15,7 +15,7 @@
   import SeasonView from './lib/SeasonView.svelte';
   import SearchView from './lib/SearchView.svelte';
   import { loadStartPage } from './lib/startPage';
-  import { DEFAULT_NAV_ITEMS, loadNavOrder, type NavId } from './lib/navOrder';
+  import { DEFAULT_NAV_ITEMS, loadNavOrder, moveNavItem, saveNavOrder, type NavId } from './lib/navOrder';
   import bannerUrl from './assets/banner.png';
   import iconUrl from '../src-tauri/icons/icon.png';
   import {
@@ -36,6 +36,55 @@
 
   let navOrder: NavId[] = loadNavOrder();
   $: navItems = navOrder.map((id) => DEFAULT_NAV_ITEMS.find((item) => item.id === id)!);
+
+  let dragIndex: number | null = null;
+  let dropIndex: number | null = null;
+  // A drag can be followed by a click event; this stops that click from also
+  // navigating. It is cleared on the next pointerdown, so a genuine click is
+  // never swallowed.
+  let justDragged = false;
+
+  function handleNavDragStart(e: DragEvent, index: number) {
+    if (collapsed) return;
+    dragIndex = index;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      // Required for the drop event to fire in Chromium/WebView2.
+      e.dataTransfer.setData('text/plain', navOrder[index]!);
+    }
+  }
+
+  function handleNavDragOver(e: DragEvent, index: number) {
+    if (dragIndex === null) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    dropIndex = e.clientY < rect.top + rect.height / 2 ? index : index + 1;
+  }
+
+  function commitNavDrop() {
+    if (dragIndex !== null && dropIndex !== null) {
+      // dropIndex is an insertion point in the pre-move array; moveNavItem
+      // wants the index the item lands on, which is one lower when the item
+      // is moving down past its own slot.
+      const to = dropIndex > dragIndex ? dropIndex - 1 : dropIndex;
+      if (to !== dragIndex) {
+        navOrder = moveNavItem(navOrder, dragIndex, to);
+        saveNavOrder(navOrder);
+      }
+      justDragged = true;
+    }
+    dragIndex = null;
+    dropIndex = null;
+  }
+
+  function handleNavClick(id: NavId) {
+    if (justDragged) {
+      justDragged = false;
+      return;
+    }
+    setView(id);
+  }
 
   const navIcons: Partial<Record<View, typeof LayoutDashboard>> = {
     dashboard: LayoutDashboard,
@@ -230,9 +279,18 @@
           class="nav-item"
           class:active={isNavActive(item.id)}
           class:subtle-active={currentView === 'detail' && item.id === 'library'}
+          class:dragging={dragIndex === i}
+          class:drop-above={dragIndex !== null && dropIndex === i}
+          class:drop-below={dragIndex !== null && dropIndex === navItems.length && i === navItems.length - 1}
+          draggable={!collapsed}
           title={item.label}
           aria-label={item.label}
-          on:click={() => setView(item.id)}
+          on:pointerdown={() => (justDragged = false)}
+          on:dragstart={(e) => handleNavDragStart(e, i)}
+          on:dragover={(e) => handleNavDragOver(e, i)}
+          on:drop|preventDefault={commitNavDrop}
+          on:dragend={commitNavDrop}
+          on:click={() => handleNavClick(item.id)}
         >
           <svelte:component this={navIcons[item.id]} class="nav-icon" size={18} />
           <span class="nav-label">{item.label}</span>
@@ -451,6 +509,34 @@
   .nav-item:focus-visible {
     outline: 2px solid rgba(var(--color-accent-rgb), 0.5);
     outline-offset: 2px;
+  }
+
+  .nav-item.dragging {
+    opacity: 0.4;
+  }
+
+  .nav-item.drop-above,
+  .nav-item.drop-below {
+    position: relative;
+  }
+
+  .nav-item.drop-above::before,
+  .nav-item.drop-below::after {
+    content: '';
+    position: absolute;
+    left: 0.5rem;
+    right: 0.5rem;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--color-accent);
+  }
+
+  .nav-item.drop-above::before {
+    top: -2px;
+  }
+
+  .nav-item.drop-below::after {
+    bottom: -2px;
   }
 
   .now-playing-sidebar {
