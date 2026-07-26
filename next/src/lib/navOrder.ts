@@ -29,6 +29,14 @@ function isNavId(value: unknown): value is NavId {
 // and duplicates, then append anything the stored order is missing. That
 // append is what keeps a nav item added in a future version reachable for
 // users who already have a saved order.
+//
+// Nav ids are a persistence format, not just an internal identifier: they are
+// written to localStorage verbatim and read back through isNavId. Renaming an
+// existing id here would make every stored order fail isNavId for that entry,
+// silently discarding the user's chosen position for it (it would just be
+// re-appended at the end as if new). A rename must instead go through an
+// alias map (old id -> new id) applied to `stored` before the isNavId filter
+// below, so existing positions carry over.
 export function reconcile(stored: unknown): NavId[] {
   if (!Array.isArray(stored)) return [...DEFAULT_ORDER];
   const seen = new Set<NavId>();

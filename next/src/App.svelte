@@ -65,6 +65,20 @@
     dropIndex = e.clientY < rect.top + rect.height / 2 ? index : index + 1;
   }
 
+  // Fires while the pointer is over the nav's own background — in particular
+  // the inter-item gap the drop indicator is drawn into (see .nav-item.drop-
+  // above/.drop-below, offset -2px/-2px into that gap). Without this, dragover
+  // is only bound on the buttons, so the gap never gets preventDefault() and
+  // the browser refuses the drop there even though the indicator promised
+  // one. dropIndex is deliberately left untouched: it already holds the last
+  // insertion point computed by handleNavDragOver while crossing a button, and
+  // that is exactly where the indicator is pointing.
+  function handleNavListDragOver(e: DragEvent) {
+    if (dragIndex === null) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  }
+
   // Only a real drop reorders. `dragend` must NOT commit: it fires for every
   // drag, including one released outside the sidebar, where dropIndex still
   // holds the last position the pointer crossed. Committing there would
@@ -110,7 +124,8 @@
 
   async function handleNavKeydown(e: KeyboardEvent, index: number) {
     if (collapsed) return;
-    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey) return;
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
     const to = e.key === 'ArrowUp' ? index - 1 : index + 1;
     if (to < 0 || to >= navOrder.length) return;
     e.preventDefault();
@@ -328,7 +343,12 @@
         <svelte:component this={collapsed ? ChevronRight : ChevronLeft} size={16} />
       </button>
     </div>
-    <nav class="nav-list" on:contextmenu={openNavContextMenu}>
+    <nav
+      class="nav-list"
+      on:contextmenu={openNavContextMenu}
+      on:dragover={handleNavListDragOver}
+      on:drop|preventDefault={commitNavDrop}
+    >
       {#each navItems as item, i (item.id)}
         <button
           type="button"

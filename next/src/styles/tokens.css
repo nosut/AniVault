@@ -89,5 +89,7 @@ body {
 }
 
 .ctx-menu .ctx-item:hover:not(:disabled) {
-  background: rgb(255 255 255 / 8%);
+  /* Same accent tint LibraryView.svelte:1401 and CollectionView.svelte:796
+     use, so every context menu in the app hovers identically. */
+  background: rgba(var(--color-accent-rgb), 0.15);
 }
