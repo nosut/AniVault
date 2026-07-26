@@ -62,6 +62,10 @@
     dropIndex = e.clientY < rect.top + rect.height / 2 ? index : index + 1;
   }
 
+  // Only a real drop reorders. `dragend` must NOT commit: it fires for every
+  // drag, including one released outside the sidebar, where dropIndex still
+  // holds the last position the pointer crossed. Committing there would
+  // reorder on a cancelled drag.
   function commitNavDrop() {
     if (dragIndex !== null && dropIndex !== null) {
       // dropIndex is an insertion point in the pre-move array; moveNavItem
@@ -74,6 +78,13 @@
       }
       justDragged = true;
     }
+    cancelNavDrag();
+  }
+
+  // Clears drag state without reordering. Runs on dragend, which fires after
+  // drop on a successful drag (harmless — state is already clear) and on its
+  // own when the drag is cancelled or released off-target.
+  function cancelNavDrag() {
     dragIndex = null;
     dropIndex = null;
   }
@@ -289,7 +300,7 @@
           on:dragstart={(e) => handleNavDragStart(e, i)}
           on:dragover={(e) => handleNavDragOver(e, i)}
           on:drop|preventDefault={commitNavDrop}
-          on:dragend={commitNavDrop}
+          on:dragend={cancelNavDrag}
           on:click={() => handleNavClick(item.id)}
         >
           <svelte:component this={navIcons[item.id]} class="nav-icon" size={18} />
