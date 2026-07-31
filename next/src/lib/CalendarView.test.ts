@@ -117,8 +117,62 @@ describe('CalendarView month paging', () => {
     expect(document.querySelectorAll('.cal-day-entry .ep-check')).toHaveLength(3);
 
     // Ep3 aired 2026-07-03 with no local file: not downloaded, but watched.
-    const first = document.querySelector('.cal-day-entry')!;
+    const first = document.querySelector<HTMLElement>('.cal-day-entry')!;
     expect(first.getAttribute('aria-label')).toBe('Alpha Show Ep 3 (Not downloaded, watched)');
+
+    // Focusing the entry opens the hover tooltip; a watched entry adds a
+    // "Watched" line to it.
+    first.dispatchEvent(new FocusEvent('focus'));
+    flushSync();
+    expect(document.querySelector('.tip-watched')?.textContent).toBe('✓ Watched');
+
+    await unmount(app);
+  });
+});
+
+describe('CalendarView agenda view', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="app"></div>';
+    localStorage.clear();
+    localStorage.setItem('anivault-calendar-view', 'agenda');
+    // Fake only Date so the agenda's from-today-onward filter is deterministic;
+    // timers stay real (settle() below relies on a genuine setTimeout tick).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // Fri Jul 17 2026, 18:00 local: after Ep5 airs (13:00 same day), so Ep5 is
+    // both watched and already aired — the case that must not double-dim.
+    vi.setSystemTime(new Date(2026, 6, 17, 18, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('marks a watched agenda row and keeps its aired badge at full opacity', async () => {
+    const app = mount(CalendarView, { target: document.getElementById('app')! });
+    await settle();
+
+    expect(headerText()).toBe('Agenda');
+
+    // Ep3 and Ep4 already scrolled off (aired before today); Ep5 airs today and
+    // is the only watched entry still in the from-today-onward agenda.
+    const watchedRows = document.querySelectorAll('.agenda-row.watched');
+    expect(watchedRows).toHaveLength(1);
+
+    const row = watchedRows[0]!;
+    const check = row.querySelector('.agenda-check')!;
+    expect(check.getAttribute('aria-hidden')).toBe('true');
+    // The checkmark is aria-hidden, so the accessible name must come from
+    // elsewhere: a visually-hidden sibling carries the word for screen readers.
+    expect(row.querySelector('.sr-only')?.textContent).toBe('Watched');
+
+    // Ep5 aired earlier today, so its countdown badge also carries .aired —
+    // this is the compounding case (.agenda-row.watched + .agenda-countdown.aired)
+    // the anti-double-dim rule (`.agenda-row.watched .agenda-countdown.aired`)
+    // exists to correct. jsdom doesn't compute the cascade for scoped Svelte
+    // styles, so this only pins the DOM shape the CSS rule targets, not the
+    // rendered opacity.
+    const badge = row.querySelector('.agenda-countdown.aired');
+    expect(badge).not.toBeNull();
 
     await unmount(app);
   });

@@ -253,6 +253,7 @@
                 </div>
                 {#if e.watched}
                   <span class="agenda-check" aria-hidden="true">✓</span>
+                  <span class="sr-only">Watched</span>
                 {/if}
                 <span class="agenda-countdown" class:soon={isSoon(e)} class:aired={e.airing_at != null && e.airing_at <= now}>
                   {countdownLabel(e)}
@@ -346,6 +347,8 @@
   .agenda-check { flex-shrink: 0; color: var(--color-success); font-size: 0.85rem; line-height: 1; }
   .agenda-row.watched { opacity: 0.62; }
   .agenda-row.watched:hover, .agenda-row.watched:focus { opacity: 1; }
+  /* Opacity compounds with the ancestor's dimming — cancel it so the aired badge stays legible. */
+  .agenda-row.watched .agenda-countdown.aired { opacity: 1; }
   .tip-watched { font-size: 0.78rem; color: var(--color-success); font-weight: 600; }
 
   /* Hover tooltip */
