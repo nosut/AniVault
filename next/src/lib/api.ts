@@ -517,6 +517,7 @@ export interface CalendarEntry {
   airing_at: number | null;
   time_until_airing: number | null;
   has_file: boolean;
+  watched: boolean;
 }
 
 export interface WatchHistoryEntry {

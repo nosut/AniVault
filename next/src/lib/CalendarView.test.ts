@@ -20,6 +20,7 @@ function weekly(animeId: number, title: string, firstEp: number): CalendarEntry[
       airing_at: airing,
       time_until_airing: 0,
       has_file: false,
+      watched: false,
     });
   }
   return out;
