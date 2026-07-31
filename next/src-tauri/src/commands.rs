@@ -1555,7 +1555,9 @@ fn apply_watched(
     for e in entries.iter_mut() {
         e.watched = e.next_episode.is_some_and(|ep| {
             history.contains(&(e.anime_id, ep))
-                || progress.get(&e.anime_id).is_some_and(|&p| ep <= p)
+                || progress
+                    .get(&e.anime_id)
+                    .is_some_and(|&p| ep >= 1 && ep <= p)
         });
     }
 }
@@ -3325,6 +3327,39 @@ mod tests {
         assert!(!entries[3].watched, "ep 6 is past progress 5");
         assert!(!entries[4].watched, "anime 30 has neither history nor a list entry");
         assert!(!entries[5].watched, "entry without an episode number");
+    }
+
+    #[test]
+    fn apply_watched_does_not_mark_episode_zero_from_progress_alone() {
+        // next_episode: Some(0) (e.g. a Sonarr fallback special numbered 0)
+        // must not be considered "watched" just because the show has some
+        // nonzero list progress; ep <= p is trivially true at ep == 0.
+        let mut entries = vec![calendar_entry(50, Some(0))];
+        let history: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
+        let progress: std::collections::HashMap<i64, i32> = [(50, 5)].into_iter().collect();
+
+        apply_watched(&mut entries, &history, &progress);
+
+        assert!(
+            !entries[0].watched,
+            "episode 0 must not be marked watched purely from nonzero progress"
+        );
+    }
+
+    #[test]
+    fn apply_watched_still_honors_exact_history_hit_for_episode_zero() {
+        // The history-set branch requires an exact (anime_id, 0) match, i.e. a
+        // genuine play record for episode 0 — that case is legitimately watched.
+        let mut entries = vec![calendar_entry(60, Some(0))];
+        let history: std::collections::HashSet<(i64, i32)> = [(60, 0)].into_iter().collect();
+        let progress: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
+
+        apply_watched(&mut entries, &history, &progress);
+
+        assert!(
+            entries[0].watched,
+            "an exact play record for episode 0 is a genuine watch"
+        );
     }
 
     #[test]

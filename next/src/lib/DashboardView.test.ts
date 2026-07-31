@@ -12,6 +12,7 @@ function cal(animeId: number, title: string, ep: number, airingAt: number, hasFi
   return {
     anime_id: animeId, title, image_url: null, episode_count: null, progress: null,
     next_episode: ep, airing_at: airingAt, time_until_airing: Math.max(0, airingAt - NOW), has_file: hasFile,
+    watched: false,
   };
 }
 

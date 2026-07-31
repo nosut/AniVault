@@ -347,8 +347,12 @@
   .agenda-check { flex-shrink: 0; color: var(--color-success); font-size: 0.85rem; line-height: 1; }
   .agenda-row.watched { opacity: 0.62; }
   .agenda-row.watched:hover, .agenda-row.watched:focus { opacity: 1; }
-  /* Opacity compounds with the ancestor's dimming — cancel it so the aired badge stays legible. */
-  .agenda-row.watched .agenda-countdown.aired { opacity: 1; }
+  /* Opacity compounds with the ancestor's dimming (0.62 x 0.55 ~= 0.34, near
+     illegible). Rescale to land back at ~0.55 relative to the row — the same
+     visual weight the aired badge has on an unwatched row — instead of 1,
+     which would erase the aired/not-aired distinction on watched rows.
+     0.62 x 0.88 ~= 0.55. Do not "simplify" this back to 1. */
+  .agenda-row.watched .agenda-countdown.aired { opacity: 0.88; }
   .tip-watched { font-size: 0.78rem; color: var(--color-success); font-weight: 600; }
 
   /* Hover tooltip */
