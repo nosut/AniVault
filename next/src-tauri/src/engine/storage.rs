@@ -381,6 +381,16 @@ impl Storage {
         Ok(row.get::<i64, _>(0))
     }
 
+    /// Distinct episode numbers with at least one play record for this anime.
+    /// `watch_history.episode` is NOT NULL, so no null handling is needed.
+    pub async fn watch_history_episodes(&self, anime_id: i64) -> anyhow::Result<Vec<i32>> {
+        let rows = sqlx::query("SELECT DISTINCT episode FROM watch_history WHERE anime_id = ?1")
+            .bind(anime_id)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.iter().map(|r| r.get::<i32, _>("episode")).collect())
+    }
+
     pub async fn migration_count(&self) -> anyhow::Result<i64> {
         let row = sqlx::query("SELECT COUNT(*) FROM _sqlx_migrations")
             .fetch_one(&self.pool)

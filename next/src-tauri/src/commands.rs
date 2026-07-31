@@ -1497,15 +1497,19 @@ fn refresh_time_until_airing(entries: &mut [CalendarEntry], now: i64) {
     }
 }
 
-/// Mark entries whose episode exists in the local file index (computed fresh
-/// on every call, including cache hits).
-async fn attach_download_status(state: &EngineState, entries: &mut [CalendarEntry]) {
+/// Fill the per-entry local state that is never cached — download status and
+/// watched status. Both reflect the local DB at read time, so they are
+/// recomputed on every call, including cache hits. A failing query degrades
+/// that one show to "no file" / "not watched" rather than failing the calendar.
+async fn attach_local_status(state: &EngineState, entries: &mut [CalendarEntry]) {
     let marker_ids: std::collections::HashSet<i64> = entries
         .iter()
         .filter(|e| e.next_episode.is_some())
         .map(|e| e.anime_id)
         .collect();
     let mut have: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
+    let mut history: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
+    let mut progress: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
     for id in marker_ids {
         if let Ok(rows) = state.storage.file_index_by_anime(id).await {
             for row in rows {
@@ -1517,8 +1521,17 @@ async fn attach_download_status(state: &EngineState, entries: &mut [CalendarEntr
                 }
             }
         }
+        if let Ok(eps) = state.storage.watch_history_episodes(id).await {
+            for ep in eps {
+                history.insert((id, ep));
+            }
+        }
+        if let Ok(Some(entry)) = state.storage.get_list_entry(id).await {
+            progress.insert(id, entry.watched_episodes);
+        }
     }
     apply_has_file(entries, &have);
+    apply_watched(entries, &history, &progress);
 }
 
 /// Mark entries whose airing episode already exists in the local file index.
@@ -1559,7 +1572,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
         if now - c.fetched_at < CALENDAR_CACHE_TTL_SECS {
             let mut entries = c.entries.clone();
             refresh_time_until_airing(&mut entries, now);
-            attach_download_status(state, &mut entries).await;
+            attach_local_status(state, &mut entries).await;
             return Ok(entries);
         }
     }
@@ -1736,7 +1749,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
         );
     }
 
-    attach_download_status(state, &mut result).await;
+    attach_local_status(state, &mut result).await;
 
     Ok(result)
 }
