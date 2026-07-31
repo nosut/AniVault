@@ -20,7 +20,8 @@ function weekly(animeId: number, title: string, firstEp: number): CalendarEntry[
       airing_at: airing,
       time_until_airing: 0,
       has_file: false,
-      watched: false,
+      // Everything up to and including Ep5 counts as watched.
+      watched: firstEp + i <= 5,
     });
   }
   return out;
@@ -102,6 +103,22 @@ describe('CalendarView month paging', () => {
     const now = new Date();
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     expect(headerText()).toBe(`${monthNames[now.getMonth()]} ${now.getFullYear()}`);
+
+    await unmount(app);
+  });
+
+  it('marks watched episodes with a check and dims the row', async () => {
+    const app = mount(CalendarView, { target: document.getElementById('app')! });
+    await settle();
+
+    expect(headerText()).toBe('July 2026');
+    // July renders Ep3..Ep7; the fixture marks Ep3, Ep4 and Ep5 as watched.
+    expect(document.querySelectorAll('.cal-day-entry.watched')).toHaveLength(3);
+    expect(document.querySelectorAll('.cal-day-entry .ep-check')).toHaveLength(3);
+
+    // Ep3 aired 2026-07-03 with no local file: not downloaded, but watched.
+    const first = document.querySelector('.cal-day-entry')!;
+    expect(first.getAttribute('aria-label')).toBe('Alpha Show Ep 3 (Not downloaded, watched)');
 
     await unmount(app);
   });

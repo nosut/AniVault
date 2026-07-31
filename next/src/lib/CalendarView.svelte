@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { getCalendar, getLibraryStats, type CalendarEntry, type LibraryStats } from './api';
-  import { episodeMarker } from './calendarUi';
+  import { episodeMarker, entryLabel, markerLabels } from './calendarUi';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
@@ -148,8 +148,6 @@
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-  const markerLabels = { have: 'Downloaded', missing: 'Not downloaded', future: 'Upcoming' } as const;
-
   onMount(() => {
     load();
     ticker = setInterval(() => { now = Math.floor(Date.now() / 1000); }, 1000);
@@ -199,9 +197,10 @@
             {@const marker = episodeMarker(entry, now)}
             <div
               class="cal-day-entry"
+              class:watched={entry.watched}
               tabindex="0"
               role="button"
-              aria-label="{entry.title} Ep {entry.next_episode ?? '?'} ({markerLabels[marker]})"
+              aria-label={entryLabel(entry, marker)}
               on:click={() => selectEntry(entry)}
               on:keydown={(e) => e.key === 'Enter' && selectEntry(entry)}
               on:mouseenter={(e) => placeTip(entry, e.clientX, e.clientY)}
@@ -214,6 +213,9 @@
               <span class="cal-entry-title">{entry.title}</span>
               {#if entry.next_episode}
                 <span class="cal-entry-ep">Ep{entry.next_episode}</span>
+              {/if}
+              {#if entry.watched}
+                <span class="ep-check" aria-hidden="true">✓</span>
               {/if}
             </div>
           {/each}
@@ -232,6 +234,7 @@
             {#each group.items as e}
               <button
                 class="agenda-row"
+                class:watched={e.watched}
                 on:click={() => selectEntry(e)}
                 on:mouseenter={(ev) => e.image_url && placeTip(e, ev.clientX, ev.clientY)}
                 on:mousemove={(ev) => e.image_url && placeTip(e, ev.clientX, ev.clientY)}
@@ -248,6 +251,9 @@
                     {#if e.next_episode}Ep {e.next_episode} · {/if}{#if e.airing_at}{timeLabel(e.airing_at)}{/if}
                   </span>
                 </div>
+                {#if e.watched}
+                  <span class="agenda-check" aria-hidden="true">✓</span>
+                {/if}
                 <span class="agenda-countdown" class:soon={isSoon(e)} class:aired={e.airing_at != null && e.airing_at <= now}>
                   {countdownLabel(e)}
                 </span>
@@ -271,6 +277,9 @@
         {#if tip.entry.next_episode}Episode {tip.entry.next_episode}{/if}
         {#if tip.entry.episode_count} / {tip.entry.episode_count}{/if}
       </p>
+      {#if tip.entry.watched}
+        <p class="tip-watched">✓ Watched</p>
+      {/if}
       {#if tip.entry.airing_at}
         <p class="tip-when">
           {new Date(tip.entry.airing_at * 1000).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -311,6 +320,10 @@
   .ep-dot.have { background: var(--color-success); }
   .ep-dot.missing { background: transparent; border: 1.5px solid var(--color-warning); }
   .ep-dot.future { background: rgba(var(--color-accent-rgb), 0.25); }
+  .ep-check { flex-shrink: 0; color: var(--color-success); font-size: 0.62rem; line-height: 1; margin-left: 0.15rem; }
+  .cal-day-entry.watched { opacity: 0.62; }
+  /* A dimmed title must still be readable when the user goes looking for it. */
+  .cal-day-entry.watched:hover, .cal-day-entry.watched:focus { opacity: 1; }
   .cal-day-entry:hover { background: rgba(var(--color-accent-rgb),0.1); border-radius: 2px; }
   .cal-entry-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
   .cal-entry-ep { color: var(--color-accent); flex-shrink: 0; margin-left: 0.2rem; }
@@ -330,6 +343,10 @@
   .agenda-countdown { flex-shrink: 0; font-size: 0.78rem; font-variant-numeric: tabular-nums; color: var(--color-muted); padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid rgba(var(--color-accent-rgb),0.15); }
   .agenda-countdown.soon { color: #06121f; background: var(--color-accent); border-color: transparent; font-weight: 700; }
   .agenda-countdown.aired { opacity: 0.55; }
+  .agenda-check { flex-shrink: 0; color: var(--color-success); font-size: 0.85rem; line-height: 1; }
+  .agenda-row.watched { opacity: 0.62; }
+  .agenda-row.watched:hover, .agenda-row.watched:focus { opacity: 1; }
+  .tip-watched { font-size: 0.78rem; color: var(--color-success); font-weight: 600; }
 
   /* Hover tooltip */
   .cal-tooltip { position: fixed; z-index: 50; display: flex; gap: 0.6rem; max-width: 320px; padding: 0.6rem; border-radius: 10px; background: rgba(14,18,28,0.98); border: 1px solid rgba(var(--color-accent-rgb),0.25); box-shadow: 0 8px 24px rgba(0,0,0,0.5); pointer-events: none; }
