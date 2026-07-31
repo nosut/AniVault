@@ -1451,6 +1451,13 @@ pub struct CalendarEntry {
     pub airing_at: Option<i64>,
     pub time_until_airing: Option<i64>,
     pub has_file: bool,
+    /// Whether the user has already watched this specific episode. Like
+    /// `has_file`, this is recomputed from the local DB on every read and is
+    /// never trusted from `calendar.cache` — `serde(default)` only exists so a
+    /// cache written before this field still deserializes instead of forcing a
+    /// needless refetch.
+    #[serde(default)]
+    pub watched: bool,
 }
 
 /// The airing calendar changes slowly but was refetched from AniList on every
@@ -1523,6 +1530,23 @@ fn apply_has_file(entries: &mut [CalendarEntry], files: &std::collections::HashS
     }
 }
 
+/// Mark entries for episodes the user has already watched. Two independent
+/// sources: a local play record (covers in-app and out-of-order plays) or list
+/// progress having reached the episode (covers anything watched before or
+/// outside AniVault and synced from AniList).
+fn apply_watched(
+    entries: &mut [CalendarEntry],
+    history: &std::collections::HashSet<(i64, i32)>,
+    progress: &std::collections::HashMap<i64, i32>,
+) {
+    for e in entries.iter_mut() {
+        e.watched = e.next_episode.is_some_and(|ep| {
+            history.contains(&(e.anime_id, ep))
+                || progress.get(&e.anime_id).is_some_and(|&p| ep <= p)
+        });
+    }
+}
+
 pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<CalendarEntry>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1582,6 +1606,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                             airing_at: Some(it.airing_at),
                             time_until_airing: Some(it.time_until_airing),
                             has_file: false,
+                            watched: false,
                         });
                     }
                     tracing::info!(
@@ -1661,6 +1686,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                             airing_at: air_ts,
                             time_until_airing: air_ts.map(|air| (air - now).max(0)),
                             has_file: false,
+                            watched: false,
                         });
                         filled += 1;
                     }
@@ -1701,6 +1727,7 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                 airing_at: None,
                 time_until_airing: None,
                 has_file: false,
+                watched: false,
             })
             .collect();
         tracing::info!(
@@ -3076,6 +3103,7 @@ mod tests {
             airing_at: None,
             time_until_airing: None,
             has_file: false,
+            watched: false,
         }
     }
 
@@ -3261,6 +3289,39 @@ mod tests {
         assert!(!entries[1].has_file, "anime 10 ep 4 has no file");
         assert!(!entries[2].has_file, "ep 3 of a different anime has no file");
         assert!(!entries[3].has_file, "entry without an episode number");
+    }
+
+    #[test]
+    fn apply_watched_marks_history_hits_and_episodes_within_progress() {
+        let mut entries = vec![
+            calendar_entry(10, Some(3)), // 0: play record exists
+            calendar_entry(10, Some(4)), // 1: no play record, no list progress
+            calendar_entry(20, Some(5)), // 2: exactly at list progress
+            calendar_entry(20, Some(6)), // 3: beyond list progress
+            calendar_entry(30, Some(1)), // 4: no history and no list entry
+            calendar_entry(40, None),    // 5: no episode number to judge
+        ];
+        let history: std::collections::HashSet<(i64, i32)> = [(10, 3)].into_iter().collect();
+        let progress: std::collections::HashMap<i64, i32> = [(20, 5)].into_iter().collect();
+
+        apply_watched(&mut entries, &history, &progress);
+
+        assert!(entries[0].watched, "anime 10 ep 3 has a play record");
+        assert!(!entries[1].watched, "anime 10 ep 4 was never played");
+        assert!(entries[2].watched, "ep 5 with progress 5 is watched");
+        assert!(!entries[3].watched, "ep 6 is past progress 5");
+        assert!(!entries[4].watched, "anime 30 has neither history nor a list entry");
+        assert!(!entries[5].watched, "entry without an episode number");
+    }
+
+    #[test]
+    fn calendar_entry_deserializes_a_cache_written_before_the_watched_field() {
+        let json = r#"{"anime_id":1,"title":"T","image_url":null,"episode_count":null,
+            "progress":null,"next_episode":3,"airing_at":null,"time_until_airing":null,
+            "has_file":false}"#;
+        let e: CalendarEntry =
+            serde_json::from_str(json).expect("pre-existing calendar.cache must still parse");
+        assert!(!e.watched, "missing field defaults to not watched");
     }
 
     #[test]
