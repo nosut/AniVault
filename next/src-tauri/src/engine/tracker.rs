@@ -3,10 +3,53 @@ use std::time::Duration;
 
 use tokio::sync::watch;
 
+use crate::engine::events::EngineEvent;
 use crate::engine::player_registry::builtin_player_registry;
 use crate::engine::runtime::EngineState;
 use crate::engine::scanner::{scan_active_players, ScannerConfig};
-use crate::engine::session::process_scan_result;
+use crate::engine::session::{
+    advance_session, passes_min_watch, process_scan_result, ActivePlayback, EndedPlayback,
+    SessionKey,
+};
+
+/// Consecutive scan misses tolerated before a session is treated as ended. At
+/// the 2s tick this is ~4s, enough to ride out a window-title glitch mid-seek.
+const GRACE_TICKS: u8 = 2;
+
+/// Fallback when `up_next_min_watch_minutes` is unset or unparseable.
+const DEFAULT_MIN_WATCH_MINUTES: i64 = 5;
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Minutes a session must last before it is worth an Up Next prompt. `0` always
+/// prompts. A missing or malformed setting falls back to the default.
+async fn min_watch_minutes(state: &EngineState) -> i64 {
+    state
+        .storage
+        .get_setting("up_next_min_watch_minutes")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_str::<i64>(&raw).ok())
+        .unwrap_or(DEFAULT_MIN_WATCH_MINUTES)
+}
+
+async fn publish_playback_ended(state: &EngineState, ended: EndedPlayback) {
+    if !passes_min_watch(ended.watched_secs, min_watch_minutes(state).await) {
+        return;
+    }
+    state.events.publish(EngineEvent::PlaybackEnded {
+        anime_id: ended.anime_id,
+        episode: ended.episode,
+        file_key: ended.file_key,
+        watched_secs: ended.watched_secs,
+    });
+}
 
 pub async fn run_tracking_loop(
     state: EngineState,
@@ -16,6 +59,7 @@ pub async fn run_tracking_loop(
     let config = ScannerConfig {
         known_players: builtin_player_registry(),
     };
+    let mut session: Option<ActivePlayback> = None;
 
     loop {
         if *cancel.borrow() {
@@ -23,6 +67,11 @@ pub async fn run_tracking_loop(
         }
 
         if state.tracking_paused.load(Ordering::Relaxed) {
+            // Pausing ends any open session immediately — no grace, because the
+            // scanner deliberately stops looking.
+            if let Some(ended) = advance_session(&mut session, None, unix_now(), 0) {
+                publish_playback_ended(&state, ended).await;
+            }
             tokio::time::sleep(Duration::from_millis(500)).await;
             continue;
         }
@@ -33,7 +82,7 @@ pub async fn run_tracking_loop(
             .unwrap_or_default();
 
         // Update watching status — lock scope must not span .await
-        if let Some(result) = results.first() {
+        let observed: Option<SessionKey> = if let Some(result) = results.first() {
             {
                 let mut ctrl = state.tracking.lock().unwrap();
                 ctrl.watching = Some(crate::engine::runtime::ActivePlaybackPub {
@@ -47,18 +96,31 @@ pub async fn run_tracking_loop(
                 });
             } // lock dropped here
 
-            if let Err(e) = process_scan_result(&state, result.clone()).await {
-                tracing::warn!("session error: {e}");
+            match process_scan_result(&state, result.clone()).await {
+                Ok(key) => key,
+                Err(e) => {
+                    tracing::warn!("session error: {e}");
+                    None
+                }
             }
         } else {
             let mut ctrl = state.tracking.lock().unwrap();
             ctrl.watching = None;
+            None
+        };
+
+        if let Some(ended) = advance_session(&mut session, observed, unix_now(), GRACE_TICKS) {
+            publish_playback_ended(&state, ended).await;
         }
 
         tokio::time::sleep(Duration::from_millis(interval_ms)).await;
     }
 
-    // Cleanup
+    // Cleanup — a session open at shutdown still counts as ended.
+    if let Some(ended) = advance_session(&mut session, None, unix_now(), 0) {
+        publish_playback_ended(&state, ended).await;
+    }
+
     let mut ctrl = state.tracking.lock().unwrap();
     ctrl.active = false;
     ctrl.watching = None;

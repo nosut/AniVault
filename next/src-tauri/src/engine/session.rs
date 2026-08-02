@@ -114,9 +114,14 @@ pub fn guess_episode(file_path: Option<&str>, window_title: Option<&str>) -> Opt
     None
 }
 
-pub async fn process_scan_result(state: &EngineState, result: ScanResult) -> anyhow::Result<()> {
+pub async fn process_scan_result(
+    state: &EngineState,
+    result: ScanResult,
+) -> anyhow::Result<Option<SessionKey>> {
     let fp = result.file_path.as_deref().unwrap_or("");
     let recognition = recognize_file(fp, result.window_title.as_deref(), &state.storage).await?;
+
+    let mut session_key: Option<SessionKey> = None;
 
     // Auto-confirm without user interaction when the match is confident: a file
     // already mapped (known_file), or a fresh candidate at/above the threshold.
@@ -151,6 +156,19 @@ pub async fn process_scan_result(state: &EngineState, result: ScanResult) -> any
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs() as i64;
+
+            // The tracker keys the watch session on the path when the player
+            // reports one, else the window title (mpv/VLC report title only).
+            let file_key = result
+                .file_path
+                .clone()
+                .or_else(|| result.window_title.clone())
+                .unwrap_or_default();
+            session_key = Some(SessionKey {
+                anime_id,
+                episode,
+                file_key,
+            });
 
             // Remember a fresh (not-yet-known) file so it's known next time — but
             // only if `fp` is a real path. mpv/VLC provide only the window title,
@@ -244,7 +262,7 @@ pub async fn process_scan_result(state: &EngineState, result: ScanResult) -> any
         detected_at_unix: result.detected_at_unix,
     });
 
-    Ok(())
+    Ok(session_key)
 }
 
 /// Show a desktop toast when playback auto-advances an episode. Respects the
