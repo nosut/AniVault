@@ -3070,20 +3070,32 @@ pub fn up_next_from(
 pub async fn get_up_next_inner(
     state: &EngineState,
     anime_id: i64,
+    after: Option<i32>,
 ) -> anyhow::Result<Option<UpNext>> {
     let Some((title, image_url, watched)) = state.storage.up_next_meta(anime_id).await? else {
         return Ok(None);
     };
     let files = state.storage.file_index_by_anime(anime_id).await?;
-    Ok(up_next_from(anime_id, title, image_url, watched, &files))
+    // `after` is the episode that just finished playing. Without it, fall back to
+    // recorded progress — which is also what keeps rewatches from returning None.
+    Ok(up_next_from(
+        anime_id,
+        title,
+        image_url,
+        after.unwrap_or(watched),
+        &files,
+    ))
 }
 
 #[tauri::command]
 pub async fn get_up_next(
     anime_id: i64,
+    after: Option<i32>,
     state: tauri::State<'_, EngineState>,
 ) -> Result<Option<UpNext>, String> {
-    get_up_next_inner(&state, anime_id).await.map_err(command_error)
+    get_up_next_inner(&state, anime_id, after)
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]
@@ -3408,5 +3420,20 @@ mod tests {
     fn up_next_none_when_no_unwatched_file() {
         let files = vec![file_row(1, Some(1), 10, false), file_row(1, Some(2), 20, false)];
         assert!(up_next_from(1, "Show".into(), None, 5, &files).is_none());
+    }
+
+    #[test]
+    fn up_next_after_the_played_episode_offers_the_following_file() {
+        // A completed show (progress 12) where the user just replayed episode 3:
+        // the threshold is the played episode, not the recorded progress.
+        let files = vec![
+            file_row(1, Some(1), 10, false),
+            file_row(1, Some(2), 20, false),
+            file_row(1, Some(3), 30, false),
+            file_row(1, Some(4), 40, false),
+        ];
+        let un = up_next_from(1, "Show".into(), None, 3, &files).expect("has next");
+        assert_eq!(un.episode, 4);
+        assert!(un.file_path.contains("e4"));
     }
 }
