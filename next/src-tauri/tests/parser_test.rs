@@ -270,6 +270,43 @@ fn parse_title_with_number_hyphen() {
     );
 }
 
+// 9b. The show title ends at the episode marker — whatever follows is the
+// episode's own title, which is noise when matching against the library.
+#[test]
+fn episode_title_after_the_marker_is_dropped() {
+    // mpv reports the mkv's embedded title: "<show> S01E07 <episode title>",
+    // with none of the " - " separators the filename on disk has.
+    let result = parse_filename(
+        "No Longer Allowed in Another World S01E07 Will You Sentence Me to Death Again? - mpv",
+        None,
+    )
+    .expect("should parse an mpv window title");
+    assert_eq!(result.episode_number, 7);
+    assert_eq!(
+        result.cleaned_title, "No Longer Allowed in Another World",
+        "the episode title must not survive into the search query"
+    );
+}
+
+#[test]
+fn episode_title_after_a_dash_separated_marker_is_dropped() {
+    let result = parse_filename(
+        "2.5 Dimensional Seduction - S01E03 - Lili x Miri.mkv",
+        None,
+    )
+    .expect("should parse a dash-separated filename");
+    assert_eq!(result.episode_number, 3);
+    assert_eq!(result.cleaned_title, "2.5 Dimensional Seduction");
+}
+
+#[test]
+fn episode_title_after_a_dash_number_marker_is_dropped() {
+    let result = parse_filename("Cowboy Bebop - 05 - Ballad of Fallen Angels.mkv", None)
+        .expect("should parse a dash-number filename");
+    assert_eq!(result.episode_number, 5);
+    assert_eq!(result.cleaned_title, "Cowboy Bebop");
+}
+
 // 10. No episode number (movie / special) — returns None gracefully
 #[test]
 fn parse_movie_no_episode() {

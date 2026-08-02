@@ -62,6 +62,39 @@ static PLAYER_SUFFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\s*-\s*(?:mpv|vlc(?:\s+media\s+player)?|potplayer|mpc-?(?:hc|be)?|smplayer|kmplayer|gom\s*player|windows media player)\s*$").unwrap()
 });
 
+/// Match one episode pattern and split the text at it: the show title is whatever
+/// precedes the marker, and everything after it is the episode's own title.
+///
+/// Both shapes in the wild read that way — "Show - S01E07 - Episode Title.mkv" on
+/// disk, and "Show S01E07 Episode Title" from a player reporting the file's
+/// embedded title with no separators at all. Removing just the marker used to
+/// leave the episode title glued to the show name, which then drags a handful of
+/// common words ("will", "you", "death", "again") into the library search.
+///
+/// `episode_group` is which capture holds the episode number. Returns `None` when
+/// the pattern does not match or the number is out of range. When nothing precedes
+/// the marker there is no show name to recover, so the remainder is kept rather
+/// than yielding an empty title.
+fn episode_and_title(cleaned: &str, re: &Regex, episode_group: usize) -> Option<(i32, String)> {
+    let caps = re.captures(cleaned)?;
+    let n = caps.get(episode_group)?.as_str().parse::<i32>().ok()?;
+    if n <= 0 || n > 2000 {
+        return None;
+    }
+
+    let marker = caps.get(0)?;
+    let before = cleaned[..marker.start()]
+        .trim()
+        .trim_end_matches(['-', '_', '.', ' '])
+        .trim();
+    let title = if before.is_empty() {
+        cleaned[marker.end()..].trim().to_string()
+    } else {
+        before.to_string()
+    };
+    Some((n, title))
+}
+
 pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedFilename> {
     let source_text = window_title.unwrap_or(input);
 
@@ -100,60 +133,40 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
 
     // Try S01E01 style first (ignore season, extract episode)
     let mut episode: Option<i32> = None;
-    if let Some(caps) = S01E01_RE.captures(&cleaned) {
-        if let Ok(n) = caps[2].parse::<i32>() {
-            if n > 0 && n <= 2000 {
-                episode = Some(n);
-                cleaned = S01E01_RE.replace(&cleaned, "").to_string();
-            }
-        }
+    if let Some((n, title)) = episode_and_title(&cleaned, &S01E01_RE, 2) {
+        episode = Some(n);
+        cleaned = title;
     }
 
     // Try "1x01" cross format (season x episode)
     if episode.is_none() {
-        if let Some(caps) = SEASON_X_EP_RE.captures(&cleaned) {
-            if let Ok(n) = caps[2].parse::<i32>() {
-                if n > 0 && n <= 2000 {
-                    episode = Some(n);
-                    cleaned = SEASON_X_EP_RE.replace(&cleaned, "").to_string();
-                }
-            }
+        if let Some((n, title)) = episode_and_title(&cleaned, &SEASON_X_EP_RE, 2) {
+            episode = Some(n);
+            cleaned = title;
         }
     }
 
     // Try "Episode 01" spelled out
     if episode.is_none() {
-        if let Some(caps) = EPISODE_WORD_RE.captures(&cleaned) {
-            if let Ok(n) = caps[1].parse::<i32>() {
-                if n > 0 && n <= 2000 {
-                    episode = Some(n);
-                    cleaned = EPISODE_WORD_RE.replace(&cleaned, "").to_string();
-                }
-            }
+        if let Some((n, title)) = episode_and_title(&cleaned, &EPISODE_WORD_RE, 1) {
+            episode = Some(n);
+            cleaned = title;
         }
     }
 
     // Try " - 01" dash-number pattern
     if episode.is_none() {
-        if let Some(caps) = DASH_MULTI_NUM_RE.captures(&cleaned) {
-            if let Ok(n) = caps[1].parse::<i32>() {
-                if n > 0 && n <= 2000 {
-                    episode = Some(n);
-                    cleaned = DASH_MULTI_NUM_RE.replace(&cleaned, "").to_string();
-                }
-            }
+        if let Some((n, title)) = episode_and_title(&cleaned, &DASH_MULTI_NUM_RE, 1) {
+            episode = Some(n);
+            cleaned = title;
         }
     }
 
     // Try bare EP01 / E01 patterns
     if episode.is_none() {
-        if let Some(caps) = EPISODE_RE.captures(&cleaned) {
-            if let Ok(n) = caps[1].parse::<i32>() {
-                if n > 0 && n <= 2000 {
-                    episode = Some(n);
-                    cleaned = EPISODE_RE.replace(&cleaned, "").to_string();
-                }
-            }
+        if let Some((n, title)) = episode_and_title(&cleaned, &EPISODE_RE, 1) {
+            episode = Some(n);
+            cleaned = title;
         }
     }
 
@@ -169,12 +182,6 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
         .collect::<Vec<_>>()
         .join(" ");
     cleaned = cleaned.trim().to_string();
-
-    // Collapse double-dash artifacts from " - S01E01 - EpisodeTitle" pattern removal
-    // e.g., "2.5 Dimensional Seduction - - Title" -> "2.5 Dimensional Seduction"
-    if let Some(pos) = cleaned.find(" - - ") {
-        cleaned = cleaned[..pos].to_string();
-    }
 
     if cleaned.is_empty() {
         return None;
