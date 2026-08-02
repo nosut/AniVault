@@ -49,7 +49,7 @@ dependencies = [
 
 [[package]]
 name = "anivault"
-version = "1.0.14"
+version = "1.0.15"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
