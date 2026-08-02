@@ -4,20 +4,92 @@ use crate::engine::runtime::EngineState;
 use crate::engine::scanner::ScanResult;
 use crate::engine::storage::MappingSource;
 
-#[derive(Debug, Clone)]
-pub struct ActivePlayback {
-    pub anime_info: Option<AnimeIdentified>,
-    pub last_episode: i32,
-    pub started_at: i64,
-    pub last_seen_at: i64,
-    pub player_name: String,
-    pub file_path: Option<String>,
-    pub window_title: Option<String>,
+/// Identity of a playback session: which library episode is on screen.
+///
+/// `file_key` is the player-reported file path when there is one, else the
+/// window title — mpv and VLC report only a title, and the key only has to be
+/// stable across ticks of the same playback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionKey {
+    pub anime_id: i64,
+    pub episode: i32,
+    pub file_key: String,
 }
 
+/// A playback session the tracker is currently observing.
 #[derive(Debug, Clone)]
-pub struct WatchSession {
-    pub active: Option<ActivePlayback>,
+pub struct ActivePlayback {
+    pub key: SessionKey,
+    pub started_at: i64,
+    pub last_seen_at: i64,
+    pub missed_ticks: u8,
+}
+
+/// A session that just stopped being observed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndedPlayback {
+    pub anime_id: i64,
+    pub episode: i32,
+    pub file_key: String,
+    pub watched_secs: i64,
+}
+
+impl ActivePlayback {
+    fn end(&self) -> EndedPlayback {
+        EndedPlayback {
+            anime_id: self.key.anime_id,
+            episode: self.key.episode,
+            file_key: self.key.file_key.clone(),
+            watched_secs: self.last_seen_at - self.started_at,
+        }
+    }
+}
+
+/// Advance the watch session by one tracker tick. Pure: no clock, no storage.
+///
+/// `observed` is the identified library episode on screen this tick, or `None`
+/// when nothing recognisable is playing. A session survives up to `grace_ticks`
+/// consecutive misses, so a momentary window-title glitch during a seek does not
+/// end it; `watched_secs` is measured to the last tick the file was actually
+/// seen, so grace never inflates it. Returns the session that just ended, if any.
+pub fn advance_session(
+    session: &mut Option<ActivePlayback>,
+    observed: Option<SessionKey>,
+    now: i64,
+    grace_ticks: u8,
+) -> Option<EndedPlayback> {
+    let Some(key) = observed else {
+        let Some(active) = session.as_mut() else {
+            return None;
+        };
+        active.missed_ticks = active.missed_ticks.saturating_add(1);
+        if active.missed_ticks <= grace_ticks {
+            return None;
+        }
+        return session.take().as_ref().map(ActivePlayback::end);
+    };
+
+    if let Some(active) = session.as_mut() {
+        if active.key == key {
+            active.last_seen_at = now;
+            active.missed_ticks = 0;
+            return None;
+        }
+    }
+
+    let ended = session.take().as_ref().map(ActivePlayback::end);
+    *session = Some(ActivePlayback {
+        key,
+        started_at: now,
+        last_seen_at: now,
+        missed_ticks: 0,
+    });
+    ended
+}
+
+/// Whether a finished session outlasted the configured minimum. `0` always passes.
+pub fn passes_min_watch(watched_secs: i64, min_minutes: i64) -> bool {
+    watched_secs >= min_minutes.max(0) * 60
 }
 
 pub fn guess_episode(file_path: Option<&str>, window_title: Option<&str>) -> Option<i32> {
@@ -241,5 +313,83 @@ mod tests {
     #[test]
     fn guess_episode_s01e_pattern() {
         assert_eq!(guess_episode(None, Some("[Subs] Show S01E03")), Some(3));
+    }
+
+    fn key(anime_id: i64, episode: i32) -> SessionKey {
+        SessionKey {
+            anime_id,
+            episode,
+            file_key: format!("D:/Anime/a{anime_id}-e{episode}.mkv"),
+        }
+    }
+
+    #[test]
+    fn same_key_across_ticks_does_not_end_the_session() {
+        let mut session = None;
+        assert_eq!(advance_session(&mut session, Some(key(1, 5)), 100, 2), None);
+        assert_eq!(advance_session(&mut session, Some(key(1, 5)), 102, 2), None);
+        let active = session.expect("session stays open");
+        assert_eq!(active.started_at, 100);
+        assert_eq!(active.last_seen_at, 102);
+    }
+
+    #[test]
+    fn key_change_ends_the_previous_session() {
+        let mut session = None;
+        advance_session(&mut session, Some(key(1, 5)), 100, 2);
+        advance_session(&mut session, Some(key(1, 5)), 400, 2);
+        let ended = advance_session(&mut session, Some(key(1, 6)), 402, 2).expect("previous ended");
+        assert_eq!(ended.anime_id, 1);
+        assert_eq!(ended.episode, 5);
+        assert_eq!(ended.watched_secs, 300);
+        assert_eq!(session.expect("new session opened").key, key(1, 6));
+    }
+
+    #[test]
+    fn one_missed_tick_within_grace_keeps_the_session() {
+        let mut session = None;
+        advance_session(&mut session, Some(key(1, 5)), 100, 2);
+        assert_eq!(advance_session(&mut session, None, 102, 2), None);
+        assert_eq!(advance_session(&mut session, None, 104, 2), None);
+        assert!(session.is_some(), "two misses is still within a grace of 2");
+    }
+
+    #[test]
+    fn misses_beyond_grace_end_the_session_excluding_grace_time() {
+        let mut session = None;
+        advance_session(&mut session, Some(key(1, 5)), 100, 2);
+        advance_session(&mut session, Some(key(1, 5)), 400, 2);
+        advance_session(&mut session, None, 402, 2);
+        advance_session(&mut session, None, 404, 2);
+        let ended = advance_session(&mut session, None, 406, 2).expect("grace exhausted");
+        assert_eq!(ended.episode, 5);
+        assert_eq!(
+            ended.watched_secs, 300,
+            "grace ticks must not inflate the watched time"
+        );
+        assert!(session.is_none(), "session is cleared once it ends");
+    }
+
+    #[test]
+    fn nothing_observed_without_a_session_is_a_no_op() {
+        let mut session = None;
+        assert_eq!(advance_session(&mut session, None, 100, 2), None);
+        assert!(session.is_none());
+    }
+
+    #[test]
+    fn zero_grace_ends_the_session_on_the_first_miss() {
+        let mut session = None;
+        advance_session(&mut session, Some(key(1, 5)), 100, 0);
+        advance_session(&mut session, Some(key(1, 5)), 700, 0);
+        let ended = advance_session(&mut session, None, 702, 0).expect("ends immediately");
+        assert_eq!(ended.watched_secs, 600);
+    }
+
+    #[test]
+    fn min_watch_gate_compares_against_minutes() {
+        assert!(!passes_min_watch(299, 5));
+        assert!(passes_min_watch(300, 5));
+        assert!(passes_min_watch(0, 0), "zero minutes always prompts");
     }
 }
