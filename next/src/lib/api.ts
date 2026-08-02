@@ -155,6 +155,15 @@ export interface ProgressAdvancedEvent {
   };
 }
 
+export interface PlaybackEndedEvent {
+  PlaybackEnded: {
+    anime_id: number;
+    episode: number;
+    file_key: string;
+    watched_secs: number;
+  };
+}
+
 export interface SyncQueuedEvent {
   SyncQueued: {
     service: string;
@@ -180,6 +189,7 @@ export interface LibraryUpdatedEvent {
 export type EngineEvent =
   | MediaDetectedEvent
   | PlaybackDetectedEvent
+  | PlaybackEndedEvent
   | AnimeIdentifiedEvent
   | ProgressAdvancedEvent
   | SyncQueuedEvent
@@ -781,8 +791,8 @@ export interface UpNext {
   file_path: string;
 }
 
-export function getUpNext(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<UpNext | null> {
-  return invokeFn<UpNext | null>('get_up_next', { animeId });
+export function getUpNext(animeId: number, after?: number, invokeFn: InvokeFn = tauriInvoke): Promise<UpNext | null> {
+  return invokeFn<UpNext | null>('get_up_next', { animeId, after: after ?? null });
 }
 
 export function notifyUpNext(title: string, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {

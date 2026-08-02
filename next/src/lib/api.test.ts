@@ -485,11 +485,17 @@ describe('api wrappers', () => {
     expect(res).toBe(3500);
   });
 
-  it('getUpNext passes animeId and returns the prompt or null', async () => {
+  it('getUpNext passes animeId and the after episode, and returns the prompt or null', async () => {
     const fake = vi.fn().mockResolvedValue({ anime_id: 1, title: 'Frieren', image_url: null, episode: 13, file_path: 'C:/x/e13.mkv' });
-    const res = await getUpNext(1, fake);
-    expect(fake).toHaveBeenCalledWith('get_up_next', { animeId: 1 });
+    const res = await getUpNext(1, 12, fake);
+    expect(fake).toHaveBeenCalledWith('get_up_next', { animeId: 1, after: 12 });
     expect(res?.episode).toBe(13);
+  });
+
+  it('getUpNext sends a null after when none is given', async () => {
+    const fake = vi.fn().mockResolvedValue(null);
+    await getUpNext(1, undefined, fake);
+    expect(fake).toHaveBeenCalledWith('get_up_next', { animeId: 1, after: null });
   });
 
   it('notifyUpNext forwards title and episode', async () => {

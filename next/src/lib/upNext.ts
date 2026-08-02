@@ -5,14 +5,14 @@ export interface PromptKey {
   episode: number;
 }
 
-/** The most recent ProgressAdvanced in a polled event batch, if any. */
-export function latestProgressAdvance(
+/** The most recent PlaybackEnded in a polled event batch, if any. */
+export function latestPlaybackEnded(
   events: EngineEvent[],
-): { anime_id: number; new_episode: number } | null {
+): { anime_id: number; episode: number } | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const ev = events[i];
-    if (ev && 'ProgressAdvanced' in ev) {
-      return { anime_id: ev.ProgressAdvanced.anime_id, new_episode: ev.ProgressAdvanced.new_episode };
+    if (ev && 'PlaybackEnded' in ev) {
+      return { anime_id: ev.PlaybackEnded.anime_id, episode: ev.PlaybackEnded.episode };
     }
   }
   return null;
