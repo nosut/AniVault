@@ -6,14 +6,29 @@ use crate::engine::storage::MappingSource;
 
 /// Identity of a playback session: which library episode is on screen.
 ///
-/// `file_key` is the player-reported file path when there is one, else the
-/// window title — mpv and VLC report only a title, and the key only has to be
-/// stable across ticks of the same playback.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Identity is `anime_id` + `episode` only — compare with [`same_session`],
+/// never with `==`, so a field added here cannot silently join the identity.
+///
+/// `file_key` is carried metadata, not identity. The scanner has no real media
+/// path to give: `scan_active_players` reports the window title as `file_path`
+/// (falling back to the player executable), so this is in practice the window
+/// title. Player titles mutate mid-playback — a position, a percentage, a
+/// paused marker, a playlist index — and treating that churn as a new session
+/// would end every session after one tick, leaving `watched_secs` at ~0 and the
+/// minimum-watch gate rejecting every one of them.
+#[derive(Debug, Clone)]
 pub struct SessionKey {
     pub anime_id: i64,
     pub episode: i32,
     pub file_key: String,
+}
+
+/// Whether two keys name the same watch session: same anime, same episode.
+///
+/// Two different files of the same anime and episode collapse into one session,
+/// which is harmless — the prompt only ever needs the anime and the episode.
+pub fn same_session(a: &SessionKey, b: &SessionKey) -> bool {
+    a.anime_id == b.anime_id && a.episode == b.episode
 }
 
 /// A playback session the tracker is currently observing.
@@ -49,9 +64,10 @@ impl ActivePlayback {
 ///
 /// `observed` is the identified library episode on screen this tick, or `None`
 /// when nothing recognisable is playing. A session survives up to `grace_ticks`
-/// consecutive misses, so a momentary window-title glitch during a seek does not
-/// end it; `watched_secs` is measured to the last tick the file was actually
-/// seen, so grace never inflates it. Returns the session that just ended, if any.
+/// consecutive misses, so a tick that fails to recognise the player — a title
+/// briefly reduced to the app name during a seek, say — does not end it;
+/// `watched_secs` is measured to the last tick the episode was actually seen, so
+/// grace never inflates it. Returns the session that just ended, if any.
 pub fn advance_session(
     session: &mut Option<ActivePlayback>,
     observed: Option<SessionKey>,
@@ -70,7 +86,9 @@ pub fn advance_session(
     };
 
     if let Some(active) = session.as_mut() {
-        if active.key == key {
+        if same_session(&active.key, &key) {
+            // The first-seen `file_key` is kept: it is only carried metadata, and
+            // player window titles churn while the same episode keeps playing.
             active.last_seen_at = now;
             active.missed_ticks = 0;
             return None;
@@ -90,6 +108,25 @@ pub fn advance_session(
 /// Whether a finished session outlasted the configured minimum. `0` always passes.
 pub fn passes_min_watch(watched_secs: i64, min_minutes: i64) -> bool {
     watched_secs >= min_minutes.max(0) * 60
+}
+
+/// Whether an ended session was immediately superseded by the session that
+/// replaced it — the player advancing itself through a playlist or folder queue.
+///
+/// `advance_session` ends one session and opens the next in a single call, so
+/// when a player rolls from episode 5 to episode 6 the tracker learns that
+/// episode 5 ended while episode 6 is already on screen. Offering episode 6 then
+/// is pointless: the user is watching it, and the prompt's Play button would
+/// launch a second player.
+///
+/// Only a *later* episode of the *same* anime counts. Playback simply stopping
+/// (`next` is `None`), switching to a different show, or going back to an
+/// earlier episode all still deserve a prompt.
+pub fn superseded_by(ended: &EndedPlayback, next: Option<&ActivePlayback>) -> bool {
+    match next {
+        Some(next) => next.key.anime_id == ended.anime_id && next.key.episode > ended.episode,
+        None => false,
+    }
 }
 
 pub fn guess_episode(file_path: Option<&str>, window_title: Option<&str>) -> Option<i32> {
@@ -157,8 +194,9 @@ pub async fn process_scan_result(
                 .unwrap_or_default()
                 .as_secs() as i64;
 
-            // The tracker keys the watch session on the path when the player
-            // reports one, else the window title (mpv/VLC report title only).
+            // Metadata only — the session's identity is the anime and episode
+            // (see `SessionKey`). The scanner reports the window title here, so
+            // this is a title rather than a path in practice.
             let file_key = result
                 .file_path
                 .clone()
@@ -360,7 +398,83 @@ mod tests {
         assert_eq!(ended.anime_id, 1);
         assert_eq!(ended.episode, 5);
         assert_eq!(ended.watched_secs, 300);
-        assert_eq!(session.expect("new session opened").key, key(1, 6));
+        assert!(same_session(
+            &session.expect("new session opened").key,
+            &key(1, 6)
+        ));
+    }
+
+    #[test]
+    fn a_changed_file_key_alone_is_still_the_same_session() {
+        // Player window titles churn mid-playback (elapsed time, percentage, a
+        // paused marker). That must not restart the session, or every session
+        // would last a single tick and never clear the minimum-watch gate.
+        let titled = |title: &str| SessionKey {
+            anime_id: 1,
+            episode: 5,
+            file_key: title.to_string(),
+        };
+        let mut session = None;
+        advance_session(&mut session, Some(titled("Show - 05 [00:01:00]")), 100, 2);
+        assert_eq!(
+            advance_session(&mut session, Some(titled("Show - 05 [00:20:00]")), 1300, 2),
+            None,
+            "a title change with the same anime and episode is not a new session"
+        );
+        let active = session.expect("session stays open");
+        assert_eq!(active.started_at, 100);
+        assert_eq!(active.last_seen_at, 1300);
+        assert_eq!(
+            active.key.file_key, "Show - 05 [00:01:00]",
+            "the first-seen key is kept as metadata"
+        );
+    }
+
+    fn active(anime_id: i64, episode: i32) -> ActivePlayback {
+        ActivePlayback {
+            key: key(anime_id, episode),
+            started_at: 0,
+            last_seen_at: 0,
+            missed_ticks: 0,
+        }
+    }
+
+    fn ended(anime_id: i64, episode: i32) -> EndedPlayback {
+        EndedPlayback {
+            anime_id,
+            episode,
+            file_key: String::new(),
+            watched_secs: 1800,
+        }
+    }
+
+    #[test]
+    fn a_playlist_advance_supersedes_the_session_it_ended() {
+        assert!(superseded_by(&ended(1, 5), Some(&active(1, 6))));
+        assert!(
+            superseded_by(&ended(1, 5), Some(&active(1, 9))),
+            "a jump further ahead in the same show is still an advance"
+        );
+    }
+
+    #[test]
+    fn playback_stopping_is_not_superseded() {
+        assert!(!superseded_by(&ended(1, 5), None));
+    }
+
+    #[test]
+    fn switching_to_another_anime_is_not_superseded() {
+        assert!(!superseded_by(&ended(1, 5), Some(&active(2, 6))));
+        assert!(!superseded_by(&ended(1, 5), Some(&active(2, 1))));
+    }
+
+    #[test]
+    fn going_back_to_an_earlier_episode_is_not_superseded() {
+        assert!(!superseded_by(&ended(1, 5), Some(&active(1, 4))));
+        assert!(
+            !superseded_by(&ended(1, 5), Some(&active(1, 5))),
+            "the same episode again is a replay, not an advance"
+        );
     }
 
     #[test]
