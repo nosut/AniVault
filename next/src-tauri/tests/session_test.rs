@@ -117,3 +117,66 @@ async fn process_scan_result_records_watch_history_on_advance() {
     let history = state.storage.list_recent_watch_history(10).await.unwrap();
     assert_eq!(history.len(), 1, "re-detecting the same episode must not duplicate history");
 }
+
+#[tokio::test]
+async fn process_scan_result_returns_a_session_key_for_identified_playback() {
+    let state = make_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Cowboy Bebop")
+        .await
+        .unwrap();
+
+    let result = make_scan_result(
+        "mpv.exe",
+        "D:/Anime/Cowboy Bebop - 01.mkv",
+        "Cowboy Bebop - 01",
+    );
+
+    let key = process_scan_result(&state, result)
+        .await
+        .unwrap()
+        .expect("identified playback opens a session");
+    assert_eq!(key.anime_id, 1);
+    assert_eq!(key.episode, 1);
+    assert_eq!(key.file_key, "D:/Anime/Cowboy Bebop - 01.mkv");
+}
+
+#[tokio::test]
+async fn process_scan_result_returns_no_session_key_for_unknown_playback() {
+    let state = make_state().await;
+    let result = make_scan_result(
+        "mpv.exe",
+        "D:/Anime/Nothing In The Library - 01.mkv",
+        "Nothing In The Library - 01",
+    );
+
+    assert!(
+        process_scan_result(&state, result).await.unwrap().is_none(),
+        "playback with no confident library match must not open a session"
+    );
+}
+
+#[tokio::test]
+async fn process_scan_result_falls_back_to_the_window_title_as_the_session_key() {
+    let state = make_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Cowboy Bebop")
+        .await
+        .unwrap();
+
+    // mpv/VLC report no file path — only a window title.
+    let result = ScanResult {
+        player_name: "vlc.exe".to_string(),
+        file_path: None,
+        window_title: Some("Cowboy Bebop - 01".to_string()),
+        detected_at_unix: 1_782_769_000,
+    };
+
+    let key = process_scan_result(&state, result)
+        .await
+        .unwrap()
+        .expect("title-only playback still opens a session");
+    assert_eq!(key.file_key, "Cowboy Bebop - 01");
+}

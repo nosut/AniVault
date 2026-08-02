@@ -2,7 +2,7 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { drainEngineEvents, checkForUpdate, openEpisodeFile, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
   import { dismissUpdate, loadDismissedUpdate, shouldShowUpdate } from './lib/updateUi';
-  import { latestProgressAdvance, samePrompt, type PromptKey } from './lib/upNext';
+  import { latestPlaybackEnded, samePrompt, type PromptKey } from './lib/upNext';
   import NowPlaying from './lib/NowPlaying.svelte';
   import DashboardView from './lib/DashboardView.svelte';
   import LibraryView from './lib/LibraryView.svelte';
@@ -220,14 +220,16 @@
   let upNextPrompt: UpNext | null = null;
   let lastPromptKey: PromptKey | null = null;
 
+  // The prompt fires when playback of a library episode ends — not when progress
+  // advances, so marking episodes watched by hand never prompts.
   async function maybePromptUpNext(events: EngineEvent[]) {
     try {
-      const adv = latestProgressAdvance(events);
-      if (!adv) return;
+      const ended = latestPlaybackEnded(events);
+      if (!ended) return;
       const toastOn = (await getSetting<boolean>('up_next_toast_enabled')) ?? true;
       const notifyOn = (await getSetting<boolean>('up_next_notification_enabled')) ?? true;
       if (!toastOn && !notifyOn) return;
-      const next = await getUpNext(adv.anime_id);
+      const next = await getUpNext(ended.anime_id, ended.episode);
       if (!next) return;
       const key: PromptKey = { anime_id: next.anime_id, episode: next.episode };
       if (samePrompt(key, lastPromptKey)) return; // already surfaced this one
@@ -239,12 +241,17 @@
     }
   }
 
+  // Clearing the key alongside the toast keeps the guard doing its one job —
+  // not raising a second toast over one already on screen — while letting the
+  // same episode prompt again later, e.g. after rewatching it.
   function playUpNext() {
     if (upNextPrompt) openEpisodeFile(upNextPrompt.file_path);
     upNextPrompt = null;
+    lastPromptKey = null;
   }
   function dismissUpNext() {
     upNextPrompt = null;
+    lastPromptKey = null;
   }
 
   function handleLibrarySelect(event: CustomEvent<{ anime_id: number }>) {

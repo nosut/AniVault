@@ -42,6 +42,16 @@ pub enum EngineEvent {
         new_episode: EpisodeNumber,
         source: String,
     },
+    /// Playback of an identified library episode stopped being detected — the
+    /// player closed or moved on to another file. Published only once the
+    /// session outlasted the configured minimum watch time; the Up Next prompt
+    /// is driven off this, not off `ProgressAdvanced`.
+    PlaybackEnded {
+        anime_id: AnimeId,
+        episode: EpisodeNumber,
+        file_key: String,
+        watched_secs: i64,
+    },
     SyncQueued {
         service: ServiceId,
         anime_id: AnimeId,
