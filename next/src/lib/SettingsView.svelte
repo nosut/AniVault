@@ -41,6 +41,7 @@
 
   let upNextToast = true;
   let upNextNotify = true;
+  let upNextMinMinutes = 5;
 
   let engineStatus: EngineStatus | null = null;
   let engineLoading = false;
@@ -215,6 +216,7 @@
     try {
       upNextToast = (await getSetting<boolean>('up_next_toast_enabled')) ?? true;
       upNextNotify = (await getSetting<boolean>('up_next_notification_enabled')) ?? true;
+      upNextMinMinutes = (await getSetting<number>('up_next_min_watch_minutes')) ?? 5;
     } catch { /* defaults stand */ }
   }
 
@@ -228,6 +230,15 @@
     upNextNotify = !upNextNotify;
     try { await setSetting('up_next_notification_enabled', upNextNotify); }
     catch { upNextNotify = !upNextNotify; }
+  }
+
+  // Clamped here as well as in the input so a typed-in value can't disable the
+  // gate by accident. 0 means "prompt however briefly the episode played".
+  async function commitUpNextMinMinutes(value: number) {
+    const clamped = Math.min(60, Math.max(0, Math.round(Number.isFinite(value) ? value : 5)));
+    upNextMinMinutes = clamped;
+    try { await setSetting('up_next_min_watch_minutes', clamped); }
+    catch { /* keep showing the entered value; the next load re-reads storage */ }
   }
 
   async function loadEngineStatus() {
@@ -547,6 +558,20 @@
               <span class="switch-thumb"></span>
             </button>
           </div>
+          <div class="toggle-row">
+            <label class="label" for="up-next-min-minutes">Only prompt after an episode played for at least (minutes)</label>
+            <input
+              id="up-next-min-minutes"
+              class="form-input up-next-minutes"
+              type="number"
+              min="0"
+              max="60"
+              step="1"
+              value={upNextMinMinutes}
+              on:change={(e) => commitUpNextMinMinutes(e.currentTarget.valueAsNumber)}
+            />
+          </div>
+          <p class="hint">Set 0 to prompt however briefly the episode played.</p>
         </section>
       </div>
     {/if}
@@ -1314,6 +1339,11 @@
   .form-input:focus {
     outline: 2px solid rgba(var(--color-accent-rgb), 0.4);
     outline-offset: 1px;
+  }
+
+  .up-next-minutes {
+    width: 5rem;
+    text-align: right;
   }
 
   .form-actions {
