@@ -90,6 +90,45 @@ async fn confirm_identification_upserts_file_index() {
     )));
 }
 
+/// The Now Playing Confirm button hands over whatever the scanner called a file
+/// path, which for mpv/VLC is the window title. Indexing that would create a row
+/// keyed by a string that is not a file — it can never be looked up by path, and
+/// Up Next would offer it as something to play.
+#[tokio::test]
+async fn confirm_identification_does_not_index_a_window_title() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(42, "Test Anime")
+        .await
+        .unwrap();
+
+    let window_title = "Test Anime S01E03 An Episode Title - mpv";
+    confirm_identification(&state, window_title, 42, 3)
+        .await
+        .unwrap();
+
+    assert!(
+        state
+            .storage
+            .get_file_index(window_title)
+            .await
+            .unwrap()
+            .is_none(),
+        "a window title must never become a file index key"
+    );
+
+    let events = state.events.drain();
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            anivault_core::engine::events::EngineEvent::AnimeIdentified(ev)
+                if ev.anime_id == 42 && ev.episode == 3
+        )),
+        "the identification itself is still worth publishing"
+    );
+}
+
 #[tokio::test]
 async fn recognize_file_ranks_candidates_by_score_including_synonyms() {
     let state = test_state().await;

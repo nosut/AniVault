@@ -26,20 +26,18 @@ async fn identify_and_confirm_remembers_mapping() {
         .await
         .unwrap();
 
-    let result = identify_file_inner("Cowboy Bebop - 01.mkv", None, &state)
+    let file_path = "D:/Anime/Cowboy Bebop - 01.mkv";
+
+    let result = identify_file_inner(file_path, None, &state)
         .await
         .unwrap();
     assert!(!result.known_file);
     assert!(result.candidates.iter().any(|c| c.anime_id == 1));
 
-    confirm_identification_inner("Cowboy Bebop - 01.mkv", 1, 1, &state)
-        .await
-        .unwrap();
+    confirm_identification_inner(file_path, 1, 1, &state).await.unwrap();
 
     // Re-identify — should be known now
-    let result2 = identify_file_inner("Cowboy Bebop - 01.mkv", None, &state)
-        .await
-        .unwrap();
+    let result2 = identify_file_inner(file_path, None, &state).await.unwrap();
     assert!(result2.known_file);
 }
 
@@ -57,14 +55,15 @@ async fn list_known_files_after_confirmation() {
     assert!(files.is_empty());
 
     // Confirm a file
-    confirm_identification_inner("Test Series - 05.mkv", 99, 5, &state)
+    let file_path = "D:/Anime/Test Series - 05.mkv";
+    confirm_identification_inner(file_path, 99, 5, &state)
         .await
         .unwrap();
 
     // Now it shows up
     let files = list_known_files_inner(10, &state).await.unwrap();
     assert_eq!(files.len(), 1);
-    assert_eq!(files[0].file_path, "Test Series - 05.mkv");
+    assert_eq!(files[0].file_path, file_path);
     assert_eq!(files[0].anime_id, Some(99));
     assert_eq!(files[0].episode, Some(5));
 }

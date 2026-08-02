@@ -210,17 +210,24 @@ pub async fn confirm_identification(
 ) -> anyhow::Result<()> {
     let now = crate::commands::unix_now_inner()?;
 
-    state
-        .storage
-        .upsert_file_index(
-            file_path,
-            Some(anime_id),
-            episode,
-            100,
-            MappingSource::Manual,
-            now,
-        )
-        .await?;
+    // mpv and VLC expose only a window title, which the scanner reports as the
+    // file path and the Now Playing Confirm button passes straight through here.
+    // Indexing it would key a mapping to a string that is not a file: no path
+    // lookup can ever hit it, and Up Next would offer it as an episode to play.
+    // The automatic path guards the same way before writing (see session.rs).
+    if looks_like_path(file_path) {
+        state
+            .storage
+            .upsert_file_index(
+                file_path,
+                Some(anime_id),
+                episode,
+                100,
+                MappingSource::Manual,
+                now,
+            )
+            .await?;
+    }
 
     state.events.publish(EngineEvent::AnimeIdentified(
         crate::engine::events::AnimeIdentified {
