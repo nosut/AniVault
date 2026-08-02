@@ -235,10 +235,11 @@
   // Clamped here as well as in the input so a typed-in value can't disable the
   // gate by accident. 0 means "prompt however briefly the episode played".
   async function commitUpNextMinMinutes(value: number) {
+    const previous = upNextMinMinutes;
     const clamped = Math.min(60, Math.max(0, Math.round(Number.isFinite(value) ? value : 5)));
     upNextMinMinutes = clamped;
     try { await setSetting('up_next_min_watch_minutes', clamped); }
-    catch { /* keep showing the entered value; the next load re-reads storage */ }
+    catch { upNextMinMinutes = previous; }
   }
 
   async function loadEngineStatus() {
