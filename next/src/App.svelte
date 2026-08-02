@@ -241,12 +241,17 @@
     }
   }
 
+  // Clearing the key alongside the toast keeps the guard doing its one job —
+  // not raising a second toast over one already on screen — while letting the
+  // same episode prompt again later, e.g. after rewatching it.
   function playUpNext() {
     if (upNextPrompt) openEpisodeFile(upNextPrompt.file_path);
     upNextPrompt = null;
+    lastPromptKey = null;
   }
   function dismissUpNext() {
     upNextPrompt = null;
+    lastPromptKey = null;
   }
 
   function handleLibrarySelect(event: CustomEvent<{ anime_id: number }>) {

@@ -234,12 +234,17 @@
 
   // Clamped here as well as in the input so a typed-in value can't disable the
   // gate by accident. 0 means "prompt however briefly the episode played".
-  async function commitUpNextMinMinutes(value: number) {
+  // The input is bound one-way, so Svelte only repaints it when the variable
+  // changes — typing 70 over a stored 60 clamps back to 60, nothing changes, and
+  // the rejected 70 would stay on screen. Write the accepted value back by hand.
+  async function commitUpNextMinMinutes(input: HTMLInputElement) {
     const previous = upNextMinMinutes;
+    const value = input.valueAsNumber;
     const clamped = Math.min(60, Math.max(0, Math.round(Number.isFinite(value) ? value : 5)));
     upNextMinMinutes = clamped;
+    input.value = String(clamped);
     try { await setSetting('up_next_min_watch_minutes', clamped); }
-    catch { upNextMinMinutes = previous; }
+    catch { upNextMinMinutes = previous; input.value = String(previous); }
   }
 
   async function loadEngineStatus() {
@@ -569,7 +574,7 @@
               max="60"
               step="1"
               value={upNextMinMinutes}
-              on:change={(e) => commitUpNextMinMinutes(e.currentTarget.valueAsNumber)}
+              on:change={(e) => commitUpNextMinMinutes(e.currentTarget)}
             />
           </div>
           <p class="hint">Set 0 to prompt however briefly the episode played.</p>
