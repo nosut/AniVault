@@ -668,26 +668,42 @@ impl Storage {
             .filter(|w| w.len() >= 3 && w.parse::<i64>().is_err())
             .collect();
 
-        // Build a WHERE clause with one LIKE per token, ORed together. Fetch a wider
-        // pool than `limit` so the ranking step downstream has room to work.
-        let (where_clause, patterns): (String, Vec<String>) = if words.is_empty() {
+        // Build one LIKE per token. Fetch a wider pool than `limit` so the ranking
+        // step downstream has room to work.
+        let (clauses, patterns): (Vec<String>, Vec<String>) = if words.is_empty() {
             // Fall back to the whole (trimmed) query if nothing survived tokenization.
             (
-                "titles_json LIKE ?1".to_string(),
+                vec!["titles_json LIKE ?1".to_string()],
                 vec![format!("%{}%", query.trim())],
             )
         } else {
-            let clauses: Vec<String> = (0..words.len())
-                .map(|i| format!("titles_json LIKE ?{}", i + 1))
-                .collect();
-            let patterns = words.iter().map(|w| format!("%{}%", w)).collect();
-            (clauses.join(" OR "), patterns)
+            (
+                (0..words.len())
+                    .map(|i| format!("titles_json LIKE ?{}", i + 1))
+                    .collect(),
+                words.iter().map(|w| format!("%{}%", w)).collect(),
+            )
         };
+
+        // A row qualifies on ANY token, but the pool is capped — so order it by how
+        // many of the query's tokens a row matches. Ordering by id instead would cut
+        // by AniList id, which is unrelated to relevance: a long query full of common
+        // words ("world", "another", "again" — a window title carries the episode
+        // title too) matches hundreds of rows, and the show actually playing gets
+        // dropped before the caller's scoring ever sees it. `id` only breaks ties, to
+        // keep the result order deterministic. The `LIKE`s reuse the same bound
+        // parameters as the WHERE clause, so there is nothing extra to bind.
+        let where_clause = clauses.join(" OR ");
+        let relevance = clauses
+            .iter()
+            .map(|c| format!("({c})"))
+            .collect::<Vec<_>>()
+            .join(" + ");
 
         let pool_limit = (limit * 5).max(25);
         let sql = format!(
-            "SELECT id, titles_json, episode_count FROM anime WHERE {} ORDER BY id LIMIT {}",
-            where_clause, pool_limit
+            "SELECT id, titles_json, episode_count FROM anime WHERE {} ORDER BY ({}) DESC, id LIMIT {}",
+            where_clause, relevance, pool_limit
         );
         let mut q = sqlx::query(&sql);
         for p in &patterns {
