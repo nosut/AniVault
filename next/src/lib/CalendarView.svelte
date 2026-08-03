@@ -11,16 +11,40 @@
   let loading = true;
   let error: string | null = null;
 
+  // The browsed month is session state, not a saved preference: leaving the
+  // calendar for another view and coming back should keep the month you were
+  // on, but a fresh launch must open on the current month. sessionStorage is
+  // dropped when the app closes, and the saved-at stamp covers the leftovers —
+  // a window left open across a month boundary, or a webview that hangs on to
+  // its session store — by discarding anything stored in an earlier month.
+  const VIEW_DATE_KEY = 'anivault-calendar-date';
+
   function loadViewDate(): Date {
     try {
-      const raw = localStorage.getItem('anivault-calendar-date');
+      const raw = sessionStorage.getItem(VIEW_DATE_KEY);
       if (raw) {
-        const d = new Date(raw);
-        if (!isNaN(d.getTime())) return d;
+        const { viewed, savedAt } = JSON.parse(raw) as { viewed?: string; savedAt?: string };
+        const d = new Date(viewed ?? '');
+        const saved = new Date(savedAt ?? '');
+        const nowDate = new Date();
+        if (
+          !isNaN(d.getTime()) && !isNaN(saved.getTime()) &&
+          saved.getFullYear() === nowDate.getFullYear() && saved.getMonth() === nowDate.getMonth()
+        ) return d;
       }
     } catch {}
     return new Date();
   }
+
+  function saveViewDate(d: Date) {
+    try {
+      sessionStorage.setItem(
+        VIEW_DATE_KEY,
+        JSON.stringify({ viewed: d.toISOString(), savedAt: new Date().toISOString() }),
+      );
+    } catch {}
+  }
+
   let viewDate = loadViewDate(); // current month being viewed
   $: year = viewDate.getFullYear();
   $: month = viewDate.getMonth(); // 0-11
@@ -32,7 +56,7 @@
   }
   let viewMode: 'month' | 'agenda' = loadView();
   $: try { localStorage.setItem('anivault-calendar-view', viewMode); } catch {}
-  $: try { localStorage.setItem('anivault-calendar-date', viewDate.toISOString()); } catch {}
+  $: saveViewDate(viewDate);
 
   // Live clock (seconds) driving the countdowns; ticks once a second.
   let now = Math.floor(Date.now() / 1000);
@@ -142,7 +166,9 @@
 
   $: firstDay = new Date(year, month, 1).getDay();
   $: daysInMonth = new Date(year, month + 1, 0).getDate();
-  $: today = new Date();
+  // Derived from the ticking clock, not evaluated once at mount, so a window
+  // left open past midnight moves the today highlight (and the Today button).
+  $: today = new Date(now * 1000);
   $: isToday = (d: number) => today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
 
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];

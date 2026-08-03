@@ -57,9 +57,16 @@ describe('CalendarView month paging', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
     localStorage.clear();
-    // Fix the viewed month to July 2026 regardless of the real clock.
-    localStorage.setItem('anivault-calendar-date', new Date(2026, 6, 15).toISOString());
+    sessionStorage.clear();
     localStorage.setItem('anivault-calendar-view', 'month');
+    // Fix the clock to July 2026 so the calendar opens on that month
+    // regardless of the real date. Timers stay real for settle().
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 6, 15, 12, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('shows next month episodes after clicking the next-month arrow', async () => {
@@ -126,6 +133,49 @@ describe('CalendarView month paging', () => {
     flushSync();
     expect(document.querySelector('.tip-watched')?.textContent).toBe('✓ Watched');
 
+    await unmount(app);
+  });
+});
+
+describe('CalendarView startup month', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="app"></div>';
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem('anivault-calendar-view', 'month');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // Mon Aug 3 2026: a month on from the July session below.
+    vi.setSystemTime(new Date(2026, 7, 3, 9, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function storeViewDate(viewed: Date, savedAt: Date) {
+    sessionStorage.setItem(
+      'anivault-calendar-date',
+      JSON.stringify({ viewed: viewed.toISOString(), savedAt: savedAt.toISOString() }),
+    );
+  }
+
+  it('opens on the current month, ignoring a month left over from an earlier month', async () => {
+    storeViewDate(new Date(2026, 6, 15), new Date(2026, 6, 15));
+
+    const app = mount(CalendarView, { target: document.getElementById('app')! });
+    await settle();
+
+    expect(headerText()).toBe('August 2026');
+    await unmount(app);
+  });
+
+  it('keeps the month browsed earlier in the same session', async () => {
+    storeViewDate(new Date(2026, 9, 1), new Date(2026, 7, 3, 8, 0, 0));
+
+    const app = mount(CalendarView, { target: document.getElementById('app')! });
+    await settle();
+
+    expect(headerText()).toBe('October 2026');
     await unmount(app);
   });
 });
