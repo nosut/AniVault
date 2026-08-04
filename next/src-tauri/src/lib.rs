@@ -10,6 +10,7 @@ use tauri::{
     Manager,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 /// Handle to the tray's "Pause Tracking" menu item so the label can be kept in
 /// sync when tracking is paused/resumed from the UI rather than the tray.
@@ -22,6 +23,16 @@ pub fn update_tray_pause_label(app: &tauri::AppHandle, paused: bool) {
         let label = if paused { "Resume Tracking" } else { "Pause Tracking" };
         let _ = item.0.set_text(label);
     }
+}
+
+/// Window-state flags: everything the plugin can persist except visibility.
+///
+/// `CloseRequested` hides the window to the tray rather than exiting, so
+/// persisting `VISIBLE` would save `hidden` on every close and restore a window
+/// that never appears on the next launch. Visibility stays under the manual
+/// control in `setup()`.
+pub fn window_state_flags() -> StateFlags {
+    StateFlags::all() & !StateFlags::VISIBLE
 }
 
 pub fn run() {
@@ -38,6 +49,11 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(window_state_flags())
+                .build(),
+        )
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
