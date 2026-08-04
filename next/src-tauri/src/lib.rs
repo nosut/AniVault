@@ -56,6 +56,10 @@ pub fn run() {
         )
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Save geometry before hiding: closing hides to tray instead of
+                // exiting, so the plugin's save-on-exit may never run if the
+                // process is killed rather than quit from the tray.
+                let _ = window.app_handle().save_window_state(window_state_flags());
                 let _ = window.hide();
                 api.prevent_close();
             }
