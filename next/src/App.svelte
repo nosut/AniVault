@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { drainEngineEvents, checkForUpdate, openEpisodeFile, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
+  import { drainEngineEvents, onEngineEventsReady, checkForUpdate, openEpisodeFile, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
+  import type { UnlistenFn } from '@tauri-apps/api/event';
   import { dismissUpdate, loadDismissedUpdate, shouldShowUpdate } from './lib/updateUi';
   import { latestPlaybackEnded, samePrompt, type PromptKey } from './lib/upNext';
   import NowPlaying from './lib/NowPlaying.svelte';
@@ -181,6 +182,7 @@
   let historyHasMore = true;
   let latestEvents: EngineEvent[] = [];
   let eventIntervalId: ReturnType<typeof setInterval> | null = null;
+  let unlistenEvents: UnlistenFn | null = null;
 
   const RAIL_COLLAPSED_KEY = 'anivault-rail-collapsed';
 
@@ -320,6 +322,13 @@
 
   onMount(() => {
     eventIntervalId = setInterval(pollEvents, 3000);
+    // The timer is the floor, not the latency budget: the backend pushes a
+    // signal the moment playback ends so the Up Next prompt does not sit
+    // waiting for the next tick. Failing to attach costs responsiveness, not
+    // correctness — the timer still catches everything.
+    onEngineEventsReady(() => { void pollEvents(); })
+      .then((un) => { unlistenEvents = un; })
+      .catch(() => {});
     railMediaQuery = window.matchMedia('(min-width: 769px)');
     updateIsDesktopRail();
     railMediaQuery.addEventListener('change', updateIsDesktopRail);
@@ -329,6 +338,7 @@
 
   onDestroy(() => {
     if (eventIntervalId) clearInterval(eventIntervalId);
+    unlistenEvents?.();
     railMediaQuery?.removeEventListener('change', updateIsDesktopRail);
   });
 </script>

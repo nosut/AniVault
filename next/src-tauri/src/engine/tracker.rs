@@ -9,15 +9,23 @@ use crate::engine::runtime::EngineState;
 use crate::engine::scanner::{scan_active_players, ScannerConfig};
 use crate::engine::session::{
     advance_session, passes_min_watch, process_scan_result, superseded_by, ActivePlayback,
-    EndedPlayback, SessionKey,
+    EndedPlayback, Observation,
 };
 
-/// Consecutive scan misses tolerated before a session is treated as ended: the
-/// session ends on the *third* straight miss, ~6s at the 2s tick, enough to ride
-/// out a tick or two that failed to recognise the player. The frontend then
-/// drains events on its own 3s timer, so the prompt appears up to ~9s after the
-/// player actually closed.
+/// Consecutive *unidentified* scans tolerated before a session is treated as
+/// ended: the session ends on the third straight miss, ~6s at the 2s tick,
+/// enough to ride out a tick or two where the player is running but could not be
+/// recognised.
+///
+/// This does not apply when the player has actually exited — see
+/// [`Observation::NoPlayer`], which ends the session on the spot so the Up Next
+/// prompt lands within one tick of the player window closing rather than ~9s
+/// later.
 const GRACE_TICKS: u8 = 2;
+
+/// Tauri event telling the frontend there is something worth draining right
+/// now. Must match the name the frontend listens on (`src/lib/api.ts`).
+const ENGINE_EVENTS_READY: &str = "engine-events-ready";
 
 /// Fallback when `up_next_min_watch_minutes` is unset or unparseable.
 const DEFAULT_MIN_WATCH_MINUTES: i64 = 5;
@@ -76,6 +84,15 @@ pub(crate) async fn publish_playback_ended(state: &EngineState, ended: EndedPlay
         file_key: ended.file_key,
         watched_secs: ended.watched_secs,
     });
+    // Nudge the frontend to drain now instead of waiting out its poll timer,
+    // which would otherwise add up to another 3s before the Up Next prompt.
+    // The signal carries no payload: the event still travels over the existing
+    // drain command, so there is exactly one delivery path and no chance of a
+    // prompt being raised twice.
+    if let Some(app) = &state.app_handle {
+        use tauri::Emitter;
+        let _ = app.emit(ENGINE_EVENTS_READY, ());
+    }
 }
 
 pub async fn run_tracking_loop(
@@ -103,12 +120,14 @@ pub async fn run_tracking_loop(
         }
 
         let config_clone = config.clone();
-        let results = tokio::task::spawn_blocking(move || scan_active_players(&config_clone))
+        // `unwrap_or_default` on a panicked scan yields `enumerated: false`,
+        // i.e. "we cannot tell" — never a false report that the player closed.
+        let scan = tokio::task::spawn_blocking(move || scan_active_players(&config_clone))
             .await
             .unwrap_or_default();
 
         // Update watching status — lock scope must not span .await
-        let observed: Option<SessionKey> = if let Some(result) = results.first() {
+        let observed: Observation = if let Some(result) = scan.players.first() {
             {
                 let mut ctrl = state.tracking.lock().unwrap();
                 ctrl.watching = Some(crate::engine::runtime::ActivePlaybackPub {
@@ -123,16 +142,26 @@ pub async fn run_tracking_loop(
             } // lock dropped here
 
             match process_scan_result(&state, result.clone()).await {
-                Ok(key) => key,
+                Ok(Some(key)) => Observation::Playing(key),
+                // A player is on screen but this tick could not place it in the
+                // library — grace applies, the session waits it out.
+                Ok(None) => Observation::Unidentified,
                 Err(e) => {
                     tracing::warn!("session error: {e}");
-                    None
+                    Observation::Unidentified
                 }
             }
         } else {
             let mut ctrl = state.tracking.lock().unwrap();
             ctrl.watching = None;
-            None
+            if scan.enumerated {
+                Observation::NoPlayer
+            } else {
+                // The process list could not be read. That proves nothing about
+                // the player, so fall back to grace rather than ending a session
+                // that may still be running.
+                Observation::Unidentified
+            }
         };
 
         if let Some(ended) = advance_session(&mut session, observed, unix_now(), GRACE_TICKS) {
@@ -163,7 +192,7 @@ mod tests {
     use super::*;
     use crate::commands::set_setting_inner;
     use crate::engine::runtime::fresh_test_state;
-    use crate::engine::session::ActivePlayback;
+    use crate::engine::session::{ActivePlayback, SessionKey};
 
     #[tokio::test]
     async fn track_nothing_when_no_active_players() {

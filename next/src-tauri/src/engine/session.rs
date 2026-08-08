@@ -40,6 +40,30 @@ pub struct ActivePlayback {
     pub missed_ticks: u8,
 }
 
+/// What a single tracker tick saw.
+///
+/// The two "nothing playing" cases are deliberately distinct. [`Unidentified`]
+/// is a blip worth waiting out; [`NoPlayer`] is a fact worth acting on. Folding
+/// them together is what used to make the Up Next prompt arrive seconds after
+/// the player window disappeared: closing the player was made to serve out the
+/// same grace window as a momentarily unreadable title.
+///
+/// [`Unidentified`]: Observation::Unidentified
+/// [`NoPlayer`]: Observation::NoPlayer
+#[derive(Debug, Clone)]
+pub enum Observation {
+    /// A library episode was identified on screen.
+    Playing(SessionKey),
+    /// A known media player is running, but this tick could not say what it is
+    /// showing — a window title briefly reduced to the app name during a seek,
+    /// a title that failed to match the library, or a scan that could not read
+    /// the process list at all.
+    Unidentified,
+    /// No known media player is running. Only reported when the process list
+    /// was actually read, so this genuinely means the player is gone.
+    NoPlayer,
+}
+
 /// A session that just stopped being observed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EndedPlayback {
@@ -62,27 +86,35 @@ impl ActivePlayback {
 
 /// Advance the watch session by one tracker tick. Pure: no clock, no storage.
 ///
-/// `observed` is the identified library episode on screen this tick, or `None`
-/// when nothing recognisable is playing. A session survives up to `grace_ticks`
-/// consecutive misses, so a tick that fails to recognise the player — a title
-/// briefly reduced to the app name during a seek, say — does not end it;
-/// `watched_secs` is measured to the last tick the episode was actually seen, so
-/// grace never inflates it. Returns the session that just ended, if any.
+/// `observed` is what this tick saw (see [`Observation`]). A session survives up
+/// to `grace_ticks` consecutive [`Unidentified`] ticks, so a tick that fails to
+/// recognise a player that is still running — a title briefly reduced to the app
+/// name during a seek, say — does not end it; `watched_secs` is measured to the
+/// last tick the episode was actually seen, so grace never inflates it.
+///
+/// [`NoPlayer`] skips grace entirely: the player process is gone, so there is no
+/// blip to wait out and waiting would buy nothing but latency before the Up Next
+/// prompt. Returns the session that just ended, if any.
+///
+/// [`Unidentified`]: Observation::Unidentified
+/// [`NoPlayer`]: Observation::NoPlayer
 pub fn advance_session(
     session: &mut Option<ActivePlayback>,
-    observed: Option<SessionKey>,
+    observed: Observation,
     now: i64,
     grace_ticks: u8,
 ) -> Option<EndedPlayback> {
-    let Some(key) = observed else {
-        let Some(active) = session.as_mut() else {
-            return None;
-        };
-        active.missed_ticks = active.missed_ticks.saturating_add(1);
-        if active.missed_ticks <= grace_ticks {
-            return None;
+    let key = match observed {
+        Observation::Playing(key) => key,
+        Observation::Unidentified => {
+            let active = session.as_mut()?;
+            active.missed_ticks = active.missed_ticks.saturating_add(1);
+            if active.missed_ticks <= grace_ticks {
+                return None;
+            }
+            return session.take().as_ref().map(ActivePlayback::end);
         }
-        return session.take().as_ref().map(ActivePlayback::end);
+        Observation::NoPlayer => return session.take().as_ref().map(ActivePlayback::end),
     };
 
     if let Some(active) = session.as_mut() {
@@ -379,11 +411,15 @@ mod tests {
         }
     }
 
+    fn playing(anime_id: i64, episode: i32) -> Observation {
+        Observation::Playing(key(anime_id, episode))
+    }
+
     #[test]
     fn same_key_across_ticks_does_not_end_the_session() {
         let mut session = None;
-        assert_eq!(advance_session(&mut session, Some(key(1, 5)), 100, 2), None);
-        assert_eq!(advance_session(&mut session, Some(key(1, 5)), 102, 2), None);
+        assert_eq!(advance_session(&mut session, playing(1, 5), 100, 2), None);
+        assert_eq!(advance_session(&mut session, playing(1, 5), 102, 2), None);
         let active = session.expect("session stays open");
         assert_eq!(active.started_at, 100);
         assert_eq!(active.last_seen_at, 102);
@@ -392,9 +428,9 @@ mod tests {
     #[test]
     fn key_change_ends_the_previous_session() {
         let mut session = None;
-        advance_session(&mut session, Some(key(1, 5)), 100, 2);
-        advance_session(&mut session, Some(key(1, 5)), 400, 2);
-        let ended = advance_session(&mut session, Some(key(1, 6)), 402, 2).expect("previous ended");
+        advance_session(&mut session, playing(1, 5), 100, 2);
+        advance_session(&mut session, playing(1, 5), 400, 2);
+        let ended = advance_session(&mut session, playing(1, 6), 402, 2).expect("previous ended");
         assert_eq!(ended.anime_id, 1);
         assert_eq!(ended.episode, 5);
         assert_eq!(ended.watched_secs, 300);
@@ -409,15 +445,17 @@ mod tests {
         // Player window titles churn mid-playback (elapsed time, percentage, a
         // paused marker). That must not restart the session, or every session
         // would last a single tick and never clear the minimum-watch gate.
-        let titled = |title: &str| SessionKey {
-            anime_id: 1,
-            episode: 5,
-            file_key: title.to_string(),
+        let titled = |title: &str| {
+            Observation::Playing(SessionKey {
+                anime_id: 1,
+                episode: 5,
+                file_key: title.to_string(),
+            })
         };
         let mut session = None;
-        advance_session(&mut session, Some(titled("Show - 05 [00:01:00]")), 100, 2);
+        advance_session(&mut session, titled("Show - 05 [00:01:00]"), 100, 2);
         assert_eq!(
-            advance_session(&mut session, Some(titled("Show - 05 [00:20:00]")), 1300, 2),
+            advance_session(&mut session, titled("Show - 05 [00:20:00]"), 1300, 2),
             None,
             "a title change with the same anime and episode is not a new session"
         );
@@ -480,20 +518,27 @@ mod tests {
     #[test]
     fn one_missed_tick_within_grace_keeps_the_session() {
         let mut session = None;
-        advance_session(&mut session, Some(key(1, 5)), 100, 2);
-        assert_eq!(advance_session(&mut session, None, 102, 2), None);
-        assert_eq!(advance_session(&mut session, None, 104, 2), None);
+        advance_session(&mut session, playing(1, 5), 100, 2);
+        assert_eq!(
+            advance_session(&mut session, Observation::Unidentified, 102, 2),
+            None
+        );
+        assert_eq!(
+            advance_session(&mut session, Observation::Unidentified, 104, 2),
+            None
+        );
         assert!(session.is_some(), "two misses is still within a grace of 2");
     }
 
     #[test]
     fn misses_beyond_grace_end_the_session_excluding_grace_time() {
         let mut session = None;
-        advance_session(&mut session, Some(key(1, 5)), 100, 2);
-        advance_session(&mut session, Some(key(1, 5)), 400, 2);
-        advance_session(&mut session, None, 402, 2);
-        advance_session(&mut session, None, 404, 2);
-        let ended = advance_session(&mut session, None, 406, 2).expect("grace exhausted");
+        advance_session(&mut session, playing(1, 5), 100, 2);
+        advance_session(&mut session, playing(1, 5), 400, 2);
+        advance_session(&mut session, Observation::Unidentified, 402, 2);
+        advance_session(&mut session, Observation::Unidentified, 404, 2);
+        let ended = advance_session(&mut session, Observation::Unidentified, 406, 2)
+            .expect("grace exhausted");
         assert_eq!(ended.episode, 5);
         assert_eq!(
             ended.watched_secs, 300,
@@ -503,18 +548,59 @@ mod tests {
     }
 
     #[test]
+    fn a_closed_player_ends_the_session_without_serving_out_the_grace() {
+        // The whole point of the distinction: grace exists to ride out a player
+        // that is running but momentarily unreadable. A player that has exited
+        // will never become readable again, so making the user wait three ticks
+        // for the Up Next prompt is pure latency.
+        let mut session = None;
+        advance_session(&mut session, playing(1, 5), 100, 2);
+        advance_session(&mut session, playing(1, 5), 400, 2);
+        let ended = advance_session(&mut session, Observation::NoPlayer, 402, 2)
+            .expect("the player is gone, so the session ends on this very tick");
+        assert_eq!(ended.episode, 5);
+        assert_eq!(
+            ended.watched_secs, 300,
+            "watched time still stops at the last tick the episode was seen"
+        );
+        assert!(session.is_none(), "session is cleared once it ends");
+    }
+
+    #[test]
+    fn a_closed_player_ends_a_session_already_inside_its_grace_window() {
+        // A seek that hid the title, then the player closed. The pending misses
+        // must not delay the end any further.
+        let mut session = None;
+        advance_session(&mut session, playing(1, 5), 100, 2);
+        advance_session(&mut session, playing(1, 5), 400, 2);
+        advance_session(&mut session, Observation::Unidentified, 402, 2);
+        let ended = advance_session(&mut session, Observation::NoPlayer, 404, 2)
+            .expect("ends as soon as the player is known to be gone");
+        assert_eq!(ended.watched_secs, 300);
+    }
+
+    #[test]
     fn nothing_observed_without_a_session_is_a_no_op() {
         let mut session = None;
-        assert_eq!(advance_session(&mut session, None, 100, 2), None);
+        assert_eq!(
+            advance_session(&mut session, Observation::Unidentified, 100, 2),
+            None
+        );
+        assert!(session.is_none());
+        assert_eq!(
+            advance_session(&mut session, Observation::NoPlayer, 100, 2),
+            None
+        );
         assert!(session.is_none());
     }
 
     #[test]
     fn zero_grace_ends_the_session_on_the_first_miss() {
         let mut session = None;
-        advance_session(&mut session, Some(key(1, 5)), 100, 0);
-        advance_session(&mut session, Some(key(1, 5)), 700, 0);
-        let ended = advance_session(&mut session, None, 702, 0).expect("ends immediately");
+        advance_session(&mut session, playing(1, 5), 100, 0);
+        advance_session(&mut session, playing(1, 5), 700, 0);
+        let ended = advance_session(&mut session, Observation::Unidentified, 702, 0)
+            .expect("ends immediately");
         assert_eq!(ended.watched_secs, 600);
     }
 

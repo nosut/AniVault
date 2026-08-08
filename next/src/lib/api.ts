@@ -1,4 +1,5 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export type InvokeFn = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -312,6 +313,19 @@ export function deleteSetting(key: string, invokeFn: InvokeFn = tauriInvoke): Pr
 
 export function drainEngineEvents(invokeFn: InvokeFn = tauriInvoke): Promise<EngineEvent[]> {
   return invokeFn<EngineEvent[]>('drain_engine_events');
+}
+
+/**
+ * Run `handler` as soon as the backend publishes an event worth draining,
+ * rather than waiting out the poll timer. The signal carries no payload — the
+ * events themselves still arrive via `drainEngineEvents`, so the handler is
+ * just an early poll and the periodic poll remains the fallback if the listener
+ * fails to attach. Resolves to an unlisten function.
+ *
+ * Name must match `ENGINE_EVENTS_READY` in `src-tauri/src/engine/tracker.rs`.
+ */
+export function onEngineEventsReady(handler: () => void): Promise<UnlistenFn> {
+  return listen('engine-events-ready', () => handler());
 }
 
 export interface ActivePlaybackInfo {

@@ -31,6 +31,20 @@ pub struct ScanResult {
     pub detected_at_unix: i64,
 }
 
+/// The outcome of one process scan.
+///
+/// `enumerated` is what lets a caller read an empty `players` as "the player
+/// closed" rather than "we could not tell". Without it a failed enumeration
+/// looks exactly like a player that exited, and the tracker would end a live
+/// session on a transient failure.
+#[derive(Debug, Clone, Default)]
+pub struct PlayerScan {
+    /// Known media players found running.
+    pub players: Vec<ScanResult>,
+    /// Whether the process list was actually read this scan.
+    pub enumerated: bool,
+}
+
 fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -85,10 +99,15 @@ unsafe fn get_process_window_title(target_pid: u32) -> Option<String> {
     state.title
 }
 
-pub fn scan_active_players(config: &ScannerConfig) -> Vec<ScanResult> {
+pub fn scan_active_players(config: &ScannerConfig) -> PlayerScan {
     let known = known_process_names(config);
     if known.is_empty() {
-        return vec![];
+        // Nothing is trackable, so "no players running" is trivially true and
+        // safe for a caller to act on.
+        return PlayerScan {
+            players: vec![],
+            enumerated: true,
+        };
     }
 
     let mut results: Vec<ScanResult> = Vec::new();
@@ -96,13 +115,14 @@ pub fn scan_active_players(config: &ScannerConfig) -> Vec<ScanResult> {
     let mut bytes_returned: u32 = 0;
 
     // SAFETY: pids is sized correctly; error means no permission/view, skip.
-    let _ = unsafe {
+    let enumerated = unsafe {
         K32EnumProcesses(
             pids.as_mut_ptr(),
             (pids.len() * std::mem::size_of::<u32>()) as u32,
             &mut bytes_returned,
         )
-    };
+    }
+    .as_bool();
 
     let count = (bytes_returned as usize) / std::mem::size_of::<u32>();
 
@@ -161,5 +181,8 @@ pub fn scan_active_players(config: &ScannerConfig) -> Vec<ScanResult> {
         }
     }
 
-    results
+    PlayerScan {
+        players: results,
+        enumerated,
+    }
 }
