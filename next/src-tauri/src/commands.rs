@@ -1279,9 +1279,16 @@ pub async fn diff_season_inner(
     ids: Vec<i64>,
     record: bool,
 ) -> anyhow::Result<SeasonDiff> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    // Read-then-record in one transaction: the compare and the record are a
+    // single round trip and cannot tear against a concurrent call.
     let seen: std::collections::HashSet<i64> = state
         .storage
-        .season_seen_ids(&season, year)
+        .diff_and_record_season_seen(&season, year, &ids, record, now)
         .await?
         .into_iter()
         .collect();
@@ -1292,17 +1299,6 @@ pub async fn diff_season_inner(
     } else {
         ids.iter().copied().filter(|id| !seen.contains(id)).collect()
     };
-
-    if record {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        state
-            .storage
-            .record_season_seen(&season, year, &ids, now)
-            .await?;
-    }
 
     Ok(SeasonDiff {
         first_visit,

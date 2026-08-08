@@ -64,8 +64,22 @@
   // itself a visit; clearing on render would consume the flag before it is read.
   let newIds = new Set<number>();
 
+  // Bumped on every load() call. markSeasonSeen() captures the generation it
+  // was started with and refuses to paint newIds if a newer load has since
+  // started — otherwise a stale diff resolving after a nav change could flag
+  // (or fail to flag) the season the user is now looking at.
+  let loadGeneration = 0;
+
   async function load() {
     loading = true; error = null; newIds = new Set();
+    const generation = ++loadGeneration;
+    // Captured now, before any await: every nav handler (prevSeason,
+    // nextSeason, goCurrentSeason, the genre select) mutates season/year/
+    // future/genre synchronously and then calls load(). Reading those fields
+    // later, after the fetch resolves, would race a subsequent navigation.
+    const key = future ? FUTURE_SEASON_KEY : season;
+    const keyYear = future ? 0 : year;
+    const record = genre === '';
     let loaded = false;
     try {
       entries = future
@@ -78,20 +92,22 @@
     // Not awaited: the diff is a convenience layered on top of the grid and
     // must never make a slow or lock-contended diff_season call keep the
     // skeleton up. The band fills in a moment after the grid renders.
-    if (loaded) markSeasonSeen();
+    if (loaded) markSeasonSeen(generation, key, keyYear, record, entries.map((e) => e.id));
   }
 
   // Best-effort: a failed diff means no band, never a failed page. The grid is
-  // the feature; this is a convenience layered over it.
-  async function markSeasonSeen() {
+  // the feature; this is a convenience layered over it. Takes every input as
+  // an explicit argument — it must never read component state after the
+  // await, since that state can have moved on to a different season by then.
+  async function markSeasonSeen(generation: number, key: string, keyYear: number, record: boolean, ids: number[]) {
     try {
-      const key = future ? FUTURE_SEASON_KEY : season;
-      const keyYear = future ? 0 : year;
       // A genre-filtered listing holds only part of the season. Recording it
       // would baseline that fragment and mark everything else new next visit.
-      const diff = await diffSeason(key, keyYear, entries.map((e) => e.id), genre === '');
+      const diff = await diffSeason(key, keyYear, ids, record);
+      if (generation !== loadGeneration) return;
       newIds = diff.first_visit ? new Set() : new Set(diff.new_ids);
     } catch {
+      if (generation !== loadGeneration) return;
       newIds = new Set();
     }
   }

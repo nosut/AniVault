@@ -1599,6 +1599,45 @@ impl Storage {
         Ok(())
     }
 
+    /// Read a season's seen-set and, when `record`, extend it with `ids` — as
+    /// a single transaction, so the compare a caller builds on top of the
+    /// returned set and the record cannot tear under a concurrent call to the
+    /// same season. Returns the seen-set as it stood *before* this call's
+    /// record (i.e. what the caller should diff `ids` against).
+    pub async fn diff_and_record_season_seen(
+        &self,
+        season: &str,
+        year: i32,
+        ids: &[i64],
+        record: bool,
+        now: i64,
+    ) -> anyhow::Result<Vec<i64>> {
+        let mut tx = self.pool.begin().await?;
+        let seen: Vec<i64> = sqlx::query_scalar(
+            "SELECT anime_id FROM season_seen WHERE season = ? AND year = ?",
+        )
+        .bind(season)
+        .bind(year)
+        .fetch_all(&mut *tx)
+        .await?;
+        if record {
+            for id in ids {
+                sqlx::query(
+                    "INSERT OR IGNORE INTO season_seen (season, year, anime_id, first_seen_at) \
+                     VALUES (?, ?, ?, ?)",
+                )
+                .bind(season)
+                .bind(year)
+                .bind(id)
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        tx.commit().await?;
+        Ok(seen)
+    }
+
     /// When an id was first recorded for a season. Test support for the
     /// `INSERT OR IGNORE` behaviour above; not used by the app.
     pub async fn season_first_seen_at(

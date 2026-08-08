@@ -37,11 +37,14 @@
   {:else}
     <div class="poster-img placeholder"></div>
   {/if}
-  {#if isNew}
-    <span class="new-badge">New</span>
-  {:else if inLibrary}
-    <span class="in-library-badge">In Library</span>
-  {/if}
+  <div class="badge-row">
+    {#if isNew}
+      <span class="new-badge">New</span>
+    {/if}
+    {#if inLibrary}
+      <span class="in-library-badge">In Library</span>
+    {/if}
+  </div>
   {#if !inLibrary}
     <button class="add-btn" on:click|stopPropagation={() => dispatch('add', { anime_id: entry.id, title: entry.title })} aria-label="Add {entry.title} to list">+</button>
   {/if}
@@ -64,10 +67,13 @@
   .poster-card.in-library { border-color: rgba(var(--color-success-rgb), 0.55); }
   .poster-card.in-library:hover { border-color: var(--color-success); }
   /* Amber, not the success green: green already means "In Library" on this
-     exact card and two unrelated states must not look alike. */
+     exact card and two unrelated states must not look alike. A card that is
+     both new and in-library must stay amber, including on hover. */
   .poster-card.is-new { border-color: rgba(var(--color-warning-rgb), 0.5); }
-  .in-library-badge { position: absolute; top: 0.3rem; left: 0.3rem; font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(var(--color-success-rgb),0.25); color: var(--color-success); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; z-index: 1; }
-  .new-badge { position: absolute; top: 0.3rem; left: 0.3rem; font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(var(--color-warning-rgb),0.28); color: var(--color-warning); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; z-index: 1; }
+  .poster-card.is-new:hover { border-color: var(--color-warning); }
+  .badge-row { position: absolute; top: 0.3rem; left: 0.3rem; display: flex; align-items: center; gap: 0.3rem; z-index: 1; }
+  .in-library-badge { font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(var(--color-success-rgb),0.25); color: var(--color-success); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .new-badge { font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(var(--color-warning-rgb),0.28); color: var(--color-warning); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
   .add-btn { position: absolute; top: 0.3rem; right: 0.3rem; border: 1px solid rgba(var(--color-accent-rgb),0.3); border-radius: 4px; padding: 0.1rem 0.4rem; background: rgba(var(--color-accent-rgb),0.15); color: var(--color-accent); cursor: pointer; font-size: 0.85rem; line-height: 1.2; z-index: 1; }
   .add-btn:hover { background: rgba(var(--color-accent-rgb),0.3); }
   .poster-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }

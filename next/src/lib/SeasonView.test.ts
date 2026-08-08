@@ -37,6 +37,14 @@ function headerText(): string {
   return document.querySelector('.season-nav h2')?.textContent ?? '';
 }
 
+// The season the component starts on when localStorage holds no saved state.
+function currentSeasonKey(): { season: string; year: number } {
+  const now = new Date();
+  const m = now.getMonth();
+  const s = m < 3 ? 'WINTER' : m < 6 ? 'SPRING' : m < 9 ? 'SUMMER' : 'FALL';
+  return { season: s, year: now.getFullYear() };
+}
+
 async function settle() {
   await tick();
   await new Promise((r) => setTimeout(r, 0));
@@ -250,6 +258,94 @@ describe('SeasonView new-releases band', () => {
 
     expect(vi.mocked(importAnilistAnime)).toHaveBeenCalledWith(7);
     expect(onSelect).not.toHaveBeenCalled();
+
+    unmount(component);
+  });
+
+  it('does not record a stale season baseline when navigating mid-load', async () => {
+    const current = currentSeasonKey();
+    const resolvers: Array<(v: typeof entries) => void> = [];
+    vi.mocked(getSeasonAnime).mockImplementation(
+      () => new Promise((resolve) => { resolvers.push(resolve as (v: typeof entries) => void); }),
+    );
+
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    expect(resolvers).toHaveLength(1);
+
+    // Navigate to the next season while the first fetch is still in flight.
+    const next = document.querySelector<HTMLButtonElement>('button[aria-label="Next season"]')!;
+    next.click();
+    flushSync();
+    await settle();
+
+    expect(resolvers).toHaveLength(2);
+
+    // Resolve the stale (first) load now that the component has already moved on.
+    resolvers[0]!(entries as never);
+    await settle();
+
+    // The stale load must record under the season it was fetched for, not the
+    // season the user has since navigated to.
+    const staleCall = vi.mocked(diffSeason).mock.calls[0];
+    expect(staleCall?.[0]).toBe(current.season);
+    expect(staleCall?.[1]).toBe(current.year);
+
+    const nextKey = addSeasons(current.season, current.year, 1);
+    resolvers[1]!(entries as never);
+    await settle();
+
+    const freshCall = vi.mocked(diffSeason).mock.calls[1];
+    expect(freshCall?.[0]).toBe(nextKey.season);
+    expect(freshCall?.[1]).toBe(nextKey.year);
+
+    unmount(component);
+  });
+
+  it('does not record a genre-filtered baseline when the genre reverts mid-load', async () => {
+    const resolvers: Array<(v: typeof entries) => void> = [];
+    vi.mocked(getSeasonAnime).mockImplementation(
+      () => new Promise((resolve) => { resolvers.push(resolve as (v: typeof entries) => void); }),
+    );
+
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+    expect(resolvers).toHaveLength(1);
+    resolvers[0]!(entries as never);
+    await settle();
+
+    vi.mocked(diffSeason).mockClear();
+    resolvers.length = 0;
+
+    // Select a genre; the filtered fetch starts but does not resolve yet.
+    const select = document.querySelector('.genre-select') as HTMLSelectElement;
+    select.value = 'Mecha';
+    select.dispatchEvent(new Event('change'));
+    flushSync();
+    await settle();
+    expect(resolvers).toHaveLength(1);
+
+    // Switch back to All Genres before the filtered fetch resolves.
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    flushSync();
+    await settle();
+    expect(resolvers).toHaveLength(2);
+
+    // Resolve the stale genre-filtered load now that genre is back to ''.
+    resolvers[0]!(entries as never);
+    await settle();
+
+    const staleCall = vi.mocked(diffSeason).mock.calls[0];
+    expect(staleCall?.[3]).toBe(false);
+
+    resolvers[1]!(entries as never);
+    await settle();
 
     unmount(component);
   });
