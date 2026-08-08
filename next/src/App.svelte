@@ -406,6 +406,20 @@
         <button class="update-dismiss" aria-label="Dismiss update notice" on:click={hideUpdate}>×</button>
       </div>
     {/if}
+    <!--
+      The Seasons view is kept mounted at all times (instead of living inside
+      the {#if} chain below) so opening a card's detail view and pressing Back
+      does not unmount it. Unmounting would discard the in-memory `newIds`
+      band and, on remount, re-run load() -> diff_season, which re-baselines
+      the season and wipes the "new since last visit" band the user hasn't
+      finished looking at yet. display:none (not visibility/opacity) is used
+      so the hidden view is genuinely out of layout, out of the accessibility
+      tree, and unreachable by keyboard; display:contents while visible keeps
+      this wrapper from adding an extra box to `.content`'s layout.
+    -->
+    <div class="season-view-slot" style={currentView === 'season' ? 'display: contents' : 'display: none'}>
+      <SeasonView on:select={handleSeasonSelect} />
+    </div>
     {#if currentView === 'dashboard'}
       <DashboardView
         events={latestEvents}
@@ -416,8 +430,6 @@
       <LibraryView events={latestEvents} on:select={handleLibrarySelect} />
     {:else if currentView === 'collection'}
       <CollectionView events={latestEvents} on:select={handleCollectionSelect} />
-    {:else if currentView === 'season'}
-      <SeasonView on:select={handleSeasonSelect} />
     {:else if currentView === 'search'}
       <SearchView bind:query={searchQuery} bind:entries={searchEntries} bind:hasSearched={searchHasSearched} on:select={handleSearchSelect} />
     {:else if currentView === 'calendar'}
