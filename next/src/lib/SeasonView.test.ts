@@ -18,9 +18,11 @@ vi.mock('./api', () => ({
   getLibraryIds: vi.fn(async () => []),
   updateListEntry: vi.fn(async () => {}),
   importAnilistAnime: vi.fn(async () => {}),
+  diffSeason: vi.fn(async () => ({ first_visit: true, new_ids: [] })),
+  FUTURE_SEASON_KEY: '__FUTURE__',
 }));
 
-import { getFutureAnime, getSeasonAnime } from './api';
+import { getFutureAnime, getSeasonAnime, diffSeason } from './api';
 import SeasonView from './SeasonView.svelte';
 
 // The season 4 ahead of the real current one — the last normally browsable page.
@@ -113,5 +115,88 @@ describe('SeasonView future mode', () => {
     expect(document.querySelector('button[aria-label="Go to current season"]')).toBeNull();
 
     await unmount(app);
+  });
+});
+
+describe('SeasonView new-releases band', () => {
+  const entries = [
+    { ...seasonEntry, id: 1, title: 'Established Show' },
+    { ...seasonEntry, id: 7, title: 'Brand New Show' },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(getSeasonAnime).mockResolvedValue(entries as never);
+    vi.mocked(diffSeason).mockResolvedValue({ first_visit: false, new_ids: [7] });
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('groups new shows in a band and keeps them out of the main grid', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    const band = document.querySelector('.new-band');
+    expect(band, 'the band renders when something is new').toBeTruthy();
+    expect(band?.querySelector('.group-count')?.textContent).toBe('1');
+
+    const bandTitles = [...(band?.querySelectorAll('.poster-title') ?? [])].map((n) => n.textContent);
+    expect(bandTitles).toEqual(['Brand New Show']);
+
+    // The flagged show must appear exactly once on the page.
+    const allTitles = [...document.querySelectorAll('.poster-title')].map((n) => n.textContent);
+    expect(allTitles.filter((t) => t === 'Brand New Show')).toHaveLength(1);
+    expect(allTitles).toContain('Established Show');
+
+    unmount(component);
+  });
+
+  it('renders no band on a first visit', async () => {
+    vi.mocked(diffSeason).mockResolvedValue({ first_visit: true, new_ids: [] });
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    expect(document.querySelector('.new-band')).toBeNull();
+    expect(document.querySelector('.rest-head')).toBeNull();
+    expect([...document.querySelectorAll('.poster-title')]).toHaveLength(2);
+
+    unmount(component);
+  });
+
+  it('still renders the season when the diff call fails', async () => {
+    // Newness is a convenience over a live API call and must never be able to
+    // block the grid.
+    vi.mocked(diffSeason).mockRejectedValue(new Error('db locked'));
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    expect(document.querySelector('.new-band')).toBeNull();
+    expect([...document.querySelectorAll('.poster-title')]).toHaveLength(2);
+    expect(document.querySelector('.message.error')).toBeNull();
+
+    unmount(component);
+  });
+
+  it('does not record a baseline while a genre filter is active', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+    expect(vi.mocked(diffSeason).mock.calls[0]?.[3]).toBe(true);
+
+    vi.mocked(diffSeason).mockClear();
+    const select = document.querySelector('.genre-select') as HTMLSelectElement;
+    select.value = 'Mecha';
+    select.dispatchEvent(new Event('change'));
+    await settle();
+
+    expect(vi.mocked(diffSeason).mock.calls[0]?.[3]).toBe(false);
+
+    unmount(component);
   });
 });
