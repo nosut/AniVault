@@ -1558,6 +1558,67 @@ impl Storage {
         Ok(ids)
     }
 
+    /// Anime ids this season was known to contain as of the last recorded view.
+    pub async fn season_seen_ids(&self, season: &str, year: i32) -> anyhow::Result<Vec<i64>> {
+        let ids: Vec<i64> =
+            sqlx::query_scalar("SELECT anime_id FROM season_seen WHERE season = ? AND year = ?")
+                .bind(season)
+                .bind(year)
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(ids)
+    }
+
+    /// Add ids to a season's seen-set. `INSERT OR IGNORE` so an id already
+    /// recorded keeps its original `first_seen_at` — that column answers "when
+    /// did this show appear", which a re-record must not overwrite.
+    pub async fn record_season_seen(
+        &self,
+        season: &str,
+        year: i32,
+        ids: &[i64],
+        now: i64,
+    ) -> anyhow::Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        for id in ids {
+            sqlx::query(
+                "INSERT OR IGNORE INTO season_seen (season, year, anime_id, first_seen_at) \
+                 VALUES (?, ?, ?, ?)",
+            )
+            .bind(season)
+            .bind(year)
+            .bind(id)
+            .bind(now)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// When an id was first recorded for a season. Test support for the
+    /// `INSERT OR IGNORE` behaviour above; not used by the app.
+    pub async fn season_first_seen_at(
+        &self,
+        season: &str,
+        year: i32,
+        anime_id: i64,
+    ) -> anyhow::Result<Option<i64>> {
+        let at: Option<i64> = sqlx::query_scalar(
+            "SELECT first_seen_at FROM season_seen \
+             WHERE season = ? AND year = ? AND anime_id = ?",
+        )
+        .bind(season)
+        .bind(year)
+        .bind(anime_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(at)
+    }
+
     pub async fn library_stats(&self) -> anyhow::Result<LibraryStats> {
         let row = sqlx::query(
             "SELECT \
