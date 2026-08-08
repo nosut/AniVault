@@ -18,9 +18,11 @@ vi.mock('./api', () => ({
   getLibraryIds: vi.fn(async () => []),
   updateListEntry: vi.fn(async () => {}),
   importAnilistAnime: vi.fn(async () => {}),
+  diffSeason: vi.fn(async () => ({ first_visit: true, new_ids: [] })),
+  FUTURE_SEASON_KEY: '__FUTURE__',
 }));
 
-import { getFutureAnime, getSeasonAnime } from './api';
+import { getFutureAnime, getSeasonAnime, diffSeason, importAnilistAnime } from './api';
 import SeasonView from './SeasonView.svelte';
 
 // The season 4 ahead of the real current one — the last normally browsable page.
@@ -33,6 +35,14 @@ function lastBrowsableSeason(): { season: string; year: number } {
 
 function headerText(): string {
   return document.querySelector('.season-nav h2')?.textContent ?? '';
+}
+
+// The season the component starts on when localStorage holds no saved state.
+function currentSeasonKey(): { season: string; year: number } {
+  const now = new Date();
+  const m = now.getMonth();
+  const s = m < 3 ? 'WINTER' : m < 6 ? 'SPRING' : m < 9 ? 'SUMMER' : 'FALL';
+  return { season: s, year: now.getFullYear() };
 }
 
 async function settle() {
@@ -113,5 +123,242 @@ describe('SeasonView future mode', () => {
     expect(document.querySelector('button[aria-label="Go to current season"]')).toBeNull();
 
     await unmount(app);
+  });
+});
+
+describe('SeasonView new-releases band', () => {
+  const entries = [
+    { ...seasonEntry, id: 1, title: 'Established Show' },
+    { ...seasonEntry, id: 7, title: 'Brand New Show' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getSeasonAnime).mockResolvedValue(entries as never);
+    vi.mocked(diffSeason).mockResolvedValue({ first_visit: false, new_ids: [7] });
+    localStorage.clear();
+    document.body.innerHTML = '';
+  });
+
+  it('groups new shows in a band and keeps them out of the main grid', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    const band = document.querySelector('.new-band');
+    expect(band, 'the band renders when something is new').toBeTruthy();
+    expect(band?.querySelector('.group-count')?.textContent).toBe('1');
+
+    const bandTitles = [...(band?.querySelectorAll('.poster-title') ?? [])].map((n) => n.textContent);
+    expect(bandTitles).toEqual(['Brand New Show']);
+
+    // The flagged show must appear exactly once on the page.
+    const allTitles = [...document.querySelectorAll('.poster-title')].map((n) => n.textContent);
+    expect(allTitles.filter((t) => t === 'Brand New Show')).toHaveLength(1);
+    expect(allTitles).toContain('Established Show');
+
+    unmount(component);
+  });
+
+  it('renders no band on a first visit', async () => {
+    vi.mocked(diffSeason).mockResolvedValue({ first_visit: true, new_ids: [] });
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    expect(document.querySelector('.new-band')).toBeNull();
+    expect(document.querySelector('.rest-head')).toBeNull();
+    expect([...document.querySelectorAll('.poster-title')]).toHaveLength(2);
+
+    unmount(component);
+  });
+
+  it('still renders the season when the diff call fails', async () => {
+    // Newness is a convenience over a live API call and must never be able to
+    // block the grid.
+    vi.mocked(diffSeason).mockRejectedValue(new Error('db locked'));
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    expect(document.querySelector('.new-band')).toBeNull();
+    expect([...document.querySelectorAll('.poster-title')]).toHaveLength(2);
+    expect(document.querySelector('.message.error')).toBeNull();
+
+    unmount(component);
+  });
+
+  it('does not record a baseline while a genre filter is active', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+    expect(vi.mocked(diffSeason).mock.calls[0]?.[3]).toBe(true);
+
+    vi.mocked(diffSeason).mockClear();
+    const select = document.querySelector('.genre-select') as HTMLSelectElement;
+    select.value = 'Mecha';
+    select.dispatchEvent(new Event('change'));
+    await settle();
+
+    expect(vi.mocked(diffSeason).mock.calls[0]?.[3]).toBe(false);
+
+    unmount(component);
+  });
+
+  it('dispatches select when a card in the band is clicked', async () => {
+    const onSelect = vi.fn();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target, events: { select: onSelect } });
+    await settle();
+
+    const bandCard = document.querySelector('.new-band .poster-card') as HTMLElement;
+    bandCard.click();
+    await settle();
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect.mock.calls[0]?.[0]?.detail).toEqual({ anime_id: 7 });
+
+    unmount(component);
+  });
+
+  it('dispatches select when a card in the lower grid is clicked', async () => {
+    const onSelect = vi.fn();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target, events: { select: onSelect } });
+    await settle();
+
+    // The "rest" grid is the .poster-grid that sits directly under .season-view;
+    // the band's own .poster-grid is nested inside .new-band.
+    const restCard = document.querySelector('.season-view > .poster-grid .poster-card') as HTMLElement;
+    restCard.click();
+    await settle();
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect.mock.calls[0]?.[0]?.detail).toEqual({ anime_id: 1 });
+
+    unmount(component);
+  });
+
+  it('adds from the add button without also dispatching select', async () => {
+    const onSelect = vi.fn();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target, events: { select: onSelect } });
+    await settle();
+
+    const addBtn = document.querySelector('.new-band .add-btn') as HTMLElement;
+    addBtn.click();
+    await settle();
+
+    expect(vi.mocked(importAnilistAnime)).toHaveBeenCalledWith(7);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    unmount(component);
+  });
+
+  it('does not record a stale season baseline when navigating mid-load', async () => {
+    const current = currentSeasonKey();
+    const resolvers: Array<(v: typeof entries) => void> = [];
+    vi.mocked(getSeasonAnime).mockImplementation(
+      () => new Promise((resolve) => { resolvers.push(resolve as (v: typeof entries) => void); }),
+    );
+
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    expect(resolvers).toHaveLength(1);
+
+    // Navigate to the next season while the first fetch is still in flight.
+    const next = document.querySelector<HTMLButtonElement>('button[aria-label="Next season"]')!;
+    next.click();
+    flushSync();
+    await settle();
+
+    expect(resolvers).toHaveLength(2);
+
+    // Resolve the stale (first) load now that the component has already moved on.
+    resolvers[0]!(entries as never);
+    await settle();
+
+    // The stale load must record under the season it was fetched for, not the
+    // season the user has since navigated to.
+    const staleCall = vi.mocked(diffSeason).mock.calls[0];
+    expect(staleCall?.[0]).toBe(current.season);
+    expect(staleCall?.[1]).toBe(current.year);
+
+    const nextKey = addSeasons(current.season, current.year, 1);
+    resolvers[1]!(entries as never);
+    await settle();
+
+    const freshCall = vi.mocked(diffSeason).mock.calls[1];
+    expect(freshCall?.[0]).toBe(nextKey.season);
+    expect(freshCall?.[1]).toBe(nextKey.year);
+
+    unmount(component);
+  });
+
+  it('does not record a genre-filtered baseline when the genre reverts mid-load', async () => {
+    const resolvers: Array<(v: typeof entries) => void> = [];
+    vi.mocked(getSeasonAnime).mockImplementation(
+      () => new Promise((resolve) => { resolvers.push(resolve as (v: typeof entries) => void); }),
+    );
+
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+    expect(resolvers).toHaveLength(1);
+    resolvers[0]!(entries as never);
+    await settle();
+
+    vi.mocked(diffSeason).mockClear();
+    resolvers.length = 0;
+
+    // Select a genre; the filtered fetch starts but does not resolve yet.
+    const select = document.querySelector('.genre-select') as HTMLSelectElement;
+    select.value = 'Mecha';
+    select.dispatchEvent(new Event('change'));
+    flushSync();
+    await settle();
+    expect(resolvers).toHaveLength(1);
+
+    // Switch back to All Genres before the filtered fetch resolves.
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    flushSync();
+    await settle();
+    expect(resolvers).toHaveLength(2);
+
+    // Resolve the stale genre-filtered load now that genre is back to ''.
+    resolvers[0]!(entries as never);
+    await settle();
+
+    const staleCall = vi.mocked(diffSeason).mock.calls[0];
+    expect(staleCall?.[3]).toBe(false);
+
+    resolvers[1]!(entries as never);
+    await settle();
+
+    unmount(component);
+  });
+
+  it('diffs against the future sentinel key when mounted in future mode', async () => {
+    localStorage.setItem('anivault-season-state', JSON.stringify({ future: true, season: 'FALL', year: 2026, genre: '' }));
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    expect(vi.mocked(diffSeason)).toHaveBeenCalledWith('__FUTURE__', 0, [futureEntry.id], true);
+
+    unmount(component);
   });
 });

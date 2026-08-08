@@ -172,6 +172,15 @@
 
   let currentView: View = loadStartPage();
   let previousView: View = currentView;
+  // Latches true the first time the Seasons view is opened, and never resets.
+  // The always-mounted Seasons wrapper below (see the comment near
+  // .season-view-slot) is only rendered once this is true, so SeasonView's
+  // onMount -> load() -> diff_season(..., record: true) does not fire at
+  // launch for users who never visit Seasons. Once latched, the existing
+  // display:none/display:contents toggle keeps the "survive a detail round
+  // trip" behavior working exactly as before.
+  let seasonEverOpened = currentView === 'season';
+  $: if (currentView === 'season') seasonEverOpened = true;
   let detailAnimeId: number | null = null;
   let searchQuery = '';
   let searchEntries: SeasonAnimeEntry[] = [];
@@ -406,6 +415,30 @@
         <button class="update-dismiss" aria-label="Dismiss update notice" on:click={hideUpdate}>×</button>
       </div>
     {/if}
+    <!--
+      Once opened, the Seasons view is kept mounted at all times (instead of
+      living inside the {#if} chain below) so opening a card's detail view and
+      pressing Back does not unmount it. Unmounting would discard the
+      in-memory `newIds` band and, on remount, re-run load() -> diff_season,
+      which re-baselines the season and wipes the "new since last visit" band
+      the user hasn't finished looking at yet. display:none (not
+      visibility/opacity) is used so the hidden view is genuinely out of
+      layout, out of the accessibility tree, and unreachable by keyboard;
+      display:contents while visible keeps this wrapper from adding an extra
+      box to `.content`'s layout.
+
+      The wrapper itself is gated behind `seasonEverOpened`, which latches
+      true the first time currentView becomes 'season' and never resets. This
+      keeps SeasonView unmounted (so its onMount -> load() -> diff_season
+      does not fire) for a launch that never visits Seasons at all, while
+      preserving the always-mounted behavior above for every visit after the
+      first.
+    -->
+    {#if seasonEverOpened}
+      <div class="season-view-slot" style={currentView === 'season' ? 'display: contents' : 'display: none'}>
+        <SeasonView on:select={handleSeasonSelect} />
+      </div>
+    {/if}
     {#if currentView === 'dashboard'}
       <DashboardView
         events={latestEvents}
@@ -416,8 +449,6 @@
       <LibraryView events={latestEvents} on:select={handleLibrarySelect} />
     {:else if currentView === 'collection'}
       <CollectionView events={latestEvents} on:select={handleCollectionSelect} />
-    {:else if currentView === 'season'}
-      <SeasonView on:select={handleSeasonSelect} />
     {:else if currentView === 'search'}
       <SearchView bind:query={searchQuery} bind:entries={searchEntries} bind:hasSearched={searchHasSearched} on:select={handleSearchSelect} />
     {:else if currentView === 'calendar'}

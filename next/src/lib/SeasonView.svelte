@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { getSeasonAnime, getFutureAnime, getLibraryIds, updateListEntry, importAnilistAnime, type SeasonAnimeEntry, type FutureAnimeEntry } from './api';
+  import { getSeasonAnime, getFutureAnime, getLibraryIds, updateListEntry, importAnilistAnime, diffSeason, FUTURE_SEASON_KEY, type SeasonAnimeEntry, type FutureAnimeEntry } from './api';
   import { addSeasons, futureLabel, seasonOffset } from './seasonUi';
+  import { partitionNew } from './seasonNew';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+  import SeasonPosterCard from './SeasonPosterCard.svelte';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
@@ -56,16 +58,61 @@
   let error: string | null = null;
   let libraryIds = new Set<number>();
 
+  // Ids flagged as added since the last visit. Held in component state and
+  // cleared only when the season, year, or genre changes — never on a timer and
+  // never after rendering. Season can be the app's start page, so a launch is
+  // itself a visit; clearing on render would consume the flag before it is read.
+  let newIds = new Set<number>();
+
+  // Bumped on every load() call. markSeasonSeen() captures the generation it
+  // was started with and refuses to paint newIds if a newer load has since
+  // started — otherwise a stale diff resolving after a nav change could flag
+  // (or fail to flag) the season the user is now looking at.
+  let loadGeneration = 0;
+
   async function load() {
-    loading = true; error = null;
+    loading = true; error = null; newIds = new Set();
+    const generation = ++loadGeneration;
+    // Captured now, before any await: every nav handler (prevSeason,
+    // nextSeason, goCurrentSeason, the genre select) mutates season/year/
+    // future/genre synchronously and then calls load(). Reading those fields
+    // later, after the fetch resolves, would race a subsequent navigation.
+    const key = future ? FUTURE_SEASON_KEY : season;
+    const keyYear = future ? 0 : year;
+    const record = genre === '';
+    let loaded = false;
     try {
       entries = future
         ? await getFutureAnime(genre || undefined)
         : await getSeasonAnime(season, year, genre || undefined);
+      loaded = true;
     }
     catch(e) { error = e instanceof Error ? e.message : String(e); }
     finally { loading = false; }
+    // Not awaited: the diff is a convenience layered on top of the grid and
+    // must never make a slow or lock-contended diff_season call keep the
+    // skeleton up. The band fills in a moment after the grid renders.
+    if (loaded) markSeasonSeen(generation, key, keyYear, record, entries.map((e) => e.id));
   }
+
+  // Best-effort: a failed diff means no band, never a failed page. The grid is
+  // the feature; this is a convenience layered over it. Takes every input as
+  // an explicit argument — it must never read component state after the
+  // await, since that state can have moved on to a different season by then.
+  async function markSeasonSeen(generation: number, key: string, keyYear: number, record: boolean, ids: number[]) {
+    try {
+      // A genre-filtered listing holds only part of the season. Recording it
+      // would baseline that fragment and mark everything else new next visit.
+      const diff = await diffSeason(key, keyYear, ids, record);
+      if (generation !== loadGeneration) return;
+      newIds = diff.first_visit ? new Set() : new Set(diff.new_ids);
+    } catch {
+      if (generation !== loadGeneration) return;
+      newIds = new Set();
+    }
+  }
+
+  $: ({ fresh: freshEntries, rest: restEntries } = partitionNew(entries, newIds));
 
   async function loadLibraryIds() {
     try {
@@ -134,13 +181,6 @@
     return futureLabel(entry as FutureAnimeEntry);
   }
 
-  function scoreColor(score: number | null): string {
-    if (!score) return 'var(--color-muted)';
-    if (score >= 80) return 'var(--color-success)';
-    if (score >= 60) return 'var(--color-warning)';
-    return 'var(--color-error)';
-  }
-
   $: saveSeasonState(season, year, genre, future);
 
   async function loadAll() {
@@ -178,39 +218,40 @@
   {:else if entries.length === 0}
     <p class="empty">{future ? 'No far-future or TBA announcements found.' : 'No anime found for this season.'}</p>
   {:else}
-    <div class="poster-grid">
-      {#each entries as entry (entry.id)}
-        <div class="poster-card"
-          class:in-library={libraryIds.has(entry.id)}
-          tabindex="0"
-          role="button"
-          aria-label={entry.title}
-          on:click={() => dispatch('select', { anime_id: entry.id })}
-          on:contextmenu|preventDefault={() => handleQuickAdd(entry.id)}
-          on:keydown={(e) => e.key === 'Enter' && dispatch('select', { anime_id: entry.id })}
-        >
-          {#if entry.image_url}
-            <img class="poster-img" src={entry.image_url} alt={entry.title} loading="lazy" />
-          {:else}
-            <div class="poster-img placeholder"></div>
-          {/if}
-          {#if libraryIds.has(entry.id)}
-            <span class="in-library-badge">In Library</span>
-          {:else}
-            <button class="add-btn" on:click|stopPropagation={() => handleAddToList(entry.id, entry.title)} aria-label="Add {entry.title} to list">+</button>
-          {/if}
-          <div class="poster-info">
-            <p class="poster-title">{entry.title}</p>
-            <div class="poster-meta">
-              <span class="poster-format">{entry.format ?? 'TV'}</span>
-              {#if future}
-                <span class="poster-future">{labelFor(entry)}</span>
-              {:else if entry.average_score}
-                <span class="poster-score" style="color: {scoreColor(entry.average_score)}">{entry.average_score}%</span>
-              {/if}
-            </div>
-          </div>
+    {#if freshEntries.length > 0}
+      <section class="new-band" aria-label="New since your last visit">
+        <div class="group-head">
+          <span class="group-title">New since your last visit</span>
+          <span class="group-count">{freshEntries.length}</span>
         </div>
+        <div class="poster-grid">
+          {#each freshEntries as entry (entry.id)}
+            <SeasonPosterCard
+              {entry}
+              {future}
+              isNew
+              inLibrary={libraryIds.has(entry.id)}
+              label={labelFor(entry)}
+              on:select={(e) => dispatch('select', e.detail)}
+              on:add={(e) => handleAddToList(e.detail.anime_id, e.detail.title)}
+              on:quickAdd={(e) => handleQuickAdd(e.detail.anime_id)}
+            />
+          {/each}
+        </div>
+      </section>
+      <div class="rest-head">Rest of the season</div>
+    {/if}
+    <div class="poster-grid">
+      {#each restEntries as entry (entry.id)}
+        <SeasonPosterCard
+          {entry}
+          {future}
+          inLibrary={libraryIds.has(entry.id)}
+          label={labelFor(entry)}
+          on:select={(e) => dispatch('select', e.detail)}
+          on:add={(e) => handleAddToList(e.detail.anime_id, e.detail.title)}
+          on:quickAdd={(e) => handleQuickAdd(e.detail.anime_id)}
+        />
       {/each}
     </div>
   {/if}
@@ -227,21 +268,12 @@
   .genre-select { border: 1px solid rgba(var(--color-accent-rgb),0.2); border-radius: 999px; padding: 0.4rem 0.8rem; background: rgba(255,255,255,0.06); color: var(--color-text); font-size: 0.85rem; }
   .genre-select option { background: #141820; }
   .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem; }
-  .poster-card { position: relative; border: 1px solid rgba(var(--color-accent-rgb),0.1); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s, transform 0.15s; }
-  .poster-card:hover { border-color: rgba(var(--color-accent-rgb),0.3); transform: translateY(-2px); }
-  .poster-card.in-library { border-color: rgba(var(--color-success-rgb), 0.55); }
-  .poster-card.in-library:hover { border-color: var(--color-success); }
-  .in-library-badge { position: absolute; top: 0.3rem; left: 0.3rem; font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: rgba(var(--color-success-rgb),0.25); color: var(--color-success); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; z-index: 1; }
-  .add-btn { position: absolute; top: 0.3rem; right: 0.3rem; border: 1px solid rgba(var(--color-accent-rgb),0.3); border-radius: 4px; padding: 0.1rem 0.4rem; background: rgba(var(--color-accent-rgb),0.15); color: var(--color-accent); cursor: pointer; font-size: 0.85rem; line-height: 1.2; z-index: 1; }
-  .add-btn:hover { background: rgba(var(--color-accent-rgb),0.3); }
-  .poster-img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
-  .poster-img.placeholder { background: rgba(var(--color-accent-rgb),0.08); }
-  .poster-info { padding: 0.5rem 0.6rem; display: flex; flex-direction: column; gap: 0.25rem; }
-  .poster-title { font-size: 0.82rem; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .poster-meta { display: flex; gap: 0.5rem; font-size: 0.75rem; align-items: center; }
-  .poster-format { color: var(--color-muted); }
-  .poster-score { font-weight: 600; }
-  .poster-future { font-weight: 600; color: var(--color-accent); }
+  .new-band { border: 1px solid rgba(var(--color-warning-rgb),0.22); border-radius: 12px; background: rgba(var(--color-warning-rgb),0.05); padding: 1rem; display: flex; flex-direction: column; gap: 0.85rem; }
+  .group-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .group-title { font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.11em; color: var(--color-warning); }
+  .group-count { font-size: 0.7rem; font-weight: 700; color: var(--color-warning); background: rgba(var(--color-warning-rgb),0.16); border-radius: 999px; padding: 0.1rem 0.5rem; font-variant-numeric: tabular-nums; }
+  .rest-head { display: flex; align-items: center; gap: 0.75rem; color: var(--color-muted); font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.11em; }
+  .rest-head::after { content: ""; flex: 1; height: 1px; background: rgba(var(--color-accent-rgb),0.14); }
   .skeleton-poster { aspect-ratio: 3/4; border-radius: 10px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.7} }
   .empty { color: var(--color-muted); text-align: center; padding: 2rem; }

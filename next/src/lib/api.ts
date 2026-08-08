@@ -676,6 +676,35 @@ export function getFutureAnime(genre?: string, invokeFn: InvokeFn = tauriInvoke)
   return invokeFn<FutureAnimeEntry[]>('get_future_anime', { genre: genre ?? null });
 }
 
+/**
+ * Season key for the Future Seasons page, which has no season/year of its own.
+ * Must match the sentinel the backend stores under.
+ */
+export const FUTURE_SEASON_KEY = '__FUTURE__';
+
+export interface SeasonDiff {
+  /** No baseline recorded yet — the caller must flag nothing. */
+  first_visit: boolean;
+  /** Ids in the listing that were not previously recorded. */
+  new_ids: number[];
+}
+
+/**
+ * Compare a fetched season listing against what has been seen before.
+ *
+ * `record` must be false when a genre filter is active: that listing holds only
+ * part of the season, and baselining it would mark everything else new next time.
+ */
+export function diffSeason(
+  season: string,
+  year: number,
+  ids: number[],
+  record: boolean,
+  invokeFn: InvokeFn = tauriInvoke,
+): Promise<SeasonDiff> {
+  return invokeFn<SeasonDiff>('diff_season', { season, year, ids, record });
+}
+
 export function triggerSync(invokeFn: InvokeFn = tauriInvoke): Promise<SyncResult> {
   return invokeFn<SyncResult>('trigger_sync');
 }
