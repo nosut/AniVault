@@ -345,7 +345,7 @@ describe('api wrappers', () => {
 
   it('diffs a season through invoke', async () => {
     const diff = { first_visit: false, new_ids: [7, 9] };
-    const invoke = vi.fn(async () => diff);
+    const invoke = vi.fn().mockResolvedValue(diff);
     await expect(diffSeason('FALL', 2026, [1, 7, 9], true, invoke)).resolves.toEqual(diff);
     expect(invoke).toHaveBeenCalledWith('diff_season', {
       season: 'FALL',
