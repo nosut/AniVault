@@ -3,6 +3,31 @@ use serde_json::Value;
 
 const ANILIST_API_URL: &str = "https://graphql.anilist.co";
 
+/// Hard cap on pages `fetch_season_anime` will request. See the comment on
+/// that function for the reasoning behind the number.
+const SEASON_FETCH_MAX_PAGES: u32 = 40;
+
+/// Pull the `media` array and `pageInfo.hasNextPage` flag out of one
+/// `Page(...)` response. Shared by every method in this client that
+/// paginates a `Page` query, so the parsing — and its test coverage — lives
+/// in one place. A response missing either field is treated as an empty,
+/// final page rather than an error: a malformed page should stop the loop,
+/// not spin it.
+fn page_media_and_has_next(raw: &Value) -> (Vec<Value>, bool) {
+    let page_obj = raw.get("data").and_then(|d| d.get("Page"));
+    let media = page_obj
+        .and_then(|p| p.get("media"))
+        .and_then(|m| m.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let has_next = page_obj
+        .and_then(|p| p.get("pageInfo"))
+        .and_then(|pi| pi.get("hasNextPage"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    (media, has_next)
+}
+
 /// Map a local list status to AniList's `MediaListStatus` enum. Returns `None`
 /// for unlisted/unknown so the mutation leaves status untouched.
 pub fn map_anilist_status(local: &str) -> Option<&'static str> {
@@ -505,6 +530,15 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
 
     /// Fetch anime from a specific season with optional genre filter.
     /// season: "WINTER", "SPRING", "SUMMER", "FALL"
+    ///
+    /// Paginates until AniList reports no further pages, so the result is the
+    /// whole season (several hundred entries once shorts, OVAs, specials and
+    /// music videos are included) rather than just the top 50 by popularity.
+    /// A popularity-window baseline would misreport newness: a show climbing
+    /// from rank ~55 to ~45 would look "new" though it was announced months
+    /// ago, and a genuinely new low-profile show would stay invisible until
+    /// it climbed into the top 50. The genre-filtered path reuses the same
+    /// loop, so it paginates identically.
     pub async fn fetch_season_anime(
         &self,
         season: &str,
@@ -513,19 +547,31 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
     ) -> anyhow::Result<Vec<SeasonAnime>> {
         // $genre is declared but only provided when set — per GraphQL spec an
         // unprovided nullable variable makes the argument act as if omitted.
-        let query_str = "query ($season: MediaSeason, $seasonYear: Int, $genre: String) { \
-             Page(page: 1, perPage: 50) { \
+        let query_str = "query ($season: MediaSeason, $seasonYear: Int, $genre: String, $page: Int) { \
+             Page(page: $page, perPage: 50) { \
+             pageInfo { hasNextPage } \
              media(season: $season, seasonYear: $seasonYear, genre: $genre, type: ANIME, sort: POPULARITY_DESC) { \
              id title { romaji english } coverImage { large } episodes status format averageScore popularity } } }";
-        let mut variables = serde_json::json!({ "season": season, "seasonYear": year });
-        if let Some(g) = genre {
-            variables["genre"] = serde_json::Value::String(g.to_string());
-        }
 
-        let raw: serde_json::Value = self.query(query_str, variables).await?;
-        let media_list = raw.get("data").and_then(|d| d.get("Page")).and_then(|p| p.get("media")).and_then(|m| m.as_array()).cloned().unwrap_or_default();
-        let entries: Vec<SeasonAnime> = media_list.into_iter().filter_map(|m| serde_json::from_value::<SeasonAnime>(m).ok()).collect();
-        Ok(entries)
+        // A real season, even counting every short/OVA/special/music video,
+        // runs to a few hundred titles — a handful of pages at 50/page.
+        // SEASON_FETCH_MAX_PAGES (2,000 entries) comfortably exceeds that, so
+        // a malformed or hostile response that keeps reporting
+        // hasNextPage: true can't loop forever.
+        let mut out: Vec<SeasonAnime> = Vec::new();
+        for page in 1..=SEASON_FETCH_MAX_PAGES {
+            let mut variables = serde_json::json!({ "season": season, "seasonYear": year, "page": page });
+            if let Some(g) = genre {
+                variables["genre"] = serde_json::Value::String(g.to_string());
+            }
+            let raw: serde_json::Value = self.query(query_str, variables).await?;
+            let (media_list, has_next) = page_media_and_has_next(&raw);
+            out.extend(media_list.into_iter().filter_map(|m| serde_json::from_value::<SeasonAnime>(m).ok()));
+            if !has_next {
+                break;
+            }
+        }
+        Ok(out)
     }
 
     /// Fetch announced-but-unaired anime (status NOT_YET_RELEASED) by
@@ -547,22 +593,12 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
                 variables["genre"] = serde_json::Value::String(g.to_string());
             }
             let raw: serde_json::Value = self.query(query_str, variables).await?;
-            let page_obj = raw.get("data").and_then(|d| d.get("Page"));
-            let media_list = page_obj
-                .and_then(|p| p.get("media"))
-                .and_then(|m| m.as_array())
-                .cloned()
-                .unwrap_or_default();
+            let (media_list, has_next) = page_media_and_has_next(&raw);
             out.extend(
                 media_list
                     .into_iter()
                     .filter_map(|m| serde_json::from_value::<FutureAnime>(m).ok()),
             );
-            let has_next = page_obj
-                .and_then(|p| p.get("pageInfo"))
-                .and_then(|pi| pi.get("hasNextPage"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
             if !has_next {
                 break;
             }
@@ -716,4 +752,112 @@ pub struct RelationEdge {
     #[serde(rename = "relationType")]
     pub relation_type: String,
     pub node: Option<AnimeRelation>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn page(media_ids: &[i64], has_next: bool) -> Value {
+        let media: Vec<Value> = media_ids
+            .iter()
+            .map(|id| serde_json::json!({ "id": id }))
+            .collect();
+        serde_json::json!({
+            "data": {
+                "Page": {
+                    "pageInfo": { "hasNextPage": has_next },
+                    "media": media,
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn page_media_and_has_next_reads_media_and_flag() {
+        let raw = page(&[1, 2, 3], true);
+        let (media, has_next) = page_media_and_has_next(&raw);
+        assert_eq!(media.len(), 3);
+        assert!(has_next);
+    }
+
+    #[test]
+    fn page_media_and_has_next_defaults_missing_flag_to_false() {
+        let raw = serde_json::json!({ "data": { "Page": { "media": [] } } });
+        let (media, has_next) = page_media_and_has_next(&raw);
+        assert!(media.is_empty());
+        assert!(!has_next, "a page missing hasNextPage must stop the loop, not spin it");
+    }
+
+    #[test]
+    fn page_media_and_has_next_handles_a_malformed_response() {
+        let raw = serde_json::json!({ "data": null });
+        let (media, has_next) = page_media_and_has_next(&raw);
+        assert!(media.is_empty());
+        assert!(!has_next);
+    }
+
+    // Mirrors the loop in fetch_season_anime/fetch_future_anime: pulls pages
+    // one at a time, extends the accumulator, and stops as soon as a page
+    // reports hasNextPage: false (or the cap is hit). Exercised here against
+    // a scripted sequence of fake pages -- no network involved, since this
+    // crate has no HTTP-mocking infrastructure -- to prove the pagination
+    // logic itself (accumulate-then-stop, capped) behaves correctly. Both
+    // fetch_season_anime and fetch_future_anime route through
+    // page_media_and_has_next, so this covers the shared termination logic
+    // for both.
+    fn accumulate(pages: &[Value], max_pages: u32) -> (Vec<Value>, u32) {
+        let mut out = Vec::new();
+        let mut fetched = 0u32;
+        for raw in pages.iter().take(max_pages as usize) {
+            fetched += 1;
+            let (media, has_next) = page_media_and_has_next(raw);
+            out.extend(media);
+            if !has_next {
+                break;
+            }
+        }
+        (out, fetched)
+    }
+
+    #[test]
+    fn pagination_accumulates_media_across_pages() {
+        let pages = vec![page(&[1, 2], true), page(&[3, 4], true), page(&[5], false)];
+        let (media, fetched) = accumulate(&pages, SEASON_FETCH_MAX_PAGES);
+        assert_eq!(fetched, 3, "should have walked all three pages");
+        assert_eq!(media.len(), 5, "media from every page should be accumulated");
+    }
+
+    #[test]
+    fn pagination_terminates_on_has_next_page_false() {
+        // A trailing page after the hasNextPage: false page must never be
+        // read. It's "poisoned" with extra ids so the length assertion would
+        // fail if the loop kept going past the false flag.
+        let pages = vec![page(&[1], true), page(&[2], false), page(&[999, 998, 997], true)];
+        let (media, fetched) = accumulate(&pages, SEASON_FETCH_MAX_PAGES);
+        assert_eq!(fetched, 2, "must stop at the page reporting hasNextPage: false");
+        assert_eq!(media.len(), 2);
+    }
+
+    #[test]
+    fn pagination_is_bounded_by_a_hard_page_cap() {
+        // A malformed or hostile response that always claims
+        // hasNextPage: true must not be able to loop forever.
+        let pages: Vec<Value> = (0..SEASON_FETCH_MAX_PAGES + 10)
+            .map(|_| page(&[1], true))
+            .collect();
+        let (_media, fetched) = accumulate(&pages, SEASON_FETCH_MAX_PAGES);
+        assert_eq!(fetched, SEASON_FETCH_MAX_PAGES, "must stop at the hard cap, not run away");
+    }
+
+    #[test]
+    fn season_fetch_page_cap_comfortably_exceeds_a_real_season() {
+        // At 50 entries/page, a real season (even counting shorts, OVAs,
+        // specials and music videos) runs to a handful of pages. The cap
+        // should leave generous headroom above that.
+        assert!(
+            SEASON_FETCH_MAX_PAGES >= 20,
+            "cap should comfortably exceed a real season's page count"
+        );
+    }
 }
