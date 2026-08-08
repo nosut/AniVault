@@ -6,12 +6,14 @@ import {
   connectSonarr,
   deepMatchViaAnilist,
   deleteSetting,
+  diffSeason,
   disconnectAniList,
   disconnectSonarr,
   discoverV1Data,
   drainEngineEvents,
   exportDatabase,
   fetchAnimeDetail,
+  FUTURE_SEASON_KEY,
   getCollection,
   getEngineStatus,
   getFutureAnime,
@@ -339,6 +341,22 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(ids);
     await expect(getLibraryIds(invoke)).resolves.toEqual(ids);
     expect(invoke).toHaveBeenCalledWith('get_library_ids');
+  });
+
+  it('diffs a season through invoke', async () => {
+    const diff = { first_visit: false, new_ids: [7, 9] };
+    const invoke = vi.fn(async () => diff);
+    await expect(diffSeason('FALL', 2026, [1, 7, 9], true, invoke)).resolves.toEqual(diff);
+    expect(invoke).toHaveBeenCalledWith('diff_season', {
+      season: 'FALL',
+      year: 2026,
+      ids: [1, 7, 9],
+      record: true,
+    });
+  });
+
+  it('uses the future sentinel key for the future page', () => {
+    expect(FUTURE_SEASON_KEY).toBe('__FUTURE__');
   });
 
   it('fetches anime detail through invoke', async () => {
