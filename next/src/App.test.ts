@@ -30,7 +30,7 @@ vi.mock('./lib/api', async (importOriginal) => {
   return mocked;
 });
 
-import { getSeasonAnime, diffSeason, getLibraryIds, fetchAnimeDetail, getTrackingStatus } from './lib/api';
+import { getSeasonAnime, diffSeason, getLibraryIds, fetchAnimeDetail, getTrackingStatus, searchLibrary } from './lib/api';
 import App from './App.svelte';
 
 async function settle() {
@@ -101,6 +101,91 @@ describe('App keeps the Seasons view mounted across a detail round trip', () => 
     await settle();
 
     // The band is exactly as it was, and load()/diff_season did not re-run.
+    expect(slot.style.display).toBe('contents');
+    expect(document.querySelector('.new-band')).toBeTruthy();
+    expect(document.querySelector('.group-count')?.textContent).toBe('1');
+    expect(getSeasonAnime).toHaveBeenCalledTimes(1);
+    expect(diffSeason).toHaveBeenCalledTimes(1);
+
+    unmount(app);
+  });
+});
+
+// Covers the regression where commit 20e6e886's always-mounted Seasons
+// wrapper sat unconditionally in `.content`, outside the {#if} chain. Since
+// SeasonView's onMount unconditionally calls load() -> diff_season(...,
+// record: true), that meant every app launch silently recorded a Seasons
+// baseline regardless of the configured start page -- degrading the "new
+// since you last viewed Seasons" band into "new since your last app launch".
+// The fix latches a one-way `seasonEverOpened` flag the first time
+// currentView becomes 'season', and only renders the always-mounted wrapper
+// once that flag is set.
+describe('App does not mount the Seasons view before it has ever been opened', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    document.body.innerHTML = '<div id="app"></div>';
+    localStorage.clear();
+    localStorage.setItem('anivault-start-page', 'library');
+    window.matchMedia = window.matchMedia ?? ((query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    vi.mocked(getSeasonAnime).mockResolvedValue(seasonEntries as never);
+    vi.mocked(diffSeason).mockResolvedValue({ first_visit: false, new_ids: [7] });
+    vi.mocked(getLibraryIds).mockResolvedValue([]);
+    vi.mocked(fetchAnimeDetail).mockRejectedValue(new Error('not needed for this test'));
+    vi.mocked(getTrackingStatus).mockResolvedValue({ active: false, watching: null });
+    // LibraryView (the start page here) spreads its search results directly
+    // into a reactive `sortedEntries` outside any try/catch, so — unlike the
+    // rest of this file's best-effort-await components — it needs a real
+    // array back rather than the generic undefined-returning automock.
+    vi.mocked(searchLibrary).mockResolvedValue([]);
+  });
+
+  it('skips getSeasonAnime/diffSeason on a library start page, then loads Season normally on first visit and still preserves the round trip', async () => {
+    const app = mount(App, { target: document.getElementById('app')! });
+    await settle();
+
+    // The Seasons wrapper must not even be in the DOM yet -- SeasonView never
+    // mounted, so its onMount never ran.
+    expect(document.querySelector('.season-view-slot')).toBeNull();
+    expect(getSeasonAnime).not.toHaveBeenCalled();
+    expect(diffSeason).not.toHaveBeenCalled();
+
+    // Navigate to Season for the first time via the nav rail.
+    const seasonNav = document.querySelector('[aria-label="Season"]') as HTMLElement;
+    seasonNav.click();
+    await settle();
+
+    expect(getSeasonAnime).toHaveBeenCalledTimes(1);
+    expect(diffSeason).toHaveBeenCalledTimes(1);
+    const slot = document.querySelector('.season-view-slot') as HTMLElement;
+    expect(slot).toBeTruthy();
+    expect(slot.style.display).toBe('contents');
+    expect(document.querySelector('.new-band')).toBeTruthy();
+    expect(document.querySelector('.group-count')?.textContent).toBe('1');
+
+    // The latch must not have broken commit 20e6e886's detail round trip:
+    // opening a card's detail view keeps SeasonView mounted (hidden, not
+    // unmounted), and returning does not re-run load()/diff_season.
+    const card = document.querySelector('.new-band .poster-card') as HTMLElement;
+    card.click();
+    await settle();
+
+    expect(document.querySelector('[aria-label="Anime detail"]')).toBeTruthy();
+    expect(document.querySelector('.season-view')).toBeTruthy();
+    expect(slot.style.display).toBe('none');
+
+    const back = document.querySelector('[aria-label="Back"]') as HTMLElement;
+    back.click();
+    await settle();
+
     expect(slot.style.display).toBe('contents');
     expect(document.querySelector('.new-band')).toBeTruthy();
     expect(document.querySelector('.group-count')?.textContent).toBe('1');
