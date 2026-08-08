@@ -93,4 +93,25 @@ describe('SeasonView future mode', () => {
     expect(getFutureAnime).toHaveBeenCalled();
     await unmount(app);
   });
+
+  it('jumps back to the current season from the future page and hides the button there', async () => {
+    const app = mount(SeasonView, { target: document.getElementById('app')! });
+    await settle();
+
+    // Saved state is the +4 season, so the Current button is offered.
+    const current = document.querySelector<HTMLButtonElement>('button[aria-label="Go to current season"]')!;
+    expect(current).not.toBeNull();
+    current.click();
+    flushSync();
+    await settle();
+
+    const now = new Date();
+    const m = now.getMonth();
+    const label = m < 3 ? 'Winter' : m < 6 ? 'Spring' : m < 9 ? 'Summer' : 'Fall';
+    expect(headerText()).toBe(`${label} ${now.getFullYear()}`);
+    // Already current: nothing to jump to.
+    expect(document.querySelector('button[aria-label="Go to current season"]')).toBeNull();
+
+    await unmount(app);
+  });
 });

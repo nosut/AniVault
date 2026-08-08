@@ -118,6 +118,16 @@
     load();
   }
 
+  function goCurrentSeason() {
+    const current = getCurrentSeason();
+    season = current.season;
+    year = current.year;
+    future = false;
+    load();
+  }
+
+  $: viewingCurrentSeason = !future && seasonOffset(season, year, getCurrentSeason().season, getCurrentSeason().year) === 0;
+
   // The grid holds a union of season/future entries; only future entries carry
   // season fields, which futureLabel treats as optional.
   function labelFor(entry: SeasonAnimeEntry | FutureAnimeEntry): string {
@@ -146,6 +156,9 @@
       <h2>{future ? 'Future Seasons' : `${seasonLabels[season]} ${year}`}</h2>
       {#if !future}
         <button class="nav-arrow" on:click={nextSeason} aria-label="Next season"><ChevronRight size={15} /></button>
+      {/if}
+      {#if !viewingCurrentSeason}
+        <button class="nav-arrow current-btn" on:click={goCurrentSeason} aria-label="Go to current season">Current</button>
       {/if}
     </div>
     <div class="season-controls">
@@ -210,6 +223,7 @@
   .season-nav h2 { font-size: 1.3rem; font-weight: 700; min-width: 10rem; }
   .nav-arrow { display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(var(--color-accent-rgb),0.2); border-radius: 999px; padding: 0.4rem 0.7rem; background: transparent; color: var(--color-muted); cursor: pointer; font-size: 0.85rem; }
   .nav-arrow:hover { background: rgba(var(--color-accent-rgb),0.1); color: var(--color-text); }
+  .current-btn { font-size: 0.78rem; padding: 0.35rem 0.8rem; }
   .genre-select { border: 1px solid rgba(var(--color-accent-rgb),0.2); border-radius: 999px; padding: 0.4rem 0.8rem; background: rgba(255,255,255,0.06); color: var(--color-text); font-size: 0.85rem; }
   .genre-select option { background: #141820; }
   .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem; }
