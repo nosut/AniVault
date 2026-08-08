@@ -22,7 +22,7 @@ vi.mock('./api', () => ({
   FUTURE_SEASON_KEY: '__FUTURE__',
 }));
 
-import { getFutureAnime, getSeasonAnime, diffSeason } from './api';
+import { getFutureAnime, getSeasonAnime, diffSeason, importAnilistAnime } from './api';
 import SeasonView from './SeasonView.svelte';
 
 // The season 4 ahead of the real current one — the last normally browsable page.
@@ -125,6 +125,7 @@ describe('SeasonView new-releases band', () => {
   ];
 
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(getSeasonAnime).mockResolvedValue(entries as never);
     vi.mocked(diffSeason).mockResolvedValue({ first_visit: false, new_ids: [7] });
     localStorage.clear();
@@ -196,6 +197,71 @@ describe('SeasonView new-releases band', () => {
     await settle();
 
     expect(vi.mocked(diffSeason).mock.calls[0]?.[3]).toBe(false);
+
+    unmount(component);
+  });
+
+  it('dispatches select when a card in the band is clicked', async () => {
+    const onSelect = vi.fn();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target, events: { select: onSelect } });
+    await settle();
+
+    const bandCard = document.querySelector('.new-band .poster-card') as HTMLElement;
+    bandCard.click();
+    await settle();
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect.mock.calls[0]?.[0]?.detail).toEqual({ anime_id: 7 });
+
+    unmount(component);
+  });
+
+  it('dispatches select when a card in the lower grid is clicked', async () => {
+    const onSelect = vi.fn();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target, events: { select: onSelect } });
+    await settle();
+
+    // The "rest" grid is the .poster-grid that sits directly under .season-view;
+    // the band's own .poster-grid is nested inside .new-band.
+    const restCard = document.querySelector('.season-view > .poster-grid .poster-card') as HTMLElement;
+    restCard.click();
+    await settle();
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect.mock.calls[0]?.[0]?.detail).toEqual({ anime_id: 1 });
+
+    unmount(component);
+  });
+
+  it('adds from the add button without also dispatching select', async () => {
+    const onSelect = vi.fn();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target, events: { select: onSelect } });
+    await settle();
+
+    const addBtn = document.querySelector('.new-band .add-btn') as HTMLElement;
+    addBtn.click();
+    await settle();
+
+    expect(vi.mocked(importAnilistAnime)).toHaveBeenCalledWith(7);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    unmount(component);
+  });
+
+  it('diffs against the future sentinel key when mounted in future mode', async () => {
+    localStorage.setItem('anivault-season-state', JSON.stringify({ future: true, season: 'FALL', year: 2026, genre: '' }));
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(SeasonView, { target });
+    await settle();
+
+    expect(vi.mocked(diffSeason)).toHaveBeenCalledWith('__FUTURE__', 0, [futureEntry.id], true);
 
     unmount(component);
   });

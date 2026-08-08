@@ -66,14 +66,19 @@
 
   async function load() {
     loading = true; error = null; newIds = new Set();
+    let loaded = false;
     try {
       entries = future
         ? await getFutureAnime(genre || undefined)
         : await getSeasonAnime(season, year, genre || undefined);
-      await markSeasonSeen();
+      loaded = true;
     }
     catch(e) { error = e instanceof Error ? e.message : String(e); }
     finally { loading = false; }
+    // Not awaited: the diff is a convenience layered on top of the grid and
+    // must never make a slow or lock-contended diff_season call keep the
+    // skeleton up. The band fills in a moment after the grid renders.
+    if (loaded) markSeasonSeen();
   }
 
   // Best-effort: a failed diff means no band, never a failed page. The grid is
