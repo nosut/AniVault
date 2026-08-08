@@ -1254,6 +1254,75 @@ pub async fn get_season_anime(
         .map_err(command_error)
 }
 
+/// Result of comparing a freshly fetched season listing against what the user
+/// has already seen.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SeasonDiff {
+    /// This season has no recorded baseline yet, so nothing may be flagged —
+    /// on a first visit every id is trivially unseen and flagging them would
+    /// mark the whole season new.
+    pub first_visit: bool,
+    /// Ids present in the listing but not previously recorded. Always empty
+    /// when `first_visit`.
+    pub new_ids: Vec<i64>,
+}
+
+/// Compare `ids` against the season's seen-set and, when `record`, extend it.
+///
+/// `record` must be false whenever the listing was genre-filtered: such a
+/// listing holds only part of the season, and baselining it would mark every
+/// other show new on the next unfiltered visit.
+pub async fn diff_season_inner(
+    state: &EngineState,
+    season: String,
+    year: i32,
+    ids: Vec<i64>,
+    record: bool,
+) -> anyhow::Result<SeasonDiff> {
+    let seen: std::collections::HashSet<i64> = state
+        .storage
+        .season_seen_ids(&season, year)
+        .await?
+        .into_iter()
+        .collect();
+
+    let first_visit = seen.is_empty();
+    let new_ids = if first_visit {
+        Vec::new()
+    } else {
+        ids.iter().copied().filter(|id| !seen.contains(id)).collect()
+    };
+
+    if record {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        state
+            .storage
+            .record_season_seen(&season, year, &ids, now)
+            .await?;
+    }
+
+    Ok(SeasonDiff {
+        first_visit,
+        new_ids,
+    })
+}
+
+#[tauri::command]
+pub async fn diff_season(
+    season: String,
+    year: i32,
+    ids: Vec<i64>,
+    record: bool,
+    state: tauri::State<'_, EngineState>,
+) -> Result<SeasonDiff, String> {
+    diff_season_inner(&state, season, year, ids, record)
+        .await
+        .map_err(command_error)
+}
+
 // ── Future seasons ───────────────────────────────────────────────────────────
 
 /// Seasons reachable with the normal prev/next season browser: the current
