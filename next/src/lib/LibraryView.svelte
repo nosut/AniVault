@@ -190,6 +190,13 @@
     return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
+  // The Library is local SQLite over IPC, so fetching every row for the active
+  // tab costs nothing meaningful — and it is the only way the client-side sort
+  // in `sortedEntries` can be correct. A page size instead truncates by
+  // `ORDER BY a.id` and then sorts the survivors, which silently shows the
+  // lowest-id subset re-sorted to look complete.
+  const LIBRARY_FETCH_LIMIT = 10000;
+
   async function load() {
     loading = true;
     error = '';
@@ -197,7 +204,7 @@
       // A search spans the whole library — ignore the selected category tab so
       // matches from every status show up. With no query, the tab filters as usual.
       const searchFilter = query.trim() ? null : statusFilter;
-      const results = await searchLibrary(query, searchFilter, 200, 0);
+      const results = await searchLibrary(query, searchFilter, LIBRARY_FETCH_LIMIT, 0);
       entries = results;
       if (results.length > 0) {
         loadEpisodeFiles(results);
