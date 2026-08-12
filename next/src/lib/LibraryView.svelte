@@ -2,15 +2,27 @@
   import { onMount, onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent } from './api';
+  import { normalizeStatusFilter } from './libraryUi';
   import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2 } from 'lucide-svelte';
 
   export let events: EngineEvent[] = [];
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
+  // Every value a tab can select. Declared here rather than derived from
+  // `statusOptions` because that constant is defined further down the file,
+  // after this function runs.
+  const KNOWN_STATUS_FILTERS: (string | null)[] = [
+    null, 'watching', 'completed', 'on_hold', 'dropped', 'plan_to_watch',
+  ];
+
   function loadPersistedFilter(): string | null {
-    try { return localStorage.getItem('anivault-library-filter'); }
-    catch { return null; }
+    try {
+      return normalizeStatusFilter(
+        localStorage.getItem('anivault-library-filter'),
+        KNOWN_STATUS_FILTERS,
+      );
+    } catch { return null; }
   }
 
   function persistFilter(value: string | null) {
@@ -117,7 +129,6 @@
   // Does an entry still belong under the active status tab?
   function matchesActiveFilter(e: LibraryEntry): boolean {
     if (!statusFilter) return true; // "All"
-    if (statusFilter === 'unlisted') return !e.status || e.status === 'unlisted';
     return e.status === statusFilter;
   }
   // Re-commit `entries`, dropping any that no longer match the active tab (e.g. a
@@ -169,7 +180,6 @@
       case 'on_hold': return stats.on_hold;
       case 'dropped': return stats.dropped;
       case 'plan_to_watch': return stats.plan_to_watch;
-      case 'unlisted': return Math.max(0, stats.total - (stats.watching + stats.completed + stats.on_hold + stats.dropped + stats.plan_to_watch));
       default: return null;
     }
   }
@@ -183,7 +193,6 @@
     { value: 'on_hold', label: 'On Hold' },
     { value: 'dropped', label: 'Dropped' },
     { value: 'plan_to_watch', label: 'Plan to Watch' },
-    { value: 'unlisted', label: 'Unlisted' },
   ];
 
   function formatStatus(status: string) {
@@ -635,7 +644,11 @@
           {/if}
           <div class="poster-info">
             <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
-            <span class="badge">{formatStatus(entry.status)}</span>
+            {#if entry.status === 'unlisted'}
+              <span class="no-status" aria-label="No list status">—</span>
+            {:else}
+              <span class="badge">{formatStatus(entry.status)}</span>
+            {/if}
             <div class="progress-wrap poster-progress">
               <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
               <div class="progress-inner">
@@ -825,7 +838,11 @@
                 </td>
                 <td class="title-cell" class:has-new={hasNewEpisode(entry)}>{entry.title}</td>
                 <td>
-                  <span class="badge">{formatStatus(entry.status)}</span>
+                  {#if entry.status === 'unlisted'}
+                    <span class="no-status" aria-label="No list status">—</span>
+                  {:else}
+                    <span class="badge">{formatStatus(entry.status)}</span>
+                  {/if}
                 </td>
                 {#if showSeason}
                   <td class="col-season season-cell">{formatSeason(entry.season, entry.season_year)}</td>
@@ -1193,6 +1210,11 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+
+  .no-status {
+    color: var(--color-muted);
+    opacity: 0.5;
   }
 
   .num-cell {
