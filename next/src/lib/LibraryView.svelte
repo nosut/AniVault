@@ -766,7 +766,7 @@
                 {@const na = nextAiring.get(entry.anime_id)}
                 {#if na}
                   <span class="airing-in" class:soon={(na.airing_at ?? 0) - nowSec < 86400}>
-                    in {formatAiringCountdown((na.airing_at ?? 0) - nowSec)}
+                    {formatAiringCountdown((na.airing_at ?? 0) - nowSec)}
                   </span>
                 {/if}
               {/if}
@@ -1007,10 +1007,7 @@
                     <td class="col-airing airing-cell">
                       {#if na}
                         <span class="airing-in" class:soon={(na.airing_at ?? 0) - nowSec < 86400}>
-                          in {formatAiringCountdown((na.airing_at ?? 0) - nowSec)}
-                        </span>
-                        <span class="airing-sub">
-                          Ep {na.next_episode} · {new Date((na.airing_at ?? 0) * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          {formatAiringCountdown((na.airing_at ?? 0) - nowSec)}
                         </span>
                       {:else}
                         <span class="no-status">—</span>
@@ -1449,7 +1446,7 @@
   .col-season { white-space: nowrap; }
   .season-cell { color: var(--color-muted); white-space: nowrap; }
 
-  .airing-cell { white-space: nowrap; line-height: 1.25; }
+  .airing-cell { white-space: nowrap; }
 
   .airing-in {
     display: block;
@@ -1460,15 +1457,7 @@
 
   .airing-in.soon { color: var(--color-accent); font-weight: 650; }
 
-  .airing-sub {
-    display: block;
-    color: var(--color-muted);
-    font-size: 0.7rem;
-    font-variant-numeric: tabular-nums;
-  }
-
   table.compact .airing-in { font-size: 0.72rem; }
-  table.compact .airing-sub { font-size: 0.64rem; }
 
   .empty-row td {
     text-align: center;
