@@ -58,9 +58,7 @@
   // watching + plan-to-watch shows, so this is free on a warm cache. Failure is
   // non-fatal: the column falls back to a dash.
   async function loadCalendar() {
-    // `?? []` guards against a mocked/best-effort caller resolving to
-    // undefined instead of rejecting; nextAiringByAnime iterates this.
-    try { calendar = (await getCalendar()) ?? []; } catch { calendar = []; }
+    try { calendar = await getCalendar(); } catch { calendar = []; }
   }
 
   type SortKey = 'title' | 'status' | 'progress' | 'season' | 'next_airing';
