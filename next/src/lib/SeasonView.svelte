@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { getSeasonAnime, getFutureAnime, getLibraryIds, updateListEntry, importAnilistAnime, diffSeason, FUTURE_SEASON_KEY, type SeasonAnimeEntry, type FutureAnimeEntry } from './api';
-  import { addSeasons, futureLabel, seasonOffset } from './seasonUi';
+  import { addSeasons, futureLabel, getCurrentSeason, seasonOffset } from './seasonUi';
   import { partitionNew } from './seasonNew';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
   import SeasonPosterCard from './SeasonPosterCard.svelte';
@@ -12,13 +12,6 @@
   const seasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
   const seasonLabels: Record<string, string> = { WINTER: 'Winter', SPRING: 'Spring', SUMMER: 'Summer', FALL: 'Fall' };
   const genres = ['', 'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mecha', 'Mystery', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'];
-
-  function getCurrentSeason(): { season: string; year: number } {
-    const now = new Date();
-    const m = now.getMonth();
-    const s = m < 3 ? 'WINTER' : m < 6 ? 'SPRING' : m < 9 ? 'SUMMER' : 'FALL';
-    return { season: s, year: now.getFullYear() };
-  }
 
   // Seasons reachable with the arrows: current through +4 ahead. Beyond that
   // sits the single "Future Seasons" page (far-out and TBA announcements).

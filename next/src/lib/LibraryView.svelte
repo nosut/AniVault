@@ -1,16 +1,32 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent } from './api';
+  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
+  import {
+    normalizeStatusFilter, groupBySeason, flattenGroups, asDisplayRows,
+    seasonSortVal, getCurrentSeason,
+    nextAiringByAnime, formatAiringCountdown, nextAiringSortVal,
+  } from './libraryUi';
   import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2 } from 'lucide-svelte';
 
   export let events: EngineEvent[] = [];
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
 
+  // Every value a tab can select. Declared here rather than derived from
+  // `statusOptions` because that constant is defined further down the file,
+  // after this function runs.
+  const KNOWN_STATUS_FILTERS: (string | null)[] = [
+    null, 'watching', 'completed', 'on_hold', 'dropped', 'plan_to_watch',
+  ];
+
   function loadPersistedFilter(): string | null {
-    try { return localStorage.getItem('anivault-library-filter'); }
-    catch { return null; }
+    try {
+      return normalizeStatusFilter(
+        localStorage.getItem('anivault-library-filter'),
+        KNOWN_STATUS_FILTERS,
+      );
+    } catch { return null; }
   }
 
   function persistFilter(value: string | null) {
@@ -34,7 +50,29 @@
   let episodeFilesMap = new Map<number, FileIndexEntry[]>();
   let stats: LibraryStats | null = null;
 
-  type SortKey = 'title' | 'status' | 'progress' | 'season';
+  let calendar: CalendarEntry[] = [];
+  let nowSec = Math.floor(Date.now() / 1000);
+  let clockTimer: ReturnType<typeof setInterval> | undefined;
+  let calendarTimer: ReturnType<typeof setInterval> | undefined;
+
+  // Cached behind CALENDAR_CACHE_TTL_SECS (15 min) in the backend and already
+  // scoped to watching + plan-to-watch shows, so a refresh is free as long as
+  // it lands inside that window — but the Library is the app's start page, so
+  // a cold cache (first load, or a launch more than one TTL after the last)
+  // means this does a real AniList round-trip. Failure is non-fatal: the
+  // column falls back to a dash.
+  async function loadCalendar() {
+    try { calendar = await getCalendar(); } catch { calendar = []; }
+  }
+
+  // The cache above expires after 15 minutes; without a periodic refresh, a
+  // long-lived session (this is a desktop app left open for days) eventually
+  // sees every cached episode's airing_at fall in the past and the Next
+  // Episode column goes permanently blank. Refreshing every 10 minutes keeps
+  // us inside the TTL so this normally just re-reads the warm cache.
+  const CALENDAR_REFRESH_MS = 10 * 60_000;
+
+  type SortKey = 'title' | 'status' | 'progress' | 'season' | 'next_airing';
   type Sort = { key: SortKey; dir: 'asc' | 'desc' };
 
   // Per-category sort preferences: each status tab remembers its own sort, so
@@ -42,7 +80,7 @@
   // you to re-apply the sort. Persisted across restarts.
   const SORT_STORE_KEY = 'anivault-library-sort-by-category';
   const DEFAULT_SORT: Record<string, Sort> = {
-    watching: { key: 'progress', dir: 'asc' },
+    watching: { key: 'next_airing', dir: 'asc' },
     on_hold: { key: 'progress', dir: 'asc' },
     plan_to_watch: { key: 'season', dir: 'asc' },
   };
@@ -69,22 +107,35 @@
 
   let sortKey: SortKey = currentSort().key;
 
-  // Season column is only meaningful for the Plan to Watch backlog.
-  $: showSeason = statusFilter === 'plan_to_watch';
-
-  const SEASON_ORDER: Record<string, number> = { WINTER: 0, SPRING: 1, SUMMER: 2, FALL: 3 };
   function formatSeason(season: string | null, year: number | null): string {
     if (!season && !year) return '—';
     const s = season ? season.charAt(0) + season.slice(1).toLowerCase() : '';
     return [s, year ?? ''].filter((x) => x !== '' && x != null).join(' ');
   }
-  function seasonSortVal(e: LibraryEntry): number {
-    if (!e.season_year) return Number.POSITIVE_INFINITY;
-    return e.season_year * 10 + (SEASON_ORDER[e.season ?? ''] ?? 0);
-  }
   let sortDir: 'asc' | 'desc' = currentSort().dir;
   let viewMode: 'table' | 'grid' = loadPref('anivault-library-viewmode', 'table') as 'table' | 'grid';
   let compact = loadPref('anivault-library-compact', 'false') === 'true';
+
+  const GROUP_PREF_KEY = 'anivault-library-group-by-season';
+  const COLLAPSE_KEY = 'anivault-library-season-collapsed';
+
+  let groupBySeasonPref = loadPref(GROUP_PREF_KEY, 'true') === 'true';
+  $: persistPref(GROUP_PREF_KEY, groupBySeasonPref ? 'true' : 'false');
+
+  // Season key -> collapsed. A season absent from the map is open, so a newly
+  // announced season never arrives hidden.
+  function loadCollapsed(): Record<string, boolean> {
+    try {
+      const raw = localStorage.getItem(COLLAPSE_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch { return {}; }
+  }
+  let collapsedSeasons: Record<string, boolean> = loadCollapsed();
+
+  function toggleGroup(key: string) {
+    collapsedSeasons = { ...collapsedSeasons, [key]: !collapsedSeasons[key] };
+    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsedSeasons)); } catch { /* ignore */ }
+  }
 
   $: persistPref('anivault-library-viewmode', viewMode);
   $: persistPref('anivault-library-compact', compact ? 'true' : 'false');
@@ -117,7 +168,6 @@
   // Does an entry still belong under the active status tab?
   function matchesActiveFilter(e: LibraryEntry): boolean {
     if (!statusFilter) return true; // "All"
-    if (statusFilter === 'unlisted') return !e.status || e.status === 'unlisted';
     return e.status === statusFilter;
   }
   // Re-commit `entries`, dropping any that no longer match the active tab (e.g. a
@@ -169,7 +219,6 @@
       case 'on_hold': return stats.on_hold;
       case 'dropped': return stats.dropped;
       case 'plan_to_watch': return stats.plan_to_watch;
-      case 'unlisted': return Math.max(0, stats.total - (stats.watching + stats.completed + stats.on_hold + stats.dropped + stats.plan_to_watch));
       default: return null;
     }
   }
@@ -183,12 +232,18 @@
     { value: 'on_hold', label: 'On Hold' },
     { value: 'dropped', label: 'Dropped' },
     { value: 'plan_to_watch', label: 'Plan to Watch' },
-    { value: 'unlisted', label: 'Unlisted' },
   ];
 
   function formatStatus(status: string) {
     return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
+
+  // The Library is local SQLite over IPC, so fetching every row for the active
+  // tab costs nothing meaningful — and it is the only way the client-side sort
+  // in `sortedEntries` can be correct. A page size instead truncates by
+  // `ORDER BY a.id` and then sorts the survivors, which silently shows the
+  // lowest-id subset re-sorted to look complete.
+  const LIBRARY_FETCH_LIMIT = 10000;
 
   async function load() {
     loading = true;
@@ -197,7 +252,7 @@
       // A search spans the whole library — ignore the selected category tab so
       // matches from every status show up. With no query, the tab filters as usual.
       const searchFilter = query.trim() ? null : statusFilter;
-      const results = await searchLibrary(query, searchFilter, 200, 0);
+      const results = await searchLibrary(query, searchFilter, LIBRARY_FETCH_LIMIT, 0);
       entries = results;
       if (results.length > 0) {
         loadEpisodeFiles(results);
@@ -540,22 +595,61 @@
           cmp = pa - pb;
           break;
         }
-        case 'season':
-          cmp = seasonSortVal(a) - seasonSortVal(b);
+        case 'season': {
+          const sa = seasonSortVal(a);
+          const sb = seasonSortVal(b);
+          // Equal values (including two undated shows, both Infinity) fall
+          // back to title so grouped entries get a stable, readable order
+          // instead of Infinity - Infinity (NaN) or backend id order.
+          cmp = sa === sb ? a.title.localeCompare(b.title) : sa - sb;
           break;
+        }
+        case 'next_airing': {
+          const va = nextAiringSortVal(a.anime_id, nextAiring);
+          const vb = nextAiringSortVal(b.anime_id, nextAiring);
+          // Both missing: fall back to title so the tail has a stable order.
+          if (va === vb) { cmp = a.title.localeCompare(b.title); break; }
+          // Shows with nothing upcoming sort last in both directions. These
+          // early returns bypass the `cmp * dir` at the end of the comparator,
+          // which is exactly what pins the tail.
+          if (va === Number.POSITIVE_INFINITY) return 1;
+          if (vb === Number.POSITIVE_INFINITY) return -1;
+          cmp = va - vb;
+          break;
+        }
       }
       return cmp * dir;
     });
     return list;
   })();
 
+  // Grouping is a Plan to Watch affordance only, and a search spans every
+  // category, so it switches off for the duration of a query.
+  $: groupingActive = groupBySeasonPref && statusFilter === 'plan_to_watch' && !query.trim();
+  $: displayRows = groupingActive
+    ? flattenGroups(groupBySeason(sortedEntries, getCurrentSeason()), collapsedSeasons)
+    : asDisplayRows(sortedEntries);
+
+  // The group header carries the season, so the column is redundant there.
+  $: showSeason = statusFilter === 'plan_to_watch' && !groupingActive;
+  $: nextAiring = nextAiringByAnime(calendar, nowSec);
+  $: showNextEpisode = statusFilter === 'watching' && !query.trim();
+  // check + thumb + title + status + progress + files, plus optional columns.
+  $: columnCount = 6 + (showSeason ? 1 : 0) + (showNextEpisode ? 1 : 0);
+
   onMount(() => {
     void load();
     void loadStats();
+    void loadCalendar();
+    // The column shows days and hours, so a minute is fine-grained enough.
+    clockTimer = setInterval(() => { nowSec = Math.floor(Date.now() / 1000); }, 60_000);
+    calendarTimer = setInterval(() => { void loadCalendar(); }, CALENDAR_REFRESH_MS);
   });
 
   onDestroy(() => {
     if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
+    if (clockTimer) clearInterval(clockTimer);
+    if (calendarTimer) clearInterval(calendarTimer);
   });
 </script>
 
@@ -580,6 +674,16 @@
     {#if viewMode === 'table'}
       <button class="view-toggle" on:click={() => compact = !compact} aria-pressed={compact} title="Toggle compact list density">
         {compact ? '≣ Comfortable' : '≡ Compact'}
+      </button>
+    {/if}
+    {#if statusFilter === 'plan_to_watch'}
+      <button
+        class="view-toggle"
+        on:click={() => groupBySeasonPref = !groupBySeasonPref}
+        aria-pressed={groupBySeasonPref}
+        title="Group Plan to Watch by season"
+      >
+        ⊞ Group by season
       </button>
     {/if}
   </div>
@@ -609,59 +713,89 @@
 
   {#if viewMode === 'grid'}
     <div class="poster-grid">
-      {#each sortedEntries as entry (entry.anime_id)}
-        <div class="poster-card"
-          tabindex="0"
-          role="button"
-          aria-label={`${entry.title}, ${entry.status}`}
-          on:click={() => handleRowActivate(entry)}
-          on:keydown={(e) => e.key === 'Enter' && handleRowActivate(entry)}
-          on:contextmenu={(e) => openContextMenu(e, entry)}
-        >
-          <div class="poster-check">
-            <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation aria-label={`Select ${entry.title}`} />
-          </div>
-          {#if entry.image_url}
-            <img class="poster-thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
-          {:else}
-            <div class="poster-thumb placeholder"></div>
-          {/if}
-          <div class="poster-info">
-            <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
-            <span class="badge">{formatStatus(entry.status)}</span>
-            <div class="progress-wrap poster-progress">
-              <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
-              <div class="progress-inner">
-                <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
-                <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
-                <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
-              </div>
+      {#each displayRows as row (row.kind === 'group' ? `g:${row.group.key}` : `e:${row.entry.anime_id}`)}
+        {#if row.kind === 'group'}
+          <button
+            type="button"
+            class="group-band"
+            class:is-marked={row.group.chip !== null}
+            aria-expanded={!collapsedSeasons[row.group.key]}
+            on:click={() => toggleGroup(row.group.key)}
+          >
+            <span class="chev" class:collapsed={collapsedSeasons[row.group.key]} aria-hidden="true">
+              <ChevronDown size={13} />
+            </span>
+            <span class="group-name">{row.group.label}</span>
+            <span class="group-count">{row.group.entries.length}</span>
+            {#if row.group.chip}<span class="next-chip">{row.group.chip}</span>{/if}
+          </button>
+        {:else}
+          {@const entry = row.entry}
+          <div class="poster-card"
+            tabindex="0"
+            role="button"
+            aria-label={`${entry.title}, ${entry.status}`}
+            on:click={() => handleRowActivate(entry)}
+            on:keydown={(e) => e.key === 'Enter' && handleRowActivate(entry)}
+            on:contextmenu={(e) => openContextMenu(e, entry)}
+          >
+            <div class="poster-check">
+              <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation aria-label={`Select ${entry.title}`} />
             </div>
-            {#if episodeFilesMap.has(entry.anime_id)}
-              <div class="ep-download-bar">
-                {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
-                  {@const ep = i + 1}
-                  {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
-                  {@const watched = ep <= entry.watched_episodes}
-                  <button
-                    type="button"
-                    class="ep-segment"
-                    class:downloaded={hasFile}
-                    class:watched={watched}
-                    disabled={!hasFile}
-                    title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
-                    aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
-                    on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
-                    style="cursor: {hasFile ? 'pointer' : 'default'}"
-                  ></button>
-                {/each}
-                {#if effectiveCount(entry) > 50}
-                  <span class="ep-more">+{effectiveCount(entry) - 50}</span>
-                {/if}
-              </div>
+            {#if entry.image_url}
+              <img class="poster-thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
+            {:else}
+              <div class="poster-thumb placeholder"></div>
             {/if}
+            <div class="poster-info">
+              <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
+              {#if entry.status === 'unlisted'}
+                <span class="no-status" aria-label="No list status">—</span>
+              {:else}
+                <span class="badge">{formatStatus(entry.status)}</span>
+              {/if}
+              <div class="progress-wrap poster-progress">
+                <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
+                <div class="progress-inner">
+                  <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
+                  <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
+                  <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
+                </div>
+              </div>
+              {#if showNextEpisode}
+                {@const na = nextAiring.get(entry.anime_id)}
+                {#if na}
+                  <span class="airing-in" class:soon={(na.airing_at ?? 0) - nowSec < 86400}>
+                    in {formatAiringCountdown((na.airing_at ?? 0) - nowSec)}
+                  </span>
+                {/if}
+              {/if}
+              {#if episodeFilesMap.has(entry.anime_id)}
+                <div class="ep-download-bar">
+                  {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
+                    {@const ep = i + 1}
+                    {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
+                    {@const watched = ep <= entry.watched_episodes}
+                    <button
+                      type="button"
+                      class="ep-segment"
+                      class:downloaded={hasFile}
+                      class:watched={watched}
+                      disabled={!hasFile}
+                      title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
+                      aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
+                      on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
+                      style="cursor: {hasFile ? 'pointer' : 'default'}"
+                    ></button>
+                  {/each}
+                  {#if effectiveCount(entry) > 50}
+                    <span class="ep-more">+{effectiveCount(entry) - 50}</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
           </div>
-        </div>
+        {/if}
       {/each}
     </div>
   {:else}
@@ -742,6 +876,27 @@
                 </button>
               </th>
             {/if}
+            {#if showNextEpisode}
+              <th
+                class="col-airing"
+                scope="col"
+                aria-sort={sortKey === 'next_airing' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <button
+                  type="button"
+                  class="sort-btn"
+                  aria-label="Sort by next episode"
+                  on:click={() => setSort('next_airing')}
+                >
+                  Next Episode
+                  {#if sortKey === 'next_airing'}
+                    <span aria-hidden="true" class="sort-arrow">
+                      {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                    </span>
+                  {/if}
+                </button>
+              </th>
+            {/if}
             <th
               class="col-progress"
               scope="col"
@@ -783,91 +938,131 @@
             {/each}
           {:else if sortedEntries.length === 0}
             <tr class="empty-row">
-              <td colspan={showSeason ? 7 : 6}>
+              <td colspan={columnCount}>
                 <p class="empty">No anime found.</p>
               </td>
             </tr>
           {:else}
-            {#each sortedEntries as entry (entry.anime_id)}
-              <tr
-                class="data-row"
-                draggable="true"
-                tabindex="0"
-                on:click={() => handleRowActivate(entry)}
-                on:keydown={(e) => onRowKeydown(e, entry)}
-                on:contextmenu={(e) => openContextMenu(e, entry)}
-                on:dragstart={(e) => handleDragStart(e, entry)}
-                on:dragend={() => dragEntry = null}
-              >
-                <td class="col-check">
-                  <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation />
-                </td>
-                <td>
-                  {#if entry.image_url}
-                    <img
-                      class="thumb"
-                      src={entry.image_url}
-                      alt=""
-                      width="24"
-                      height="24"
-                      loading="lazy"
-                    />
-                  {:else}
-                    <div class="thumb fallback" aria-hidden="true"></div>
+            {#each displayRows as row (row.kind === 'group' ? `g:${row.group.key}` : `e:${row.entry.anime_id}`)}
+              {#if row.kind === 'group'}
+                <tr class="group-row" class:is-marked={row.group.chip !== null}>
+                  <td colspan={columnCount}>
+                    <button
+                      type="button"
+                      class="group-btn"
+                      aria-expanded={!collapsedSeasons[row.group.key]}
+                      on:click={() => toggleGroup(row.group.key)}
+                    >
+                      <span class="chev" class:collapsed={collapsedSeasons[row.group.key]} aria-hidden="true">
+                        <ChevronDown size={13} />
+                      </span>
+                      <span class="group-name">{row.group.label}</span>
+                      <span class="group-count">{row.group.entries.length}</span>
+                      {#if row.group.chip}<span class="next-chip">{row.group.chip}</span>{/if}
+                    </button>
+                  </td>
+                </tr>
+              {:else}
+                {@const entry = row.entry}
+                <tr
+                  class="data-row"
+                  draggable="true"
+                  tabindex="0"
+                  on:click={() => handleRowActivate(entry)}
+                  on:keydown={(e) => onRowKeydown(e, entry)}
+                  on:contextmenu={(e) => openContextMenu(e, entry)}
+                  on:dragstart={(e) => handleDragStart(e, entry)}
+                  on:dragend={() => dragEntry = null}
+                >
+                  <td class="col-check">
+                    <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation />
+                  </td>
+                  <td>
+                    {#if entry.image_url}
+                      <img
+                        class="thumb"
+                        src={entry.image_url}
+                        alt=""
+                        width="24"
+                        height="24"
+                        loading="lazy"
+                      />
+                    {:else}
+                      <div class="thumb fallback" aria-hidden="true"></div>
+                    {/if}
+                  </td>
+                  <td class="title-cell" class:has-new={hasNewEpisode(entry)}>{entry.title}</td>
+                  <td>
+                    {#if entry.status === 'unlisted'}
+                      <span class="no-status" aria-label="No list status">—</span>
+                    {:else}
+                      <span class="badge">{formatStatus(entry.status)}</span>
+                    {/if}
+                  </td>
+                  {#if showSeason}
+                    <td class="col-season season-cell">{formatSeason(entry.season, entry.season_year)}</td>
                   {/if}
-                </td>
-                <td class="title-cell" class:has-new={hasNewEpisode(entry)}>{entry.title}</td>
-                <td>
-                  <span class="badge">{formatStatus(entry.status)}</span>
-                </td>
-                {#if showSeason}
-                  <td class="col-season season-cell">{formatSeason(entry.season, entry.season_year)}</td>
-                {/if}
-                <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
-                  <div class="progress-wrap">
-                    <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
-                    <div class="progress-inner">
-                      <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
-                      <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
-                      <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
-                    </div>
-                  </div>
-                  {#if episodeFilesMap.has(entry.anime_id)}
-                    <div class="ep-download-bar">
-                      {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
-                        {@const ep = i + 1}
-                        {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
-                        {@const watched = ep <= entry.watched_episodes}
-                        <button
-                          type="button"
-                          class="ep-segment"
-                          class:downloaded={hasFile}
-                          class:watched={watched}
-                          disabled={!hasFile}
-                          title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
-                          aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
-                          on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
-                          style="cursor: {hasFile ? 'pointer' : 'default'}"
-                        ></button>
-                      {/each}
-                      {#if effectiveCount(entry) > 50}
-                        <span class="ep-more">+{effectiveCount(entry) - 50}</span>
+                  {#if showNextEpisode}
+                    {@const na = nextAiring.get(entry.anime_id)}
+                    <td class="col-airing airing-cell">
+                      {#if na}
+                        <span class="airing-in" class:soon={(na.airing_at ?? 0) - nowSec < 86400}>
+                          in {formatAiringCountdown((na.airing_at ?? 0) - nowSec)}
+                        </span>
+                        <span class="airing-sub">
+                          Ep {na.next_episode} · {new Date((na.airing_at ?? 0) * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                      {:else}
+                        <span class="no-status">—</span>
                       {/if}
+                    </td>
+                  {/if}
+                  <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
+                    <div class="progress-wrap">
+                      <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
+                      <div class="progress-inner">
+                        <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
+                        <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
+                        <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
+                      </div>
                     </div>
-                  {/if}
-                </td>
-                <td class="col-files">
-                  {#if episodeFilesMap.has(entry.anime_id)}
-                    <button class="play-inline-btn" on:click|stopPropagation={() => {
-                      const files = episodeFilesMap.get(entry.anime_id);
-                      if (!files || files.length === 0) return;
-                      const nextEp = files.find(f => (f.episode ?? 0) > entry.watched_episodes);
-                      const target = nextEp ?? files[0];
-                      if (target) openEpisodeFile(target.file_path);
-                    }} title="Play next episode">&#9654;</button>
-                  {/if}
-                </td>
-              </tr>
+                    {#if episodeFilesMap.has(entry.anime_id)}
+                      <div class="ep-download-bar">
+                        {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
+                          {@const ep = i + 1}
+                          {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
+                          {@const watched = ep <= entry.watched_episodes}
+                          <button
+                            type="button"
+                            class="ep-segment"
+                            class:downloaded={hasFile}
+                            class:watched={watched}
+                            disabled={!hasFile}
+                            title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
+                            aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
+                            on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
+                            style="cursor: {hasFile ? 'pointer' : 'default'}"
+                          ></button>
+                        {/each}
+                        {#if effectiveCount(entry) > 50}
+                          <span class="ep-more">+{effectiveCount(entry) - 50}</span>
+                        {/if}
+                      </div>
+                    {/if}
+                  </td>
+                  <td class="col-files">
+                    {#if episodeFilesMap.has(entry.anime_id)}
+                      <button class="play-inline-btn" on:click|stopPropagation={() => {
+                        const files = episodeFilesMap.get(entry.anime_id);
+                        if (!files || files.length === 0) return;
+                        const nextEp = files.find(f => (f.episode ?? 0) > entry.watched_episodes);
+                        const target = nextEp ?? files[0];
+                        if (target) openEpisodeFile(target.file_path);
+                      }} title="Play next episode">&#9654;</button>
+                    {/if}
+                  </td>
+                </tr>
+              {/if}
             {/each}
           {/if}
         </tbody>
@@ -1154,6 +1349,59 @@
     outline-offset: -2px;
   }
 
+  .group-row td {
+    padding: 0;
+    background: var(--color-surface-raised);
+    border-bottom: 1px solid rgba(var(--color-accent-rgb), 0.14);
+  }
+
+  .group-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    background: transparent;
+    border: 0;
+    border-left: 3px solid transparent;
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .group-btn:hover { background: rgba(var(--color-accent-rgb), 0.07); }
+  .group-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+  .group-row.is-marked .group-btn { border-left-color: var(--color-accent); }
+
+  .chev {
+    display: inline-flex;
+    color: var(--color-muted);
+    transition: transform 0.16s ease;
+  }
+  .chev.collapsed { transform: rotate(-90deg); }
+
+  .group-name { font-weight: 650; }
+  .group-count { color: var(--color-muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+
+  .next-chip {
+    margin-left: auto;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    background: rgba(var(--color-accent-rgb), 0.14);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.3);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chev { transition: none; }
+  }
+
   .thumb {
     width: 24px;
     height: 24px;
@@ -1188,6 +1436,11 @@
     letter-spacing: 0.04em;
   }
 
+  .no-status {
+    color: var(--color-muted);
+    opacity: 0.5;
+  }
+
   .num-cell {
     font-variant-numeric: tabular-nums;
     color: var(--color-muted);
@@ -1195,6 +1448,27 @@
 
   .col-season { white-space: nowrap; }
   .season-cell { color: var(--color-muted); white-space: nowrap; }
+
+  .airing-cell { white-space: nowrap; line-height: 1.25; }
+
+  .airing-in {
+    display: block;
+    color: var(--color-text);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .airing-in.soon { color: var(--color-accent); font-weight: 650; }
+
+  .airing-sub {
+    display: block;
+    color: var(--color-muted);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  table.compact .airing-in { font-size: 0.72rem; }
+  table.compact .airing-sub { font-size: 0.64rem; }
 
   .empty-row td {
     text-align: center;
@@ -1310,6 +1584,30 @@
     border-color: rgba(var(--color-accent-rgb), 0.3);
     transform: translateY(-2px);
   }
+
+  .group-band {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0.45rem 0.7rem;
+    margin-top: 0.35rem;
+    background: var(--color-surface-raised);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.14);
+    border-left: 3px solid transparent;
+    border-radius: 8px;
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .group-band:first-child { margin-top: 0; }
+  .group-band:hover { background: rgba(var(--color-accent-rgb), 0.1); }
+  .group-band:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .group-band.is-marked { border-left-color: var(--color-accent); }
 
   .poster-thumb {
     width: 100%;

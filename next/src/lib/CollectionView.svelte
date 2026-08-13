@@ -400,7 +400,13 @@
                   {/if}
                 </td>
                 <td class="title-cell" class:has-new={entry.new_count > 0}>{entry.title}</td>
-                <td><span class="badge">{formatStatus(entry.status)}</span></td>
+                <td>
+                  {#if entry.status === 'unlisted'}
+                    <span class="no-status" aria-label="No list status">—</span>
+                  {:else}
+                    <span class="badge">{formatStatus(entry.status)}</span>
+                  {/if}
+                </td>
                 <td class="num-cell progress-cell" class:completed={fullyWatched(entry)}>
                   <div class="progress-wrap">
                     <div class="progress-bar" style="width: {watchPct(entry)}%"></div>
@@ -654,6 +660,11 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+
+  .no-status {
+    color: var(--color-muted);
+    opacity: 0.5;
   }
 
   .new-badge {

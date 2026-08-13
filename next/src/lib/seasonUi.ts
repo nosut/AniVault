@@ -39,3 +39,12 @@ export function futureLabel(entry: {
   if (entry.start_year != null) return String(entry.start_year);
   return 'TBA';
 }
+
+/// The anime season containing today's date. Months 0-2 Winter, 3-5 Spring,
+/// 6-8 Summer, 9-11 Fall.
+export function getCurrentSeason(): { season: string; year: number } {
+  const now = new Date();
+  const m = now.getMonth();
+  const s = m < 3 ? 'WINTER' : m < 6 ? 'SPRING' : m < 9 ? 'SUMMER' : 'FALL';
+  return { season: s, year: now.getFullYear() };
+}

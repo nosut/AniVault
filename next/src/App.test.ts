@@ -30,7 +30,7 @@ vi.mock('./lib/api', async (importOriginal) => {
   return mocked;
 });
 
-import { getSeasonAnime, diffSeason, getLibraryIds, fetchAnimeDetail, getTrackingStatus, searchLibrary } from './lib/api';
+import { getSeasonAnime, diffSeason, getLibraryIds, fetchAnimeDetail, getTrackingStatus, searchLibrary, getCalendar } from './lib/api';
 import App from './App.svelte';
 
 async function settle() {
@@ -146,6 +146,12 @@ describe('App does not mount the Seasons view before it has ever been opened', (
     // rest of this file's best-effort-await components — it needs a real
     // array back rather than the generic undefined-returning automock.
     vi.mocked(searchLibrary).mockResolvedValue([]);
+    // Same reason: LibraryView's next-episode column feeds the calendar
+    // straight into nextAiringByAnime's `for...of` outside any try/catch
+    // (the try/catch only guards the await, not a bad-shaped resolve), so it
+    // needs a real array back rather than the generic undefined-returning
+    // automock.
+    vi.mocked(getCalendar).mockResolvedValue([]);
   });
 
   it('skips getSeasonAnime/diffSeason on a library start page, then loads Season normally on first visit and still preserves the round trip', async () => {
