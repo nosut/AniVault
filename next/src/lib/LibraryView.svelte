@@ -2,7 +2,10 @@
   import { onMount, onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent } from './api';
-  import { normalizeStatusFilter } from './libraryUi';
+  import {
+    normalizeStatusFilter, groupBySeason, flattenGroups, asDisplayRows,
+    seasonSortVal, getCurrentSeason,
+  } from './libraryUi';
   import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2 } from 'lucide-svelte';
 
   export let events: EngineEvent[] = [];
@@ -81,22 +84,35 @@
 
   let sortKey: SortKey = currentSort().key;
 
-  // Season column is only meaningful for the Plan to Watch backlog.
-  $: showSeason = statusFilter === 'plan_to_watch';
-
-  const SEASON_ORDER: Record<string, number> = { WINTER: 0, SPRING: 1, SUMMER: 2, FALL: 3 };
   function formatSeason(season: string | null, year: number | null): string {
     if (!season && !year) return '—';
     const s = season ? season.charAt(0) + season.slice(1).toLowerCase() : '';
     return [s, year ?? ''].filter((x) => x !== '' && x != null).join(' ');
   }
-  function seasonSortVal(e: LibraryEntry): number {
-    if (!e.season_year) return Number.POSITIVE_INFINITY;
-    return e.season_year * 10 + (SEASON_ORDER[e.season ?? ''] ?? 0);
-  }
   let sortDir: 'asc' | 'desc' = currentSort().dir;
   let viewMode: 'table' | 'grid' = loadPref('anivault-library-viewmode', 'table') as 'table' | 'grid';
   let compact = loadPref('anivault-library-compact', 'false') === 'true';
+
+  const GROUP_PREF_KEY = 'anivault-library-group-by-season';
+  const COLLAPSE_KEY = 'anivault-library-season-collapsed';
+
+  let groupBySeasonPref = loadPref(GROUP_PREF_KEY, 'true') === 'true';
+  $: persistPref(GROUP_PREF_KEY, groupBySeasonPref ? 'true' : 'false');
+
+  // Season key -> collapsed. A season absent from the map is open, so a newly
+  // announced season never arrives hidden.
+  function loadCollapsed(): Record<string, boolean> {
+    try {
+      const raw = localStorage.getItem(COLLAPSE_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch { return {}; }
+  }
+  let collapsedSeasons: Record<string, boolean> = loadCollapsed();
+
+  function toggleGroup(key: string) {
+    collapsedSeasons = { ...collapsedSeasons, [key]: !collapsedSeasons[key] };
+    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsedSeasons)); } catch { /* ignore */ }
+  }
 
   $: persistPref('anivault-library-viewmode', viewMode);
   $: persistPref('anivault-library-compact', compact ? 'true' : 'false');
@@ -565,6 +581,18 @@
     return list;
   })();
 
+  // Grouping is a Plan to Watch affordance only, and a search spans every
+  // category, so it switches off for the duration of a query.
+  $: groupingActive = groupBySeasonPref && statusFilter === 'plan_to_watch' && !query.trim();
+  $: displayRows = groupingActive
+    ? flattenGroups(groupBySeason(sortedEntries, getCurrentSeason()), collapsedSeasons)
+    : asDisplayRows(sortedEntries);
+
+  // The group header carries the season, so the column is redundant there.
+  $: showSeason = statusFilter === 'plan_to_watch' && !groupingActive;
+  // check + thumb + title + status + progress + files, plus optional columns.
+  $: columnCount = 6 + (showSeason ? 1 : 0);
+
   onMount(() => {
     void load();
     void loadStats();
@@ -596,6 +624,16 @@
     {#if viewMode === 'table'}
       <button class="view-toggle" on:click={() => compact = !compact} aria-pressed={compact} title="Toggle compact list density">
         {compact ? '≣ Comfortable' : '≡ Compact'}
+      </button>
+    {/if}
+    {#if statusFilter === 'plan_to_watch'}
+      <button
+        class="view-toggle"
+        on:click={() => groupBySeasonPref = !groupBySeasonPref}
+        aria-pressed={groupBySeasonPref}
+        title="Group Plan to Watch by season"
+      >
+        ⊞ Group by season
       </button>
     {/if}
   </div>
@@ -803,95 +841,116 @@
             {/each}
           {:else if sortedEntries.length === 0}
             <tr class="empty-row">
-              <td colspan={showSeason ? 7 : 6}>
+              <td colspan={columnCount}>
                 <p class="empty">No anime found.</p>
               </td>
             </tr>
           {:else}
-            {#each sortedEntries as entry (entry.anime_id)}
-              <tr
-                class="data-row"
-                draggable="true"
-                tabindex="0"
-                on:click={() => handleRowActivate(entry)}
-                on:keydown={(e) => onRowKeydown(e, entry)}
-                on:contextmenu={(e) => openContextMenu(e, entry)}
-                on:dragstart={(e) => handleDragStart(e, entry)}
-                on:dragend={() => dragEntry = null}
-              >
-                <td class="col-check">
-                  <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation />
-                </td>
-                <td>
-                  {#if entry.image_url}
-                    <img
-                      class="thumb"
-                      src={entry.image_url}
-                      alt=""
-                      width="24"
-                      height="24"
-                      loading="lazy"
-                    />
-                  {:else}
-                    <div class="thumb fallback" aria-hidden="true"></div>
+            {#each displayRows as row (row.kind === 'group' ? `g:${row.group.key}` : `e:${row.entry.anime_id}`)}
+              {#if row.kind === 'group'}
+                <tr class="group-row" class:is-marked={row.group.chip !== null}>
+                  <td colspan={columnCount}>
+                    <button
+                      type="button"
+                      class="group-btn"
+                      aria-expanded={!collapsedSeasons[row.group.key]}
+                      on:click={() => toggleGroup(row.group.key)}
+                    >
+                      <span class="chev" class:collapsed={collapsedSeasons[row.group.key]} aria-hidden="true">
+                        <ChevronDown size={13} />
+                      </span>
+                      <span class="group-name">{row.group.label}</span>
+                      <span class="group-count">{row.group.entries.length}</span>
+                      {#if row.group.chip}<span class="next-chip">{row.group.chip}</span>{/if}
+                    </button>
+                  </td>
+                </tr>
+              {:else}
+                {@const entry = row.entry}
+                <tr
+                  class="data-row"
+                  draggable="true"
+                  tabindex="0"
+                  on:click={() => handleRowActivate(entry)}
+                  on:keydown={(e) => onRowKeydown(e, entry)}
+                  on:contextmenu={(e) => openContextMenu(e, entry)}
+                  on:dragstart={(e) => handleDragStart(e, entry)}
+                  on:dragend={() => dragEntry = null}
+                >
+                  <td class="col-check">
+                    <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation />
+                  </td>
+                  <td>
+                    {#if entry.image_url}
+                      <img
+                        class="thumb"
+                        src={entry.image_url}
+                        alt=""
+                        width="24"
+                        height="24"
+                        loading="lazy"
+                      />
+                    {:else}
+                      <div class="thumb fallback" aria-hidden="true"></div>
+                    {/if}
+                  </td>
+                  <td class="title-cell" class:has-new={hasNewEpisode(entry)}>{entry.title}</td>
+                  <td>
+                    {#if entry.status === 'unlisted'}
+                      <span class="no-status" aria-label="No list status">—</span>
+                    {:else}
+                      <span class="badge">{formatStatus(entry.status)}</span>
+                    {/if}
+                  </td>
+                  {#if showSeason}
+                    <td class="col-season season-cell">{formatSeason(entry.season, entry.season_year)}</td>
                   {/if}
-                </td>
-                <td class="title-cell" class:has-new={hasNewEpisode(entry)}>{entry.title}</td>
-                <td>
-                  {#if entry.status === 'unlisted'}
-                    <span class="no-status" aria-label="No list status">—</span>
-                  {:else}
-                    <span class="badge">{formatStatus(entry.status)}</span>
-                  {/if}
-                </td>
-                {#if showSeason}
-                  <td class="col-season season-cell">{formatSeason(entry.season, entry.season_year)}</td>
-                {/if}
-                <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
-                  <div class="progress-wrap">
-                    <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
-                    <div class="progress-inner">
-                      <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
-                      <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
-                      <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
+                  <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
+                    <div class="progress-wrap">
+                      <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
+                      <div class="progress-inner">
+                        <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
+                        <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
+                        <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
+                      </div>
                     </div>
-                  </div>
-                  {#if episodeFilesMap.has(entry.anime_id)}
-                    <div class="ep-download-bar">
-                      {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
-                        {@const ep = i + 1}
-                        {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
-                        {@const watched = ep <= entry.watched_episodes}
-                        <button
-                          type="button"
-                          class="ep-segment"
-                          class:downloaded={hasFile}
-                          class:watched={watched}
-                          disabled={!hasFile}
-                          title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
-                          aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
-                          on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
-                          style="cursor: {hasFile ? 'pointer' : 'default'}"
-                        ></button>
-                      {/each}
-                      {#if effectiveCount(entry) > 50}
-                        <span class="ep-more">+{effectiveCount(entry) - 50}</span>
-                      {/if}
-                    </div>
-                  {/if}
-                </td>
-                <td class="col-files">
-                  {#if episodeFilesMap.has(entry.anime_id)}
-                    <button class="play-inline-btn" on:click|stopPropagation={() => {
-                      const files = episodeFilesMap.get(entry.anime_id);
-                      if (!files || files.length === 0) return;
-                      const nextEp = files.find(f => (f.episode ?? 0) > entry.watched_episodes);
-                      const target = nextEp ?? files[0];
-                      if (target) openEpisodeFile(target.file_path);
-                    }} title="Play next episode">&#9654;</button>
-                  {/if}
-                </td>
-              </tr>
+                    {#if episodeFilesMap.has(entry.anime_id)}
+                      <div class="ep-download-bar">
+                        {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
+                          {@const ep = i + 1}
+                          {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
+                          {@const watched = ep <= entry.watched_episodes}
+                          <button
+                            type="button"
+                            class="ep-segment"
+                            class:downloaded={hasFile}
+                            class:watched={watched}
+                            disabled={!hasFile}
+                            title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
+                            aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
+                            on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
+                            style="cursor: {hasFile ? 'pointer' : 'default'}"
+                          ></button>
+                        {/each}
+                        {#if effectiveCount(entry) > 50}
+                          <span class="ep-more">+{effectiveCount(entry) - 50}</span>
+                        {/if}
+                      </div>
+                    {/if}
+                  </td>
+                  <td class="col-files">
+                    {#if episodeFilesMap.has(entry.anime_id)}
+                      <button class="play-inline-btn" on:click|stopPropagation={() => {
+                        const files = episodeFilesMap.get(entry.anime_id);
+                        if (!files || files.length === 0) return;
+                        const nextEp = files.find(f => (f.episode ?? 0) > entry.watched_episodes);
+                        const target = nextEp ?? files[0];
+                        if (target) openEpisodeFile(target.file_path);
+                      }} title="Play next episode">&#9654;</button>
+                    {/if}
+                  </td>
+                </tr>
+              {/if}
             {/each}
           {/if}
         </tbody>
@@ -1176,6 +1235,59 @@
   .data-row:focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: -2px;
+  }
+
+  .group-row td {
+    padding: 0;
+    background: var(--color-surface-raised);
+    border-bottom: 1px solid rgba(var(--color-accent-rgb), 0.14);
+  }
+
+  .group-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    background: transparent;
+    border: 0;
+    border-left: 3px solid transparent;
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .group-btn:hover { background: rgba(var(--color-accent-rgb), 0.07); }
+  .group-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+  .group-row.is-marked .group-btn { border-left-color: var(--color-accent); }
+
+  .chev {
+    display: inline-flex;
+    color: var(--color-muted);
+    transition: transform 0.16s ease;
+  }
+  .chev.collapsed { transform: rotate(-90deg); }
+
+  .group-name { font-weight: 650; }
+  .group-count { color: var(--color-muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+
+  .next-chip {
+    margin-left: auto;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-accent);
+    background: rgba(var(--color-accent-rgb), 0.14);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.3);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chev { transition: none; }
   }
 
   .thumb {
