@@ -663,63 +663,81 @@
 
   {#if viewMode === 'grid'}
     <div class="poster-grid">
-      {#each sortedEntries as entry (entry.anime_id)}
-        <div class="poster-card"
-          tabindex="0"
-          role="button"
-          aria-label={`${entry.title}, ${entry.status}`}
-          on:click={() => handleRowActivate(entry)}
-          on:keydown={(e) => e.key === 'Enter' && handleRowActivate(entry)}
-          on:contextmenu={(e) => openContextMenu(e, entry)}
-        >
-          <div class="poster-check">
-            <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation aria-label={`Select ${entry.title}`} />
-          </div>
-          {#if entry.image_url}
-            <img class="poster-thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
-          {:else}
-            <div class="poster-thumb placeholder"></div>
-          {/if}
-          <div class="poster-info">
-            <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
-            {#if entry.status === 'unlisted'}
-              <span class="no-status" aria-label="No list status">—</span>
-            {:else}
-              <span class="badge">{formatStatus(entry.status)}</span>
-            {/if}
-            <div class="progress-wrap poster-progress">
-              <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
-              <div class="progress-inner">
-                <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
-                <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
-                <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
-              </div>
+      {#each displayRows as row (row.kind === 'group' ? `g:${row.group.key}` : `e:${row.entry.anime_id}`)}
+        {#if row.kind === 'group'}
+          <button
+            type="button"
+            class="group-band"
+            class:is-marked={row.group.chip !== null}
+            aria-expanded={!collapsedSeasons[row.group.key]}
+            on:click={() => toggleGroup(row.group.key)}
+          >
+            <span class="chev" class:collapsed={collapsedSeasons[row.group.key]} aria-hidden="true">
+              <ChevronDown size={13} />
+            </span>
+            <span class="group-name">{row.group.label}</span>
+            <span class="group-count">{row.group.entries.length}</span>
+            {#if row.group.chip}<span class="next-chip">{row.group.chip}</span>{/if}
+          </button>
+        {:else}
+          {@const entry = row.entry}
+          <div class="poster-card"
+            tabindex="0"
+            role="button"
+            aria-label={`${entry.title}, ${entry.status}`}
+            on:click={() => handleRowActivate(entry)}
+            on:keydown={(e) => e.key === 'Enter' && handleRowActivate(entry)}
+            on:contextmenu={(e) => openContextMenu(e, entry)}
+          >
+            <div class="poster-check">
+              <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation aria-label={`Select ${entry.title}`} />
             </div>
-            {#if episodeFilesMap.has(entry.anime_id)}
-              <div class="ep-download-bar">
-                {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
-                  {@const ep = i + 1}
-                  {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
-                  {@const watched = ep <= entry.watched_episodes}
-                  <button
-                    type="button"
-                    class="ep-segment"
-                    class:downloaded={hasFile}
-                    class:watched={watched}
-                    disabled={!hasFile}
-                    title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
-                    aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
-                    on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
-                    style="cursor: {hasFile ? 'pointer' : 'default'}"
-                  ></button>
-                {/each}
-                {#if effectiveCount(entry) > 50}
-                  <span class="ep-more">+{effectiveCount(entry) - 50}</span>
-                {/if}
-              </div>
+            {#if entry.image_url}
+              <img class="poster-thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
+            {:else}
+              <div class="poster-thumb placeholder"></div>
             {/if}
+            <div class="poster-info">
+              <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
+              {#if entry.status === 'unlisted'}
+                <span class="no-status" aria-label="No list status">—</span>
+              {:else}
+                <span class="badge">{formatStatus(entry.status)}</span>
+              {/if}
+              <div class="progress-wrap poster-progress">
+                <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
+                <div class="progress-inner">
+                  <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
+                  <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
+                  <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
+                </div>
+              </div>
+              {#if episodeFilesMap.has(entry.anime_id)}
+                <div class="ep-download-bar">
+                  {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
+                    {@const ep = i + 1}
+                    {@const hasFile = episodeFilesMap.get(entry.anime_id)?.some(f => (f.episode ?? 0) === ep)}
+                    {@const watched = ep <= entry.watched_episodes}
+                    <button
+                      type="button"
+                      class="ep-segment"
+                      class:downloaded={hasFile}
+                      class:watched={watched}
+                      disabled={!hasFile}
+                      title={hasFile ? `Ep ${ep} - Downloaded` : `Ep ${ep}`}
+                      aria-label={hasFile ? `Play episode ${ep}` : `Episode ${ep}`}
+                      on:click|stopPropagation={() => playEpisode(entry.anime_id, ep)}
+                      style="cursor: {hasFile ? 'pointer' : 'default'}"
+                    ></button>
+                  {/each}
+                  {#if effectiveCount(entry) > 50}
+                    <span class="ep-more">+{effectiveCount(entry) - 50}</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
           </div>
-        </div>
+        {/if}
       {/each}
     </div>
   {:else}
@@ -1451,6 +1469,30 @@
     border-color: rgba(var(--color-accent-rgb), 0.3);
     transform: translateY(-2px);
   }
+
+  .group-band {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0.45rem 0.7rem;
+    margin-top: 0.35rem;
+    background: var(--color-surface-raised);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.14);
+    border-left: 3px solid transparent;
+    border-radius: 8px;
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .group-band:first-child { margin-top: 0; }
+  .group-band:hover { background: rgba(var(--color-accent-rgb), 0.1); }
+  .group-band:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  .group-band.is-marked { border-left-color: var(--color-accent); }
 
   .poster-thumb {
     width: 100%;
