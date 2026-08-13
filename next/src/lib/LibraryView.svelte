@@ -53,13 +53,24 @@
   let calendar: CalendarEntry[] = [];
   let nowSec = Math.floor(Date.now() / 1000);
   let clockTimer: ReturnType<typeof setInterval> | undefined;
+  let calendarTimer: ReturnType<typeof setInterval> | undefined;
 
-  // Cached behind CALENDAR_CACHE_TTL_SECS in the backend and already scoped to
-  // watching + plan-to-watch shows, so this is free on a warm cache. Failure is
-  // non-fatal: the column falls back to a dash.
+  // Cached behind CALENDAR_CACHE_TTL_SECS (15 min) in the backend and already
+  // scoped to watching + plan-to-watch shows, so a refresh is free as long as
+  // it lands inside that window — but the Library is the app's start page, so
+  // a cold cache (first load, or a launch more than one TTL after the last)
+  // means this does a real AniList round-trip. Failure is non-fatal: the
+  // column falls back to a dash.
   async function loadCalendar() {
     try { calendar = await getCalendar(); } catch { calendar = []; }
   }
+
+  // The cache above expires after 15 minutes; without a periodic refresh, a
+  // long-lived session (this is a desktop app left open for days) eventually
+  // sees every cached episode's airing_at fall in the past and the Next
+  // Episode column goes permanently blank. Refreshing every 10 minutes keeps
+  // us inside the TTL so this normally just re-reads the warm cache.
+  const CALENDAR_REFRESH_MS = 10 * 60_000;
 
   type SortKey = 'title' | 'status' | 'progress' | 'season' | 'next_airing';
   type Sort = { key: SortKey; dir: 'asc' | 'desc' };
@@ -584,9 +595,15 @@
           cmp = pa - pb;
           break;
         }
-        case 'season':
-          cmp = seasonSortVal(a) - seasonSortVal(b);
+        case 'season': {
+          const sa = seasonSortVal(a);
+          const sb = seasonSortVal(b);
+          // Equal values (including two undated shows, both Infinity) fall
+          // back to title so grouped entries get a stable, readable order
+          // instead of Infinity - Infinity (NaN) or backend id order.
+          cmp = sa === sb ? a.title.localeCompare(b.title) : sa - sb;
           break;
+        }
         case 'next_airing': {
           const va = nextAiringSortVal(a.anime_id, nextAiring);
           const vb = nextAiringSortVal(b.anime_id, nextAiring);
@@ -616,7 +633,7 @@
   // The group header carries the season, so the column is redundant there.
   $: showSeason = statusFilter === 'plan_to_watch' && !groupingActive;
   $: nextAiring = nextAiringByAnime(calendar, nowSec);
-  $: showNextEpisode = statusFilter === 'watching';
+  $: showNextEpisode = statusFilter === 'watching' && !query.trim();
   // check + thumb + title + status + progress + files, plus optional columns.
   $: columnCount = 6 + (showSeason ? 1 : 0) + (showNextEpisode ? 1 : 0);
 
@@ -626,11 +643,13 @@
     void loadCalendar();
     // The column shows days and hours, so a minute is fine-grained enough.
     clockTimer = setInterval(() => { nowSec = Math.floor(Date.now() / 1000); }, 60_000);
+    calendarTimer = setInterval(() => { void loadCalendar(); }, CALENDAR_REFRESH_MS);
   });
 
   onDestroy(() => {
     if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
     if (clockTimer) clearInterval(clockTimer);
+    if (calendarTimer) clearInterval(calendarTimer);
   });
 </script>
 
