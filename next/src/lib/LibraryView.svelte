@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent } from './api';
+  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
   import {
     normalizeStatusFilter, groupBySeason, flattenGroups, asDisplayRows,
     seasonSortVal, getCurrentSeason,
+    nextAiringByAnime, formatAiringCountdown, nextAiringSortVal,
   } from './libraryUi';
   import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2 } from 'lucide-svelte';
 
@@ -49,7 +50,20 @@
   let episodeFilesMap = new Map<number, FileIndexEntry[]>();
   let stats: LibraryStats | null = null;
 
-  type SortKey = 'title' | 'status' | 'progress' | 'season';
+  let calendar: CalendarEntry[] = [];
+  let nowSec = Math.floor(Date.now() / 1000);
+  let clockTimer: ReturnType<typeof setInterval> | undefined;
+
+  // Cached behind CALENDAR_CACHE_TTL_SECS in the backend and already scoped to
+  // watching + plan-to-watch shows, so this is free on a warm cache. Failure is
+  // non-fatal: the column falls back to a dash.
+  async function loadCalendar() {
+    // `?? []` guards against a mocked/best-effort caller resolving to
+    // undefined instead of rejecting; nextAiringByAnime iterates this.
+    try { calendar = (await getCalendar()) ?? []; } catch { calendar = []; }
+  }
+
+  type SortKey = 'title' | 'status' | 'progress' | 'season' | 'next_airing';
   type Sort = { key: SortKey; dir: 'asc' | 'desc' };
 
   // Per-category sort preferences: each status tab remembers its own sort, so
@@ -57,7 +71,7 @@
   // you to re-apply the sort. Persisted across restarts.
   const SORT_STORE_KEY = 'anivault-library-sort-by-category';
   const DEFAULT_SORT: Record<string, Sort> = {
-    watching: { key: 'progress', dir: 'asc' },
+    watching: { key: 'next_airing', dir: 'asc' },
     on_hold: { key: 'progress', dir: 'asc' },
     plan_to_watch: { key: 'season', dir: 'asc' },
   };
@@ -575,6 +589,19 @@
         case 'season':
           cmp = seasonSortVal(a) - seasonSortVal(b);
           break;
+        case 'next_airing': {
+          const va = nextAiringSortVal(a.anime_id, nextAiring);
+          const vb = nextAiringSortVal(b.anime_id, nextAiring);
+          // Both missing: fall back to title so the tail has a stable order.
+          if (va === vb) { cmp = a.title.localeCompare(b.title); break; }
+          // Shows with nothing upcoming sort last in both directions. These
+          // early returns bypass the `cmp * dir` at the end of the comparator,
+          // which is exactly what pins the tail.
+          if (va === Number.POSITIVE_INFINITY) return 1;
+          if (vb === Number.POSITIVE_INFINITY) return -1;
+          cmp = va - vb;
+          break;
+        }
       }
       return cmp * dir;
     });
@@ -590,16 +617,22 @@
 
   // The group header carries the season, so the column is redundant there.
   $: showSeason = statusFilter === 'plan_to_watch' && !groupingActive;
+  $: nextAiring = nextAiringByAnime(calendar, nowSec);
+  $: showNextEpisode = statusFilter === 'watching';
   // check + thumb + title + status + progress + files, plus optional columns.
-  $: columnCount = 6 + (showSeason ? 1 : 0);
+  $: columnCount = 6 + (showSeason ? 1 : 0) + (showNextEpisode ? 1 : 0);
 
   onMount(() => {
     void load();
     void loadStats();
+    void loadCalendar();
+    // The column shows days and hours, so a minute is fine-grained enough.
+    clockTimer = setInterval(() => { nowSec = Math.floor(Date.now() / 1000); }, 60_000);
   });
 
   onDestroy(() => {
     if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
+    if (clockTimer) clearInterval(clockTimer);
   });
 </script>
 
@@ -712,6 +745,14 @@
                   <button class="progress-btn" on:click|stopPropagation={() => handleIncrement(entry)} aria-label="Increase">+</button>
                 </div>
               </div>
+              {#if showNextEpisode}
+                {@const na = nextAiring.get(entry.anime_id)}
+                {#if na}
+                  <span class="airing-in" class:soon={(na.airing_at ?? 0) - nowSec < 86400}>
+                    in {formatAiringCountdown((na.airing_at ?? 0) - nowSec)}
+                  </span>
+                {/if}
+              {/if}
               {#if episodeFilesMap.has(entry.anime_id)}
                 <div class="ep-download-bar">
                   {#each Array(Math.min(effectiveCount(entry), 50)) as _, i}
@@ -811,6 +852,27 @@
                 >
                   Season
                   {#if sortKey === 'season'}
+                    <span aria-hidden="true" class="sort-arrow">
+                      {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
+                    </span>
+                  {/if}
+                </button>
+              </th>
+            {/if}
+            {#if showNextEpisode}
+              <th
+                class="col-airing"
+                scope="col"
+                aria-sort={sortKey === 'next_airing' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <button
+                  type="button"
+                  class="sort-btn"
+                  aria-label="Sort by next episode"
+                  on:click={() => setSort('next_airing')}
+                >
+                  Next Episode
+                  {#if sortKey === 'next_airing'}
                     <span aria-hidden="true" class="sort-arrow">
                       {#if sortDir === 'asc'}<ChevronUp size={13} />{:else}<ChevronDown size={13} />{/if}
                     </span>
@@ -922,6 +984,21 @@
                   </td>
                   {#if showSeason}
                     <td class="col-season season-cell">{formatSeason(entry.season, entry.season_year)}</td>
+                  {/if}
+                  {#if showNextEpisode}
+                    {@const na = nextAiring.get(entry.anime_id)}
+                    <td class="col-airing airing-cell">
+                      {#if na}
+                        <span class="airing-in" class:soon={(na.airing_at ?? 0) - nowSec < 86400}>
+                          in {formatAiringCountdown((na.airing_at ?? 0) - nowSec)}
+                        </span>
+                        <span class="airing-sub">
+                          Ep {na.next_episode} · {new Date((na.airing_at ?? 0) * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                      {:else}
+                        <span class="no-status">—</span>
+                      {/if}
+                    </td>
                   {/if}
                   <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
                     <div class="progress-wrap">
@@ -1354,6 +1431,27 @@
 
   .col-season { white-space: nowrap; }
   .season-cell { color: var(--color-muted); white-space: nowrap; }
+
+  .airing-cell { white-space: nowrap; line-height: 1.25; }
+
+  .airing-in {
+    display: block;
+    color: var(--color-text);
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .airing-in.soon { color: var(--color-accent); font-weight: 650; }
+
+  .airing-sub {
+    display: block;
+    color: var(--color-muted);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  table.compact .airing-in { font-size: 0.72rem; }
+  table.compact .airing-sub { font-size: 0.64rem; }
 
   .empty-row td {
     text-align: center;
