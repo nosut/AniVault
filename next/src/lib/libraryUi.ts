@@ -135,3 +135,56 @@ export function flattenGroups<T>(
 export function asDisplayRows<T>(entries: T[]): DisplayRow<T>[] {
   return entries.map((entry) => ({ kind: 'entry', entry }));
 }
+
+/// The airing fields the Watching column needs. Structural, so CalendarEntry
+/// and test fixtures both satisfy it.
+export interface AiringLike {
+  anime_id: number;
+  next_episode: number | null;
+  airing_at: number | null;
+}
+
+/// Earliest still-future airing per anime.
+///
+/// `get_calendar` returns one entry per airing episode across a window that
+/// reaches ~a month into the past, so past entries are filtered out rather
+/// than assumed absent. A show with nothing upcoming is simply missing from
+/// the map, which the column renders as a dash.
+export function nextAiringByAnime<T extends AiringLike>(
+  entries: T[],
+  nowSec: number,
+): Map<number, T> {
+  const out = new Map<number, T>();
+  for (const e of entries) {
+    if (e.airing_at == null || e.airing_at <= nowSec) continue;
+    const existing = out.get(e.anime_id);
+    if (!existing || (existing.airing_at as number) > e.airing_at) {
+      out.set(e.anime_id, e);
+    }
+  }
+  return out;
+}
+
+/// Countdown at day/hour granularity: "6d 14h" / "14h 3m" / "3m".
+///
+/// Deliberately separate from DetailView's formatCountdown and CalendarView's
+/// countdown: those two already disagree (seconds tier, "Aired" vs "airing
+/// now"), so unifying them would change what those views display.
+export function formatAiringCountdown(secs: number): string {
+  if (secs <= 0) return 'airing now';
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+/// Sort position by next airing. Shows with nothing upcoming sort last.
+export function nextAiringSortVal(
+  animeId: number,
+  map: Map<number, AiringLike>,
+): number {
+  const hit = map.get(animeId);
+  return hit?.airing_at ?? Number.POSITIVE_INFINITY;
+}
