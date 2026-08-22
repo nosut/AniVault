@@ -39,7 +39,9 @@ async fn initialize_engine_creates_parent_dir_and_migrates_database() {
     let db_path = root.join("nested").join("anivault.db");
 
     if root.exists() {
-        std::fs::remove_dir_all(&root).unwrap();
+        // Use the retrying helper: a bare remove_dir_all races Windows' delayed
+        // handle release and fails intermittently under parallel test load.
+        remove_dir_all_retry(root.clone());
     }
 
     let state = initialize_engine_at(db_path.clone(), None).await.unwrap();

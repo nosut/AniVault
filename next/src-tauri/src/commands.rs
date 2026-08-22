@@ -639,7 +639,7 @@ pub async fn import_anime_from_anilist(state: &EngineState, anime_id: i64) -> an
         .ok_or_else(|| anyhow::anyhow!("not connected to AniList"))?;
     let client = crate::engine::anilist::client::AniListClient::new(token);
     let query_str = format!(
-        "query {{ Media(id: {}, type: ANIME) {{ id title {{ romaji english native }} episodes type status coverImage {{ large }} description season seasonYear }} }}",
+        "query {{ Media(id: {}, type: ANIME) {{ id title {{ romaji english native }} synonyms episodes type status coverImage {{ large }} description season seasonYear }} }}",
         anime_id
     );
     let raw = client
@@ -656,7 +656,7 @@ pub async fn import_anime_from_anilist(state: &EngineState, anime_id: i64) -> an
         "romaji": title.and_then(|t| t.get("romaji")).and_then(|r| r.as_str()).unwrap_or(""),
         "english": title.and_then(|t| t.get("english")).and_then(|e| e.as_str()),
         "japanese": title.and_then(|t| t.get("native")).and_then(|n| n.as_str()),
-        "synonyms": [],
+        "synonyms": media.get("synonyms").cloned().unwrap_or_else(|| serde_json::json!([])),
     })
     .to_string();
     let ep_count = media.get("episodes").and_then(|e| e.as_i64()).unwrap_or(0) as i32;
@@ -2614,7 +2614,7 @@ fn titles_json_from_search(r: &crate::engine::anilist::client::SearchAnimeResult
         "romaji": t.and_then(|x| x.romaji.clone()).unwrap_or_default(),
         "english": t.and_then(|x| x.english.clone()),
         "japanese": t.and_then(|x| x.native.clone()),
-        "synonyms": [],
+        "synonyms": r.synonyms.clone().unwrap_or_default(),
     })
     .to_string()
 }

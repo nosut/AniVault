@@ -491,6 +491,7 @@ impl Storage {
     ) -> anyhow::Result<Option<(String, Option<String>, i32)>> {
         let row = sqlx::query(
             "SELECT COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), \
+                    NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), \
                     json_extract(a.titles_json, '$.romaji'), 'Unknown') as title, \
                     a.image_url as image_url, \
                     COALESCE(le.watched_episodes, 0) as watched_episodes \
@@ -516,7 +517,7 @@ impl Storage {
     ) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
         let rows = sqlx::query(
             "SELECT wh.id, wh.anime_id, \
-             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
              wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
              FROM watch_history wh \
              LEFT JOIN anime a ON wh.anime_id = a.id \
@@ -559,17 +560,19 @@ impl Storage {
         let pattern = format!("%{}%", query);
         let rows = sqlx::query(
             "SELECT wh.id, wh.anime_id, \
-             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
              wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
              FROM watch_history wh \
              LEFT JOIN anime a ON wh.anime_id = a.id \
              WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? \
                 OR json_extract(a.titles_json, '$.english') LIKE ? \
+                OR json_extract(a.titles_json, '$.english_derived') LIKE ? \
                 OR json_extract(a.titles_json, '$.japanese') LIKE ? \
                 OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?)) \
              ORDER BY wh.watched_at DESC \
              LIMIT ? OFFSET ?",
         )
+        .bind(&pattern)
         .bind(&pattern)
         .bind(&pattern)
         .bind(&pattern)
@@ -905,6 +908,36 @@ impl Storage {
             .collect())
     }
 
+    /// Mapped, non-ignored files for one episode across a set of anime, as
+    /// `(anime_id, file_path)`. One query for the whole candidate list: the
+    /// recognizer runs this on every scan tick that is not an already-known file.
+    pub async fn file_index_for_episode(
+        &self,
+        anime_ids: &[i64],
+        episode: i32,
+    ) -> anyhow::Result<Vec<(i64, String)>> {
+        if anime_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = (2..=anime_ids.len() + 1)
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT anime_id, file_path FROM file_index \
+             WHERE episode = ?1 AND ignored = 0 AND anime_id IN ({placeholders})"
+        );
+        let mut q = sqlx::query(&sql).bind(episode);
+        for id in anime_ids {
+            q = q.bind(id);
+        }
+        let rows = q.fetch_all(&self.pool).await?;
+        Ok(rows
+            .iter()
+            .map(|r| (r.get("anime_id"), r.get("file_path")))
+            .collect())
+    }
+
     pub async fn list_file_index(
         &self,
         limit: i64,
@@ -950,6 +983,7 @@ impl Storage {
                     fi.mapping_source,
                     COALESCE(
                       NULLIF(json_extract(a.titles_json, '$.english'), ''),
+                      NULLIF(json_extract(a.titles_json, '$.english_derived'), ''),
                       NULLIF(json_extract(a.titles_json, '$.romaji'), '')
                     ) AS anime_title
              FROM file_index fi
@@ -1481,7 +1515,7 @@ impl Storage {
         let pattern = format!("%{}%", query);
 
         let mut sql = String::from(
-            "SELECT a.id as anime_id, COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji')) as title, \
+            "SELECT a.id as anime_id, COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji')) as title, \
              COALESCE(le.status, 'unlisted') as status, \
              COALESCE(le.watched_episodes, 0) as watched_episodes, \
              a.episode_count, le.score, a.image_url, a.season, a.season_year, \
@@ -1490,6 +1524,7 @@ impl Storage {
              LEFT JOIN list_entry le ON a.id = le.anime_id \
              WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? \
                 OR json_extract(a.titles_json, '$.english') LIKE ? \
+                OR json_extract(a.titles_json, '$.english_derived') LIKE ? \
                 OR json_extract(a.titles_json, '$.japanese') LIKE ? \
                 OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?)) \
              AND (le.anime_id IS NOT NULL \
@@ -1509,10 +1544,11 @@ impl Storage {
 
         sql.push_str(" ORDER BY a.id LIMIT ? OFFSET ?");
 
-        // Bind the LIKE pattern once per placeholder (4×). All placeholders are
+        // Bind the LIKE pattern once per placeholder (5×). All placeholders are
         // anonymous `?` — mixing reused `?1` with anonymous `?` makes sqlx bind
         // the pattern into the integer LIMIT slot (SQLITE_MISMATCH / code 20).
         let mut query_builder = sqlx::query(&sql)
+            .bind(&pattern)
             .bind(&pattern)
             .bind(&pattern)
             .bind(&pattern)
@@ -2001,7 +2037,7 @@ impl Storage {
         let rows = sqlx::query(
             "SELECT s.sonarr_id, s.title, s.poster_url, s.episode_count, \
                     m.anime_id, m.confidence, \
-                    COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji')) as anime_title \
+                    COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji')) as anime_title \
              FROM sonarr_series s \
              LEFT JOIN sonarr_mapping m ON m.sonarr_id = s.sonarr_id \
              LEFT JOIN anime a ON a.id = m.anime_id \
@@ -2241,6 +2277,46 @@ impl Storage {
 
     /// Library anime (in the user's list) whose episode count or airing status is
     /// still unknown — candidates for a metadata backfill from AniList.
+    /// Anime with no AniList English title, as `(id, romaji)`. Candidates for
+    /// the derived-title pass; the caller applies `title_resolver::looks_unresolved`
+    /// to decide which of them are actually worth deriving a title for.
+    ///
+    /// Rows that already carry a derived title are excluded, so the pass is
+    /// incremental and re-running it is cheap.
+    pub async fn anime_missing_english_title(&self, limit: i64) -> anyhow::Result<Vec<(i64, String)>> {
+        let rows = sqlx::query(
+            "SELECT a.id, json_extract(a.titles_json, '$.romaji') AS romaji \
+             FROM anime a \
+             WHERE COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), '') = '' \
+               AND COALESCE(NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), '') = '' \
+               AND COALESCE(NULLIF(json_extract(a.titles_json, '$.romaji'), ''), '') <> '' \
+             ORDER BY a.id LIMIT ?1",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| (r.get::<i64, _>("id"), r.get::<String, _>("romaji")))
+            .collect())
+    }
+
+    /// Store a derived English display title on `titles_json.english_derived`.
+    ///
+    /// Deliberately never touches `$.english`: AniList stays authoritative, a
+    /// later sync overwrites a guess for free, and clearing this one key
+    /// restores the pre-feature display exactly.
+    pub async fn set_anime_derived_english(&self, id: i64, derived: &str) -> anyhow::Result<()> {
+        sqlx::query(
+            "UPDATE anime SET titles_json = json_set(titles_json, '$.english_derived', ?2) WHERE id = ?1",
+        )
+        .bind(id)
+        .bind(derived)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn library_anime_missing_meta(&self, limit: i64) -> anyhow::Result<Vec<i64>> {
         let rows = sqlx::query(
             "SELECT a.id FROM anime a \
@@ -2314,7 +2390,7 @@ impl Storage {
     pub async fn continue_watching(&self, limit: i64) -> anyhow::Result<Vec<ContinueWatchingRow>> {
         let rows = sqlx::query(
             "SELECT a.id as anime_id, \
-             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
              a.image_url, \
              COALESCE(le.watched_episodes, 0) as watched_episodes, \
              a.episode_count, \

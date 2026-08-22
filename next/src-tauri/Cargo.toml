@@ -16,6 +16,9 @@ tauri-build = { version = "2.2.0", features = [] }
 anyhow = "1.0.97"
 reqwest = { version = "0.12", features = ["json"] }
 regex = "1.11"
+# Decompresses AniDB's gzipped title dump. reqwest's own `gzip` feature only
+# handles Content-Encoding, not a .gz file served as a body.
+flate2 = "1.0"
 base64 = "0.22.1"
 chrono = { version = "0.4", features = ["serde"] }
 quick-xml = { version = "0.36", features = ["serialize"] }

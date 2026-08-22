@@ -431,6 +431,7 @@ fn anime_display_title(titles_json: &str, id: i64) -> String {
     titles["english"]
         .as_str()
         .filter(|s| !s.is_empty())
+        .or_else(|| titles["english_derived"].as_str().filter(|s| !s.is_empty()))
         .or_else(|| titles["romaji"].as_str().filter(|s| !s.is_empty()))
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("#{id}"))

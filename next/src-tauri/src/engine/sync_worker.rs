@@ -151,6 +151,22 @@ async fn run_meta_backfill(state: &EngineState) {
         Ok(_) => {}
         Err(e) => tracing::warn!("episode metadata backfill failed: {e}"),
     }
+    // Sequel seasons AniList hasn't given an English title yet inherit one from
+    // their prequel, so the library doesn't mix "Sousou no Frieren 3rd Season"
+    // in among titles that did get translated.
+    let data_dir = state.database_path.parent();
+    match crate::engine::anilist::import::backfill_derived_titles(
+        &state.storage,
+        &client,
+        data_dir,
+        100,
+    )
+    .await
+    {
+        Ok(n) if n > 0 => tracing::info!("Derived English titles for {n} anime"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("derived-title backfill failed: {e}"),
+    }
 }
 
 /// Spawn a background task that polls the sync queue every 30 seconds and, on the

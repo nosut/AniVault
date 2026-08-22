@@ -94,6 +94,11 @@ pub struct MediaListEntry {
 pub struct Media {
     pub id: i64,
     pub title: Option<MediaTitle>,
+    /// Alternative titles AniList records outside the three `title` fields.
+    /// Frequently carries the English title for entries whose `title.english`
+    /// is null, and feeds filename matching via `matcher::score_titles_json`.
+    #[serde(default)]
+    pub synonyms: Option<Vec<String>>,
     pub episodes: Option<i32>,
     #[serde(rename = "type")]
     pub media_type: Option<String>,
@@ -260,7 +265,7 @@ impl AniListClient {
         // Scores are requested in POINT_100 regardless of the account's score
         // format, so local storage always holds a 0-100 value (matches the
         // stats buckets and the detail editor).
-        const ENTRY_FIELDS: &str = "media { id title { romaji english native } episodes type status coverImage { large } description season seasonYear } \
+        const ENTRY_FIELDS: &str = "media { id title { romaji english native } synonyms episodes type status coverImage { large } description season seasonYear } \
              status score(format: POINT_100) progress updatedAt notes \
              startedAt { year month day } \
              completedAt { year month day }";
@@ -610,7 +615,7 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
     pub async fn search_anime(&self, query: &str) -> anyhow::Result<Vec<SearchAnimeResult>> {
         let query_str = "query ($search: String) { Page(page: 1, perPage: 20) { \
              media(search: $search, type: ANIME) { \
-             id title { romaji english native } coverImage { large } \
+             id title { romaji english native } synonyms coverImage { large } \
              episodes status format averageScore } } }";
         let raw: serde_json::Value = self
             .query(query_str, serde_json::json!({ "search": query }))
@@ -638,7 +643,7 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
             variables.insert(format!("s{i}"), serde_json::Value::String(title.clone()));
             fields.push_str(&format!(
                 "a{i}: Page(page: 1, perPage: 5) {{ media(search: $s{i}, type: ANIME) {{ \
-                 id title {{ romaji english native }} coverImage {{ large }} \
+                 id title {{ romaji english native }} synonyms coverImage {{ large }} \
                  episodes status format averageScore }} }} ",
             ));
         }
@@ -662,6 +667,72 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
                     .filter_map(|m| serde_json::from_value::<SearchAnimeResult>(m).ok())
                     .collect(),
             );
+        }
+        Ok(out)
+    }
+
+    /// Fetch the relation graph for many anime at once, keeping only what the
+    /// title resolver needs: for each requested id, the relation type and
+    /// English title of each related entry.
+    ///
+    /// Batched 50 ids to a request (the same chunking `fetch_media_meta` uses)
+    /// so backfilling a whole library's worth of missing titles costs a handful
+    /// of calls rather than one per anime.
+    pub async fn fetch_media_relation_titles(
+        &self,
+        ids: &[i64],
+    ) -> anyhow::Result<Vec<(i64, Vec<(String, String)>)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut out = Vec::new();
+        for chunk in ids.chunks(50) {
+            let id_list = chunk.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
+            let query_str = format!(
+                "query {{ Page(page: 1, perPage: 50) {{ media(id_in: [{id_list}], type: ANIME) {{ \
+                 id relations {{ edges {{ relationType node {{ title {{ romaji english }} }} }} }} }} }} }}"
+            );
+            let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
+            if let Some(errors) = raw.get("errors").and_then(|e| e.as_array()) {
+                if !errors.is_empty() {
+                    let msgs: Vec<String> = errors
+                        .iter()
+                        .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(String::from))
+                        .collect();
+                    return Err(anyhow::anyhow!("AniList error: {}", msgs.join("; ")));
+                }
+            }
+            let media = raw
+                .get("data")
+                .and_then(|d| d.get("Page"))
+                .and_then(|p| p.get("media"))
+                .and_then(|m| m.as_array())
+                .cloned()
+                .unwrap_or_default();
+            for m in &media {
+                let Some(id) = m.get("id").and_then(|v| v.as_i64()) else { continue };
+                let edges = m
+                    .get("relations")
+                    .and_then(|r| r.get("edges"))
+                    .and_then(|e| e.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut rels = Vec::new();
+                for e in &edges {
+                    let Some(rt) = e.get("relationType").and_then(|v| v.as_str()) else { continue };
+                    let english = e
+                        .get("node")
+                        .and_then(|n| n.get("title"))
+                        .and_then(|t| t.get("english"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim();
+                    if !english.is_empty() {
+                        rels.push((rt.to_string(), english.to_string()));
+                    }
+                }
+                out.push((id, rels));
+            }
         }
         Ok(out)
     }
@@ -726,6 +797,8 @@ pub struct FutureAnime {
 pub struct SearchAnimeResult {
     pub id: i64,
     pub title: Option<MediaTitle>,
+    #[serde(default)]
+    pub synonyms: Option<Vec<String>>,
     pub episodes: Option<i32>,
     pub status: Option<String>,
     pub format: Option<String>,

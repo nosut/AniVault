@@ -361,6 +361,11 @@ async fn notify_progress(state: &EngineState, anime_id: i64, episode: i32) {
             v.get("english")
                 .and_then(|e| e.as_str())
                 .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    v.get("english_derived")
+                        .and_then(|e| e.as_str())
+                        .filter(|s| !s.is_empty())
+                })
                 .or_else(|| v.get("romaji").and_then(|r| r.as_str()))
                 .map(String::from)
         })

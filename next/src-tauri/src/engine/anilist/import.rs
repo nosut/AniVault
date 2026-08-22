@@ -9,6 +9,87 @@ pub struct ImportReport {
     pub skipped: u64,
 }
 
+/// Give anime that AniList has no English title for a readable display title,
+/// inherited from the English title of their prequel or parent entry.
+///
+/// AniList routinely leaves `title.english` null on sequel seasons whose
+/// franchise has a perfectly good English name recorded on season one. This
+/// pass closes that gap without translating anything — see
+/// [`crate::engine::title_resolver`] for the two rules that keep it from
+/// touching rows whose romaji is already the name people know.
+///
+/// Best-effort; returns the number of titles derived. Writes only to
+/// `titles_json.english_derived`, never to `english`.
+pub async fn backfill_derived_titles(
+    storage: &Storage,
+    client: &AniListClient,
+    data_dir: Option<&std::path::Path>,
+    limit: i64,
+) -> anyhow::Result<usize> {
+    use crate::engine::title_resolver as tr;
+
+    let candidates = storage.anime_missing_english_title(limit).await?;
+    // The gate: only entries that still read as romaji are worth deriving for.
+    let targets: Vec<(i64, String)> = candidates
+        .into_iter()
+        .filter(|(_, romaji)| tr::looks_unresolved(romaji))
+        .collect();
+    if targets.is_empty() {
+        return Ok(0);
+    }
+
+    // Pass one: inherit from a prequel. Preferred over any external source
+    // because the title comes from AniList itself.
+    let ids: Vec<i64> = targets.iter().map(|(id, _)| *id).collect();
+    let by_id: std::collections::HashMap<i64, Vec<(String, String)>> =
+        match client.fetch_media_relation_titles(&ids).await {
+            Ok(rels) => rels.into_iter().collect(),
+            Err(e) => {
+                // AniList being unavailable must not block the AniDB pass, which
+                // needs no network of its own once its dump is cached.
+                tracing::warn!("relation fetch failed, falling back to AniDB only: {e}");
+                Default::default()
+            }
+        };
+
+    let mut derived = 0usize;
+    let mut unresolved: Vec<(i64, String)> = Vec::new();
+    for (id, romaji) in targets {
+        let title = by_id.get(&id).and_then(|rels| {
+            rels.iter()
+                .filter(|(rt, _)| tr::is_inheritable_relation(rt))
+                .find_map(|(_, english)| tr::derive_from_relation(&romaji, english))
+        });
+        match title {
+            Some(title) => {
+                storage.set_anime_derived_english(id, &title).await?;
+                tracing::debug!(anime_id = id, romaji = %romaji, derived = %title, source = "prequel");
+                derived += 1;
+            }
+            None => unresolved.push((id, romaji)),
+        }
+    }
+
+    // Pass two: first entries have no prequel to inherit from, so fall back to
+    // AniDB's language-tagged English titles.
+    if !unresolved.is_empty() {
+        if let Some(dir) = data_dir {
+            if let Some(titles) = crate::engine::anidb_titles::load_or_refresh(storage, dir).await {
+                for (id, romaji) in &unresolved {
+                    if let Some(english) = titles.english_for(romaji) {
+                        storage.set_anime_derived_english(*id, english).await?;
+                        tracing::debug!(anime_id = id, romaji = %romaji, derived = %english, source = "anidb");
+                        derived += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    tracing::info!(candidates = ids.len(), derived, "derived-title backfill");
+    Ok(derived)
+}
+
 /// Backfill episode counts and airing status for library anime that are still
 /// missing them, fetching from AniList. Best-effort; returns rows updated. Values
 /// already present are preserved (only unknown fields are filled).
@@ -113,7 +194,7 @@ pub async fn import_library(
                 "romaji": media.title.as_ref().and_then(|t| t.romaji.as_deref()).unwrap_or(""),
                 "english": media.title.as_ref().and_then(|t| t.english.as_deref()),
                 "japanese": media.title.as_ref().and_then(|t| t.native.as_deref()),
-                "synonyms": [],
+                "synonyms": media.synonyms.clone().unwrap_or_default(),
             })
             .to_string();
 

@@ -49,7 +49,17 @@
     { value: 'plan_to_watch', label: 'Plan to Watch' },
   ];
 
-  function parseTitles(titlesJson: string | null | undefined): { romaji?: string; english?: string; native?: string; synonyms?: string[] } {
+  type Titles = {
+    romaji?: string;
+    english?: string;
+    /// Inherited from a prequel's English title when AniList has none of its
+    /// own — a best guess, so it always defers to `english`.
+    englishDerived?: string;
+    native?: string;
+    synonyms?: string[];
+  };
+
+  function parseTitles(titlesJson: string | null | undefined): Titles {
     if (!titlesJson) return {};
     try {
       const parsed = JSON.parse(titlesJson);
@@ -57,6 +67,7 @@
         return {
           romaji: parsed.romaji || undefined,
           english: parsed.english || undefined,
+          englishDerived: parsed.english_derived || undefined,
           native: parsed.japanese || parsed.native || undefined,
           synonyms: parsed.synonyms || [],
         };
@@ -67,7 +78,7 @@
     return {};
   }
 
-  let titles: { romaji?: string; english?: string; native?: string; synonyms?: string[] } = {};
+  let titles: Titles = {};
 
   $: if (detail) {
     titles = parseTitles(detail.titles_json);
@@ -139,7 +150,7 @@
 
   function pickTitle(d: AnimeDetail): string {
     const titles = parseTitles(d.titles_json);
-    return titles.english || titles.romaji || titles.native || `Anime #${d.anime_id}`;
+    return titles.english || titles.englishDerived || titles.romaji || titles.native || `Anime #${d.anime_id}`;
   }
 
   function formatStatus(status: string | null): string {
@@ -570,6 +581,8 @@
           </h1>
           {#if titles.english && titles.english !== (titles.romaji ?? '')}
             <p class="alt-title">English: {titles.english}</p>
+          {:else if titles.englishDerived && titles.romaji}
+            <p class="alt-title">Romaji: {titles.romaji}</p>
           {/if}
           {#if titles.native && titles.native !== (titles.romaji ?? '')}
             <p class="alt-title">Japanese: {titles.native}</p>
