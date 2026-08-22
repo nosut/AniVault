@@ -317,3 +317,27 @@ fn parse_movie_no_episode() {
         result
     );
 }
+
+// 11. Season number — kept alongside the episode so the matcher can tell a
+// season-2 file from the base-season entry it would otherwise title-match.
+#[test]
+fn parse_keeps_the_season_from_an_s02e05_marker() {
+    let result = parse_filename("The Apothecary Diaries - S02E05 - The Moon Fairy.mkv", None)
+        .expect("should parse a season marker");
+    assert_eq!(result.episode_number, 5);
+    assert_eq!(result.season_number, Some(2));
+}
+
+#[test]
+fn parse_keeps_the_season_from_a_cross_format_marker() {
+    let result =
+        parse_filename("Bungou Stray Dogs 3x11.mkv", None).expect("should parse a cross format");
+    assert_eq!(result.episode_number, 11);
+    assert_eq!(result.season_number, Some(3));
+}
+
+#[test]
+fn parse_reports_no_season_without_a_marker() {
+    let result = parse_filename("Cowboy Bebop - 05.mkv", None).expect("should parse");
+    assert_eq!(result.season_number, None);
+}

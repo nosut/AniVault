@@ -160,3 +160,200 @@ async fn recognize_file_ranks_candidates_by_score_including_synonyms() {
         result.candidates
     );
 }
+
+/// mpv reports the mkv's *embedded* title, which carries no `.mkv` extension —
+/// so neither the path lookup nor the filename fallback can fire, and the title
+/// search sees only the base show name. That name is an exact (100) match on the
+/// season-1 entry and only an 80 containment match on "… 2nd Season", so a
+/// season-2 episode used to bind the session to season 1 — and Up Next then
+/// offered S01E06 after S02E05.
+#[tokio::test]
+async fn embedded_title_with_a_season_marker_prefers_the_mapped_season_entry() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Kusuriya no Hitorigoto")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(2, "Kusuriya no Hitorigoto 2nd Season")
+        .await
+        .unwrap();
+    for (path, anime_id) in [
+        (
+            "Y:/Anime/The Apothecary Diaries/Season 1/The Apothecary Diaries - S01E05 - Covert Operations.mkv",
+            1,
+        ),
+        (
+            "Y:/Anime/The Apothecary Diaries/Season 2/The Apothecary Diaries - S02E05 - The Moon Fairy.mkv",
+            2,
+        ),
+    ] {
+        state
+            .storage
+            .upsert_file_index(
+                path,
+                Some(anime_id),
+                5,
+                100,
+                MappingSource::Manual,
+                1_782_769_008,
+            )
+            .await
+            .unwrap();
+    }
+
+    let title = "Kusuriya no Hitorigoto - S02E05 - The Moon Fairy - mpv";
+    let result = recognize_file(title, Some(title), &state.storage)
+        .await
+        .unwrap();
+
+    assert_eq!(result.parsed.as_ref().unwrap().season_number, Some(2));
+    assert_eq!(
+        result.candidates.first().map(|c| c.anime_id),
+        Some(2),
+        "season 2 should win, got: {:?}",
+        result.candidates
+    );
+}
+
+#[tokio::test]
+async fn embedded_title_for_season_one_still_prefers_the_base_entry() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Kusuriya no Hitorigoto")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(2, "Kusuriya no Hitorigoto 2nd Season")
+        .await
+        .unwrap();
+    for (path, anime_id) in [
+        (
+            "Y:/Anime/The Apothecary Diaries/Season 1/The Apothecary Diaries - S01E06 - The Garden Party.mkv",
+            1,
+        ),
+        (
+            "Y:/Anime/The Apothecary Diaries/Season 2/The Apothecary Diaries - S02E06 - The Crystal Pavilion.mkv",
+            2,
+        ),
+    ] {
+        state
+            .storage
+            .upsert_file_index(
+                path,
+                Some(anime_id),
+                6,
+                100,
+                MappingSource::Manual,
+                1_782_769_008,
+            )
+            .await
+            .unwrap();
+    }
+
+    let title = "Kusuriya no Hitorigoto - S01E06 - The Garden Party - mpv";
+    let result = recognize_file(title, Some(title), &state.storage)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.candidates.first().map(|c| c.anime_id),
+        Some(1),
+        "season 1 should win, got: {:?}",
+        result.candidates
+    );
+}
+
+/// Nothing is mapped, so the season has to come from the candidates' own titles.
+#[tokio::test]
+async fn season_marker_falls_back_to_the_season_named_in_the_title() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Kusuriya no Hitorigoto")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(2, "Kusuriya no Hitorigoto 2nd Season")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(3, "Kusuriya no Hitorigoto 3rd Season")
+        .await
+        .unwrap();
+
+    let title = "Kusuriya no Hitorigoto - S02E05 - The Moon Fairy - mpv";
+    let result = recognize_file(title, Some(title), &state.storage)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.candidates.first().map(|c| c.anime_id),
+        Some(2),
+        "the 2nd Season entry should win, got: {:?}",
+        result.candidates
+    );
+}
+
+/// A filename with no season marker must rank exactly as it did before.
+#[tokio::test]
+async fn without_a_season_marker_ranking_is_unchanged() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Mushishi")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(2, "Mushishi 2nd Season")
+        .await
+        .unwrap();
+
+    let result = recognize_file("D:/Anime/Mushishi - 07.mkv", None, &state.storage)
+        .await
+        .unwrap();
+
+    assert_eq!(result.parsed.as_ref().unwrap().season_number, None);
+    assert_eq!(
+        result.candidates.first().map(|c| c.anime_id),
+        Some(1),
+        "got: {:?}",
+        result.candidates
+    );
+}
+
+/// A weak word-overlap match that happens to be some *other* show's second
+/// season must not be floated over the real match — it would sink the real one
+/// below the auto-confirm threshold and stop tracking altogether.
+#[tokio::test]
+async fn a_weak_match_is_not_promoted_by_the_season_in_its_title() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Sword Art Online")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(2, "Sword Art Alternative 2nd Season")
+        .await
+        .unwrap();
+
+    let result = recognize_file("D:/Anime/Sword Art Online S02E04.mkv", None, &state.storage)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.candidates.first().map(|c| c.anime_id),
+        Some(1),
+        "got: {:?}",
+        result.candidates
+    );
+}

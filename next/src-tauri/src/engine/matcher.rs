@@ -1,5 +1,5 @@
 use crate::engine::events::{EngineEvent, MatchCandidate};
-use crate::engine::parser::{parse_filename, ParsedFilename};
+use crate::engine::parser::{parse_filename, season_in_filename, season_in_title, ParsedFilename};
 use crate::engine::runtime::EngineState;
 use crate::engine::storage::{MappingSource, Storage};
 
@@ -195,11 +195,81 @@ pub async fn recognize_file(
 
     candidates.sort_by(|a, b| b.confidence.cmp(&a.confidence));
 
+    // A season marker in the played name is the only thing that separates a
+    // sequel entry from its base season here. The show title on its own always
+    // favours season 1 -- "Kusuriya no Hitorigoto" is an exact (100) hit on the
+    // season-1 entry and only an 80 containment hit on "... 2nd Season" -- so
+    // without this a season-2 episode binds the session to season 1, and Up Next
+    // then offers S01E06 after S02E05.
+    if let Some(season) = parsed.season_number {
+        rank_by_season(&mut candidates, season, parsed.episode_number, storage).await?;
+    }
+
     Ok(RecognitionResult {
         known_file: false,
         parsed: Some(parsed),
         candidates,
     })
+}
+
+/// Only an exact or containment title hit (100 / 80, see `score_title_match`) may
+/// be re-ordered on the strength of a season in its *title*. A weak overlap match
+/// that happens to be some other show's "2nd Season" is not evidence, and floating
+/// it to the top would drop the real match below the auto-confirm threshold.
+const TITLE_SEASON_MIN_CONFIDENCE: u8 = 80;
+
+/// Re-order title candidates against the season being played. Evidence, strongest
+/// first: a file the user has already mapped for this same episode (its own name
+/// carries the season), then a season named in the candidate's own title.
+///
+/// Candidates are only re-ordered -- never dropped, never re-scored -- so with no
+/// season evidence at all the order is exactly what confidence alone produced.
+async fn rank_by_season(
+    candidates: &mut [MatchCandidate],
+    season: i32,
+    episode: i32,
+    storage: &Storage,
+) -> anyhow::Result<()> {
+    if candidates.len() < 2 {
+        return Ok(());
+    }
+
+    let ids: Vec<i64> = candidates.iter().map(|c| c.anime_id).collect();
+    let mut mapped_here: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    let mut mapped_elsewhere: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    for (anime_id, path) in storage.file_index_for_episode(&ids, episode).await? {
+        match season_in_filename(strip_path(&path)) {
+            Some(s) if s == season => {
+                mapped_here.insert(anime_id);
+            }
+            Some(_) => {
+                mapped_elsewhere.insert(anime_id);
+            }
+            None => {}
+        }
+    }
+
+    let rank = |c: &MatchCandidate| -> i32 {
+        if mapped_here.contains(&c.anime_id) {
+            2
+        } else if mapped_elsewhere.contains(&c.anime_id) {
+            -2
+        } else if c.confidence >= TITLE_SEASON_MIN_CONFIDENCE {
+            match season_in_title(&c.title) {
+                Some(s) if s == season => 1,
+                Some(_) => -1,
+                // No season in the title: the base season, or a sequel named
+                // without a number. Neither confirms nor contradicts.
+                None => 0,
+            }
+        } else {
+            0
+        }
+    };
+
+    // Stable, so candidates on equal evidence keep their confidence order.
+    candidates.sort_by_key(|c| std::cmp::Reverse(rank(c)));
+    Ok(())
 }
 
 pub async fn confirm_identification(

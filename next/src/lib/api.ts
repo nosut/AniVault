@@ -53,6 +53,8 @@ export interface MatchCandidate {
 export interface ParsedFilename {
   cleaned_title: string;
   episode_number: number;
+  /** Season from an S02E05 / 2x05 marker; null when the name has none. */
+  season_number: number | null;
   release_group: string | null;
   quality: string | null;
   raw: string;

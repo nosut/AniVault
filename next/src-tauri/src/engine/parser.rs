@@ -5,6 +5,9 @@ use std::sync::LazyLock;
 pub struct ParsedFilename {
     pub cleaned_title: String,
     pub episode_number: i32,
+    /// Season carried by an `S02E05` / `2x05` marker, when the name has one.
+    /// `None` for the many names that number episodes without a season.
+    pub season_number: Option<i32>,
     pub release_group: Option<String>,
     pub quality: Option<String>,
     pub raw: String,
@@ -44,6 +47,12 @@ static SEASON_X_EP_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(\d{1,2})x(\d{2,4})\b").unwrap()
 });
 
+// Season declared inside a show *title*: "2nd Season", "Season 2", "Part 2".
+static TITLE_SEASON_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(?:(\d{1,2})(?:st|nd|rd|th)\s+season|seasons?\s+(\d{1,2})|part\s+(\d{1,2}))\b")
+        .unwrap()
+});
+
 static EPISODE_WORD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\bepisode\s+(\d{1,4})\b").unwrap()
 });
@@ -71,16 +80,26 @@ static PLAYER_SUFFIX_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// leave the episode title glued to the show name, which then drags a handful of
 /// common words ("will", "you", "death", "again") into the library search.
 ///
-/// `episode_group` is which capture holds the episode number. Returns `None` when
-/// the pattern does not match or the number is out of range. When nothing precedes
-/// the marker there is no show name to recover, so the remainder is kept rather
-/// than yielding an empty title.
-fn episode_and_title(cleaned: &str, re: &Regex, episode_group: usize) -> Option<(i32, String)> {
+/// `episode_group` is which capture holds the episode number, `season_group` the
+/// season when the pattern has one. Returns `None` when the pattern does not
+/// match or the number is out of range. When nothing precedes the marker there is
+/// no show name to recover, so the remainder is kept rather than yielding an
+/// empty title.
+fn episode_and_title(
+    cleaned: &str,
+    re: &Regex,
+    episode_group: usize,
+    season_group: Option<usize>,
+) -> Option<(i32, Option<i32>, String)> {
     let caps = re.captures(cleaned)?;
     let n = caps.get(episode_group)?.as_str().parse::<i32>().ok()?;
     if n <= 0 || n > 2000 {
         return None;
     }
+    let season = season_group
+        .and_then(|g| caps.get(g))
+        .and_then(|m| m.as_str().parse::<i32>().ok())
+        .filter(|s| *s > 0 && *s <= 50);
 
     let marker = caps.get(0)?;
     let before = cleaned[..marker.start()]
@@ -92,7 +111,7 @@ fn episode_and_title(cleaned: &str, re: &Regex, episode_group: usize) -> Option<
     } else {
         before.to_string()
     };
-    Some((n, title))
+    Some((n, season, title))
 }
 
 pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedFilename> {
@@ -131,24 +150,28 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
     // Strip audio tags
     cleaned = AUDIO_RE.replace_all(&cleaned, "").to_string();
 
-    // Try S01E01 style first (ignore season, extract episode)
+    // Try S01E01 style first (season kept: it is what tells a sequel entry apart
+    // from the base-season one the show title alone always matches)
     let mut episode: Option<i32> = None;
-    if let Some((n, title)) = episode_and_title(&cleaned, &S01E01_RE, 2) {
+    let mut season: Option<i32> = None;
+    if let Some((n, s, title)) = episode_and_title(&cleaned, &S01E01_RE, 2, Some(1)) {
         episode = Some(n);
+        season = s;
         cleaned = title;
     }
 
     // Try "1x01" cross format (season x episode)
     if episode.is_none() {
-        if let Some((n, title)) = episode_and_title(&cleaned, &SEASON_X_EP_RE, 2) {
+        if let Some((n, s, title)) = episode_and_title(&cleaned, &SEASON_X_EP_RE, 2, Some(1)) {
             episode = Some(n);
+            season = s;
             cleaned = title;
         }
     }
 
     // Try "Episode 01" spelled out
     if episode.is_none() {
-        if let Some((n, title)) = episode_and_title(&cleaned, &EPISODE_WORD_RE, 1) {
+        if let Some((n, _, title)) = episode_and_title(&cleaned, &EPISODE_WORD_RE, 1, None) {
             episode = Some(n);
             cleaned = title;
         }
@@ -156,7 +179,7 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
 
     // Try " - 01" dash-number pattern
     if episode.is_none() {
-        if let Some((n, title)) = episode_and_title(&cleaned, &DASH_MULTI_NUM_RE, 1) {
+        if let Some((n, _, title)) = episode_and_title(&cleaned, &DASH_MULTI_NUM_RE, 1, None) {
             episode = Some(n);
             cleaned = title;
         }
@@ -164,7 +187,7 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
 
     // Try bare EP01 / E01 patterns
     if episode.is_none() {
-        if let Some((n, title)) = episode_and_title(&cleaned, &EPISODE_RE, 1) {
+        if let Some((n, _, title)) = episode_and_title(&cleaned, &EPISODE_RE, 1, None) {
             episode = Some(n);
             cleaned = title;
         }
@@ -190,8 +213,35 @@ pub fn parse_filename(input: &str, window_title: Option<&str>) -> Option<ParsedF
     Some(ParsedFilename {
         cleaned_title: cleaned,
         episode_number,
+        season_number: season,
         release_group,
         quality,
         raw: input.to_string(),
+    })
+}
+
+/// The season a *filename* declares through its `S02E05` / `2x05` marker, if any.
+/// Used to check a mapped file against the season being played, without paying
+/// for a full parse of a name we already know is a real path.
+pub fn season_in_filename(name: &str) -> Option<i32> {
+    let season = match S01E01_RE.captures(name) {
+        Some(caps) => caps.get(1).map(|m| m.as_str().to_string()),
+        None => SEASON_X_EP_RE
+            .captures(name)
+            .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string())),
+    }?;
+    season.parse::<i32>().ok().filter(|s| *s > 0 && *s <= 50)
+}
+
+/// The season a *show title* names — "2nd Season", "Season 2", "Part 2". `None`
+/// when the title carries no season at all, which is how AniList writes both a
+/// first season and plenty of differently-named sequels ("… R2", "Final Season"),
+/// so absence must never be read as "season 1".
+pub fn season_in_title(title: &str) -> Option<i32> {
+    TITLE_SEASON_RE.captures(title).and_then(|caps| {
+        (1..=caps.len() - 1)
+            .filter_map(|i| caps.get(i))
+            .find_map(|m| m.as_str().parse::<i32>().ok())
+            .filter(|s| *s > 0 && *s <= 50)
     })
 }
