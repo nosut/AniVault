@@ -5,6 +5,7 @@ use sqlx::Row;
 use std::sync::{Arc, Mutex};
 
 const DEFAULT_CLIENT_ID: &str = "18872";
+const ANILIST_CLIENT_SECRET_ENV: &str = "ANIVAULT_ANILIST_CLIENT_SECRET";
 const SETTING_CLIENT_ID: &str = "anilist_client_id";
 const SETTING_KEY_OAUTH_STATE: &str = "oauth_state";
 const SETTING_KEY_OAUTH_TOKEN: &str = "oauth_token";
@@ -154,23 +155,47 @@ pub async fn load_oauth_token(
 
 // ── OAuth flow ──
 
+fn token_exchange_payload_with_secret_source<F>(
+    code: &str,
+    state: &OAuthState,
+    client_id: &str,
+    secret_source: F,
+) -> anyhow::Result<serde_json::Value>
+where
+    F: FnOnce(&str) -> Option<String>,
+{
+    let client_secret = secret_source(ANILIST_CLIENT_SECRET_ENV)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} is required to complete AniList OAuth",
+                ANILIST_CLIENT_SECRET_ENV
+            )
+        })?;
+
+    Ok(serde_json::json!({
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": state.redirect_uri,
+        "code": code,
+        "code_verifier": state.code_verifier,
+    }))
+}
+
 pub async fn finish_oauth(
     storage: &crate::engine::storage::Storage,
     code: &str,
     state: &OAuthState,
     client_id: &str,
 ) -> anyhow::Result<OAuthToken> {
+    let payload = token_exchange_payload_with_secret_source(code, state, client_id, |name| {
+        std::env::var(name).ok()
+    })?;
     let client = reqwest::Client::new();
     let resp = client
         .post("https://anilist.co/api/v2/oauth/token")
-        .json(&serde_json::json!({
-            "grant_type": "authorization_code",
-            "client_id": client_id,
-            "client_secret": "",
-            "redirect_uri": state.redirect_uri,
-            "code": code,
-            "code_verifier": state.code_verifier,
-        }))
+        .json(&payload)
         .send()
         .await?;
 
@@ -306,4 +331,52 @@ fn url_decode(s: &str) -> Option<String> {
         }
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{token_exchange_payload_with_secret_source, OAuthState};
+
+    fn oauth_state() -> OAuthState {
+        OAuthState {
+            code_verifier: "test-verifier".to_string(),
+            code_challenge: "test-challenge".to_string(),
+            redirect_uri: "http://127.0.0.1:1420/callback".to_string(),
+        }
+    }
+
+    #[test]
+    fn token_exchange_payload_reads_client_secret_from_runtime_source() {
+        let mut requested_name = None;
+
+        let payload = token_exchange_payload_with_secret_source(
+            "authorization-code",
+            &oauth_state(),
+            "client-id",
+            |name| {
+                requested_name = Some(name.to_string());
+                Some("runtime-only-test-value".to_string())
+            },
+        )
+        .expect("runtime client secret should produce a token payload");
+
+        assert_eq!(requested_name.as_deref(), Some("ANIVAULT_ANILIST_CLIENT_SECRET"));
+        assert_eq!(payload["client_secret"], "runtime-only-test-value");
+    }
+
+    #[test]
+    fn token_exchange_payload_rejects_missing_runtime_client_secret() {
+        let error = token_exchange_payload_with_secret_source(
+            "authorization-code",
+            &oauth_state(),
+            "client-id",
+            |_| None,
+        )
+        .expect_err("missing runtime client secret must stop token exchange");
+
+        assert_eq!(
+            error.to_string(),
+            "ANIVAULT_ANILIST_CLIENT_SECRET is required to complete AniList OAuth"
+        );
+    }
 }
