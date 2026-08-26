@@ -18,11 +18,17 @@ pub fn is_known_player(name: &str) -> bool {
 }
 
 pub fn scan_players() -> Vec<PlayerInfo> {
-    let output = std::process::Command::new("tasklist")
-        .args(["/V", "/FO", "CSV", "/NH"])
-        .output();
+    let mut cmd = std::process::Command::new("tasklist");
+    cmd.args(["/V", "/FO", "CSV", "/NH"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
 
-    let Ok(output) = output else {
+    let Ok(output) = cmd.output() else {
         return Vec::new();
     };
 
