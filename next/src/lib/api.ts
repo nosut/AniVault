@@ -72,6 +72,42 @@ export interface ImportReport {
   skipped: number;
 }
 
+export interface LibraryEntry {
+  anime_id: number;
+  title: string;
+  status: string;
+  watched_episodes: number;
+  episode_count: number | null;
+  score: number | null;
+  image_url: string | null;
+}
+
+export interface LibraryStats {
+  total: number;
+  watching: number;
+  completed: number;
+  on_hold: number;
+  dropped: number;
+  plan_to_watch: number;
+}
+
+export interface AnimeDetail {
+  anime_id: number;
+  titles_json: string;
+  episode_count: number | null;
+  image_url: string | null;
+  synopsis: string | null;
+  anime_status: string | null;
+  last_modified: number;
+  list_status: string | null;
+  watched_episodes: number | null;
+  score: number | null;
+  notes: string | null;
+  local_updated: number | null;
+  remote_updated: number | null;
+  tracker_id: string | null;
+}
+
 export interface PlaybackDetectedEvent {
   PlaybackDetected: {
     player_name: string;
@@ -215,4 +251,20 @@ export function importAniListLibrary(invokeFn: InvokeFn = tauriInvoke): Promise<
 
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {
   return invokeFn<AniListSyncStatus>('get_sync_status');
+}
+
+export function searchLibrary(query: string, statusFilter: string | null, limit: number, offset: number, invokeFn: InvokeFn = tauriInvoke): Promise<LibraryEntry[]> {
+  return invokeFn<LibraryEntry[]>('search_library', { query, status_filter: statusFilter, limit, offset });
+}
+
+export function getLibraryStats(invokeFn: InvokeFn = tauriInvoke): Promise<LibraryStats> {
+  return invokeFn<LibraryStats>('get_library_stats');
+}
+
+export function fetchAnimeDetail(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<AnimeDetail | null> {
+  return invokeFn<AnimeDetail | null>('fetch_anime_detail', { anime_id: animeId });
+}
+
+export function updateListEntry(animeId: number, status: string | null, watchedEpisodes: number | null, score: number | null, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('update_list_entry', { anime_id: animeId, status, watched_episodes: watchedEpisodes, score });
 }

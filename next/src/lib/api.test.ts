@@ -4,7 +4,9 @@ import {
   deleteSetting,
   disconnectAniList,
   drainEngineEvents,
+  fetchAnimeDetail,
   getEngineStatus,
+  getLibraryStats,
   getSetting,
   getSyncStatus,
   getTrackingStatus,
@@ -14,10 +16,12 @@ import {
   listRecentHistory,
   markEpisodeWatched,
   previewMigrationReport,
+  searchLibrary,
   setSetting,
   startTracking,
   stopTracking,
   storeAniListToken,
+  updateListEntry,
 } from './api';
 
 describe('api wrappers', () => {
@@ -172,5 +176,32 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(status);
     await expect(getSyncStatus(invoke)).resolves.toEqual(status);
     expect(invoke).toHaveBeenCalledWith('get_sync_status');
+  });
+
+  it('searches library', async () => {
+    const entries = [{ anime_id: 1, title: 'Test', status: 'watching', watched_episodes: 5, episode_count: 12, score: null, image_url: null }];
+    const invoke = vi.fn().mockResolvedValue(entries);
+    await expect(searchLibrary('Test', null, 10, 0, invoke)).resolves.toEqual(entries);
+    expect(invoke).toHaveBeenCalledWith('search_library', { query: 'Test', status_filter: null, limit: 10, offset: 0 });
+  });
+
+  it('gets library stats', async () => {
+    const stats = { total: 1, watching: 1, completed: 0, on_hold: 0, dropped: 0, plan_to_watch: 0 };
+    const invoke = vi.fn().mockResolvedValue(stats);
+    await expect(getLibraryStats(invoke)).resolves.toEqual(stats);
+    expect(invoke).toHaveBeenCalledWith('get_library_stats');
+  });
+
+  it('fetches anime detail', async () => {
+    const detail = { anime_id: 1, titles_json: '{}', episode_count: 12, image_url: null, synopsis: null, anime_status: null, last_modified: 0, list_status: 'watching', watched_episodes: 5, score: null, notes: null, local_updated: 1000, remote_updated: null, tracker_id: null };
+    const invoke = vi.fn().mockResolvedValue(detail);
+    await expect(fetchAnimeDetail(1, invoke)).resolves.toEqual(detail);
+    expect(invoke).toHaveBeenCalledWith('fetch_anime_detail', { anime_id: 1 });
+  });
+
+  it('updates list entry', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    await expect(updateListEntry(1, 'completed', 12, 8, invoke)).resolves.toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith('update_list_entry', { anime_id: 1, status: 'completed', watched_episodes: 12, score: 8 });
   });
 });

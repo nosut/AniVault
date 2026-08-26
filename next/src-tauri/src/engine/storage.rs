@@ -4,6 +4,45 @@ use sqlx::{Row, SqlitePool};
 use std::str::FromStr;
 use std::time::SystemTime;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LibraryRow {
+    pub anime_id: i64,
+    pub title: String,
+    pub status: String,
+    pub watched_episodes: i32,
+    pub episode_count: Option<i32>,
+    pub score: Option<i32>,
+    pub image_url: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LibraryStats {
+    pub total: i64,
+    pub watching: i64,
+    pub completed: i64,
+    pub on_hold: i64,
+    pub dropped: i64,
+    pub plan_to_watch: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AnimeDetailRow {
+    pub anime_id: i64,
+    pub titles_json: String,
+    pub episode_count: Option<i32>,
+    pub image_url: Option<String>,
+    pub synopsis: Option<String>,
+    pub anime_status: Option<String>,
+    pub last_modified: i64,
+    pub list_status: Option<String>,
+    pub watched_episodes: Option<i32>,
+    pub score: Option<i32>,
+    pub notes: Option<String>,
+    pub local_updated: Option<i64>,
+    pub remote_updated: Option<i64>,
+    pub tracker_id: Option<String>,
+}
+
 pub struct AnimeRow {
     pub id: i64,
     pub titles_json: String,
@@ -575,6 +614,148 @@ impl Storage {
         .await?;
 
         Ok((pending, failed, blocked))
+    }
+
+    // ── M4 Library queries ────────────────────────────────────────────
+
+    pub async fn search_library(
+        &self,
+        query: &str,
+        status_filter: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> anyhow::Result<Vec<LibraryRow>> {
+        let pattern = format!("%{}%", query);
+
+        let mut sql = String::from(
+            "SELECT a.id as anime_id, json_extract(a.titles_json, '$.romaji') as title, \
+             COALESCE(le.status, 'unlisted') as status, \
+             COALESCE(le.watched_episodes, 0) as watched_episodes, \
+             a.episode_count, le.score, a.image_url \
+             FROM anime a \
+             LEFT JOIN list_entry le ON a.id = le.anime_id \
+             WHERE a.titles_json LIKE ?",
+        );
+
+        if status_filter.is_some() {
+            sql.push_str(" AND le.status = ?");
+        }
+
+        sql.push_str(" ORDER BY a.id LIMIT ? OFFSET ?");
+
+        let mut q = sqlx::query(&sql).bind(&pattern);
+
+        if let Some(filter) = status_filter {
+            q = q.bind(filter);
+        }
+
+        let rows = q.bind(limit).bind(offset).fetch_all(&self.pool).await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| LibraryRow {
+                anime_id: row.get("anime_id"),
+                title: row.get("title"),
+                status: row.get("status"),
+                watched_episodes: row.get("watched_episodes"),
+                episode_count: row.get("episode_count"),
+                score: row.get("score"),
+                image_url: row.get("image_url"),
+            })
+            .collect())
+    }
+
+    pub async fn library_stats(&self) -> anyhow::Result<LibraryStats> {
+        let row = sqlx::query(
+            "SELECT \
+             (SELECT COUNT(*) FROM anime) as total, \
+             COALESCE(SUM(CASE WHEN le.status = 'watching' THEN 1 ELSE 0 END), 0) as watching, \
+             COALESCE(SUM(CASE WHEN le.status = 'completed' THEN 1 ELSE 0 END), 0) as completed, \
+             COALESCE(SUM(CASE WHEN le.status = 'on_hold' THEN 1 ELSE 0 END), 0) as on_hold, \
+             COALESCE(SUM(CASE WHEN le.status = 'dropped' THEN 1 ELSE 0 END), 0) as dropped, \
+             COALESCE(SUM(CASE WHEN le.status = 'plan_to_watch' THEN 1 ELSE 0 END), 0) as plan_to_watch \
+             FROM anime a \
+             LEFT JOIN list_entry le ON a.id = le.anime_id",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(LibraryStats {
+            total: row.get("total"),
+            watching: row.get("watching"),
+            completed: row.get("completed"),
+            on_hold: row.get("on_hold"),
+            dropped: row.get("dropped"),
+            plan_to_watch: row.get("plan_to_watch"),
+        })
+    }
+
+    pub async fn anime_detail(
+        &self,
+        anime_id: i64,
+    ) -> anyhow::Result<Option<AnimeDetailRow>> {
+        let row = sqlx::query(
+            "SELECT a.id as anime_id, a.titles_json, a.episode_count, a.image_url, \
+             a.synopsis, a.status as anime_status, a.last_modified, \
+             le.status as list_status, le.watched_episodes, le.score, le.notes, \
+             le.local_updated, le.remote_updated, \
+             (SELECT remote_id FROM tracker_mapping WHERE anime_id = a.id LIMIT 1) as tracker_id \
+             FROM anime a \
+             LEFT JOIN list_entry le ON a.id = le.anime_id \
+             WHERE a.id = ?1",
+        )
+        .bind(anime_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| AnimeDetailRow {
+            anime_id: r.get("anime_id"),
+            titles_json: r.get("titles_json"),
+            episode_count: r.get("episode_count"),
+            image_url: r.get("image_url"),
+            synopsis: r.get("synopsis"),
+            anime_status: r.get("anime_status"),
+            last_modified: r.get("last_modified"),
+            list_status: r.get("list_status"),
+            watched_episodes: r.get("watched_episodes"),
+            score: r.get("score"),
+            notes: r.get("notes"),
+            local_updated: r.get("local_updated"),
+            remote_updated: r.get("remote_updated"),
+            tracker_id: r.get("tracker_id"),
+        }))
+    }
+
+    pub async fn update_list_entry_partial(
+        &self,
+        anime_id: i64,
+        status: Option<&str>,
+        watched_episodes: Option<i32>,
+        score: Option<i32>,
+    ) -> anyhow::Result<()> {
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        sqlx::query(
+            "INSERT INTO list_entry (anime_id, status, watched_episodes, score, local_updated) \
+             VALUES (?1, COALESCE(?2, 'watching'), COALESCE(?3, 0), ?4, ?5) \
+             ON CONFLICT(anime_id) DO UPDATE SET \
+               status = COALESCE(?2, list_entry.status), \
+               watched_episodes = COALESCE(?3, list_entry.watched_episodes), \
+               score = COALESCE(?4, list_entry.score), \
+               local_updated = ?5",
+        )
+        .bind(anime_id)
+        .bind(status)
+        .bind(watched_episodes)
+        .bind(score)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }
 

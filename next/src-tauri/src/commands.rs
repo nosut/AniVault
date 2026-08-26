@@ -9,7 +9,7 @@ use crate::engine::events::EngineEvent;
 use crate::engine::matcher::{confirm_identification as matcher_confirm, recognize_file, RecognitionResult};
 use crate::engine::migration::MigrationReport;
 use crate::engine::runtime::EngineState;
-use crate::engine::storage::{FileIndexRow, WatchHistoryRow};
+use crate::engine::storage::{AnimeDetailRow, FileIndexRow, LibraryRow, LibraryStats, WatchHistoryRow};
 use crate::engine::tracker::run_tracking_loop;
 
 #[derive(Debug, serde::Serialize)]
@@ -243,6 +243,45 @@ pub async fn list_known_files_inner(
         .map_err(command_error)
 }
 
+// ── M4 Library commands (inner) ──────────────────────────────────────────
+
+pub async fn search_library_inner(
+    state: &EngineState,
+    query: String,
+    status_filter: Option<String>,
+    limit: i32,
+    offset: i32,
+) -> anyhow::Result<Vec<LibraryRow>> {
+    state
+        .storage
+        .search_library(&query, status_filter.as_deref(), limit as i64, offset as i64)
+        .await
+}
+
+pub async fn get_library_stats_inner(state: &EngineState) -> anyhow::Result<LibraryStats> {
+    state.storage.library_stats().await
+}
+
+pub async fn fetch_anime_detail_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<Option<AnimeDetailRow>> {
+    state.storage.anime_detail(anime_id).await
+}
+
+pub async fn update_list_entry_inner(
+    state: &EngineState,
+    anime_id: i64,
+    status: Option<String>,
+    watched_episodes: Option<i32>,
+    score: Option<i32>,
+) -> anyhow::Result<()> {
+    state
+        .storage
+        .update_list_entry_partial(anime_id, status.as_deref(), watched_episodes, score)
+        .await
+}
+
 // Tauri command wrappers
 
 #[tauri::command]
@@ -389,6 +428,53 @@ pub async fn get_sync_status(
     state: tauri::State<'_, EngineState>,
 ) -> Result<SyncStatus, String> {
     get_sync_status_inner(&state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ── M4 Library command wrappers ─────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn search_library(
+    state: tauri::State<'_, EngineState>,
+    query: String,
+    status_filter: Option<String>,
+    limit: i32,
+    offset: i32,
+) -> Result<Vec<LibraryRow>, String> {
+    search_library_inner(&state, query, status_filter, limit, offset)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_library_stats(
+    state: tauri::State<'_, EngineState>,
+) -> Result<LibraryStats, String> {
+    get_library_stats_inner(&state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn fetch_anime_detail(
+    state: tauri::State<'_, EngineState>,
+    anime_id: i64,
+) -> Result<Option<AnimeDetailRow>, String> {
+    fetch_anime_detail_inner(&state, anime_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_list_entry(
+    state: tauri::State<'_, EngineState>,
+    anime_id: i64,
+    status: Option<String>,
+    watched_episodes: Option<i32>,
+    score: Option<i32>,
+) -> Result<(), String> {
+    update_list_entry_inner(&state, anime_id, status, watched_episodes, score)
         .await
         .map_err(|e| e.to_string())
 }

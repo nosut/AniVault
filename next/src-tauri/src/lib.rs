@@ -39,6 +39,10 @@ pub fn run() {
             commands::disconnect_anilist,
             commands::import_anilist_library,
             commands::get_sync_status,
+            commands::search_library,
+            commands::get_library_stats,
+            commands::fetch_anime_detail,
+            commands::update_list_entry,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Taiga Next");
