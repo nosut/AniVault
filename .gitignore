@@ -12,9 +12,7 @@
 /secret.*
 
 # AI / assistant workflow artifacts — not part of the project
-/docs/superpowers/
 HANDOFF.md
-CLAUDE.md
 AGENTS.md
 GEMINI.md
 .claude/
