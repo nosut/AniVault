@@ -341,3 +341,32 @@ fn parse_reports_no_season_without_a_marker() {
     let result = parse_filename("Cowboy Bebop - 05.mkv", None).expect("should parse");
     assert_eq!(result.season_number, None);
 }
+
+// 12. Seasons named in a show title. "Part N" is a split cour, not a season.
+#[test]
+fn season_in_title_ignores_split_cour_parts() {
+    use anivault_core::engine::parser::season_in_title;
+    assert_eq!(season_in_title("Mushoku Tensei: Isekai Ittara Honki Dasu Part 2"), None);
+    assert_eq!(season_in_title("Shingeki no Kyojin: The Final Season Part 2"), None);
+    assert_eq!(season_in_title("Tensei shitara Slime Datta Ken 2nd Season Part 2"), Some(2));
+    assert_eq!(season_in_title("Shingeki no Kyojin Season 3 Part 2"), Some(3));
+}
+
+#[test]
+fn season_in_title_reads_roman_numerals() {
+    use anivault_core::engine::parser::season_in_title;
+    assert_eq!(season_in_title("Mushoku Tensei II: Isekai Ittara Honki Dasu"), Some(2));
+    assert_eq!(season_in_title("Overlord IV"), Some(4));
+    assert_eq!(season_in_title("Mob Psycho 100 III"), Some(3));
+    assert_eq!(season_in_title("Hyouken no Majutsushi ga Sekai wo Suberu II"), Some(2));
+}
+
+#[test]
+fn season_in_title_does_not_invent_seasons_from_other_numerals() {
+    use anivault_core::engine::parser::season_in_title;
+    assert_eq!(season_in_title("Lupin III: Part 6"), None, "Lupin III is a name");
+    assert_eq!(season_in_title("Hawaii Five"), None);
+    assert_eq!(season_in_title("Code Geass: Hangyaku no Lelouch R2"), None);
+    assert_eq!(season_in_title("Mobile Suit Gundam 00"), None);
+    assert_eq!(season_in_title("Fate/Zero"), None);
+}

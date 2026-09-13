@@ -47,11 +47,19 @@ static SEASON_X_EP_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(\d{1,2})x(\d{2,4})\b").unwrap()
 });
 
-// Season declared inside a show *title*: "2nd Season", "Season 2", "Part 2".
+// Season declared inside a show *title*: "2nd Season", "Season 2". "Part 2" is
+// deliberately absent: it is a split cour *within* a season ("Mushoku Tensei
+// Part 2" is season 1's second half), so reading it as a season promoted the
+// wrong entry.
 static TITLE_SEASON_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:(\d{1,2})(?:st|nd|rd|th)\s+season|seasons?\s+(\d{1,2})|part\s+(\d{1,2}))\b")
-        .unwrap()
+    Regex::new(r"(?i)\b(?:(\d{1,2})(?:st|nd|rd|th)\s+season|seasons?\s+(\d{1,2}))\b").unwrap()
 });
+
+// A roman-numeral sequel marker: "Overlord IV", "Mushoku Tensei II: Isekai…".
+// Uppercase and standalone, ending the title or its main part (before a colon
+// or a spaced dash), so words and names that merely contain the letters don't count.
+static TITLE_ROMAN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s(II|III|IV)(?:\s*$|\s*:|\s+-\s)").unwrap());
 
 static EPISODE_WORD_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\bepisode\s+(\d{1,4})\b").unwrap()
@@ -233,15 +241,28 @@ pub fn season_in_filename(name: &str) -> Option<i32> {
     season.parse::<i32>().ok().filter(|s| *s > 0 && *s <= 50)
 }
 
-/// The season a *show title* names — "2nd Season", "Season 2", "Part 2". `None`
-/// when the title carries no season at all, which is how AniList writes both a
-/// first season and plenty of differently-named sequels ("… R2", "Final Season"),
-/// so absence must never be read as "season 1".
+/// The season a *show title* names — "2nd Season", "Season 2", "Overlord IV".
+/// `None` when the title carries no season at all, which is how AniList writes
+/// both a first season and plenty of differently-named sequels ("… R2", "Final
+/// Season", a split cour's "Part 2"), so absence must never be read as "season 1".
 pub fn season_in_title(title: &str) -> Option<i32> {
-    TITLE_SEASON_RE.captures(title).and_then(|caps| {
+    let numbered = TITLE_SEASON_RE.captures(title).and_then(|caps| {
         (1..=caps.len() - 1)
             .filter_map(|i| caps.get(i))
             .find_map(|m| m.as_str().parse::<i32>().ok())
             .filter(|s| *s > 0 && *s <= 50)
+    });
+    numbered.or_else(|| {
+        let caps = TITLE_ROMAN_RE.captures(title)?;
+        let numeral = caps.get(1)?;
+        // "Lupin III" is the character's name, not a third season.
+        if title[..numeral.start()].trim_end().to_lowercase().ends_with("lupin") {
+            return None;
+        }
+        Some(match numeral.as_str() {
+            "II" => 2,
+            "III" => 3,
+            _ => 4,
+        })
     })
 }

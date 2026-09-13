@@ -58,15 +58,16 @@ static ROMAJI_MORPH: LazyLock<Regex> = LazyLock::new(|| {
 
 static WORD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[A-Za-z][A-Za-z'-]*").unwrap());
 
-/// `3rd Season` / `Season 2` / `2nd season` — the season marker AniList appends
-/// to romaji sequel titles, together with any separator introducing it.
+/// A trailing season marker together with any separator introducing it:
+/// `3rd Season`, `Season 2`, `(The) Final Season`, each optionally followed by a
+/// split-cour `Part N`, or a bare `Part N`.
 ///
 /// A `-` only counts as a separator when whitespace precedes it. Without that
 /// guard the closing dash of a bracketed subtitle gets eaten, turning
 /// "TSUKIMICHI -Moonlit Fantasy- Season 2" into "TSUKIMICHI -Moonlit Fantasy".
 static SEASON_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)(?:\s*:|\s+[\-–])?\s*(?:(\d+)(?:st|nd|rd|th)\s+season|season\s+(\d+))\s*$",
+        r"(?i)(?:\s*:|\s+[\-–])?\s*(?:(?:\d+(?:st|nd|rd|th)\s+season|season\s+\d+|(?:the\s+)?final\s+season)(?:\s*[:\-–]?\s*part\s+(?:\d+|[ivx]+))?|part\s+(?:\d+|[ivx]+))\s*$",
     )
     .unwrap()
 });
@@ -110,18 +111,10 @@ pub fn looks_unresolved(title: &str) -> bool {
     romaji_score(title) >= 2
 }
 
-/// The season number a title advertises, if any.
+/// The season number a title advertises, if any. Delegates to the matcher's
+/// parser so recognition and derived titles never disagree about a season.
 pub fn season_number(title: &str) -> Option<u32> {
-    if let Some(c) = SEASON_RE.captures(title) {
-        let n = c.get(1).or_else(|| c.get(2))?;
-        return n.as_str().parse().ok();
-    }
-    ROMAN_RE.captures(title).map(|c| match &c[1] {
-        "II" => 2,
-        "III" => 3,
-        "IV" => 4,
-        _ => 5,
-    })
+    crate::engine::parser::season_in_title(title).map(|s| s as u32)
 }
 
 /// The title with any trailing season marker removed, so a base name can be
@@ -259,6 +252,56 @@ mod tests {
         assert_eq!(strip_season("Gushing Over Magical Girls"), "Gushing Over Magical Girls");
         assert_eq!(strip_season("MASHLE - Season 2"), "MASHLE");
         assert_eq!(strip_season("Overlord: Season 2"), "Overlord");
+    }
+
+    #[test]
+    fn season_number_agrees_with_the_matcher() {
+        use crate::engine::parser::season_in_title;
+        for t in [
+            "Tensei shitara Slime Datta Ken Season 2 Part 2",
+            "Mushoku Tensei II: Isekai Ittara Honki Dasu",
+            "Mushoku Tensei: Isekai Ittara Honki Dasu Part 2",
+            "Sousou no Frieren 3rd Season",
+            "Lupin III: Part 6",
+        ] {
+            assert_eq!(
+                season_number(t),
+                season_in_title(t).map(|s| s as u32),
+                "disagree on {t}"
+            );
+        }
+        assert_eq!(season_number("Tensei shitara Slime Datta Ken Season 2 Part 2"), Some(2));
+    }
+
+    #[test]
+    fn strips_split_cour_and_final_season_markers() {
+        assert_eq!(
+            strip_season("That Time I Got Reincarnated as a Slime Season 2 Part 2"),
+            "That Time I Got Reincarnated as a Slime"
+        );
+        assert_eq!(
+            strip_season("Mushoku Tensei: Jobless Reincarnation Part 2"),
+            "Mushoku Tensei: Jobless Reincarnation"
+        );
+        assert_eq!(strip_season("Attack on Titan Final Season"), "Attack on Titan");
+        assert_eq!(
+            strip_season("Attack on Titan: The Final Season Part 2"),
+            "Attack on Titan"
+        );
+        assert_eq!(strip_season("Bocchi the Rock! 2nd Season Part 2"), "Bocchi the Rock!");
+        // A title that merely contains the word stays intact.
+        assert_eq!(strip_season("Part-Time Heroes"), "Part-Time Heroes");
+    }
+
+    #[test]
+    fn derives_from_a_split_cour_prequel_without_doubling_markers() {
+        assert_eq!(
+            derive_from_relation(
+                "Tensei shitara Slime Datta Ken 3rd Season",
+                "That Time I Got Reincarnated as a Slime Season 2 Part 2"
+            ),
+            Some("That Time I Got Reincarnated as a Slime Season 3".into())
+        );
     }
 
     #[test]

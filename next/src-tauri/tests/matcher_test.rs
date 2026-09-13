@@ -357,3 +357,104 @@ async fn a_weak_match_is_not_promoted_by_the_season_in_its_title() {
         result.candidates
     );
 }
+
+/// A split cour's "Part 2" is not season 2: the real second season wins.
+#[tokio::test]
+async fn a_split_cour_part_two_does_not_outrank_the_real_second_season() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Mushoku Tensei: Isekai Ittara Honki Dasu Part 2")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(2, "Mushoku Tensei II: Isekai Ittara Honki Dasu")
+        .await
+        .unwrap();
+
+    let title = "Mushoku Tensei - S02E05 - mpv";
+    let result = recognize_file(title, Some(title), &state.storage)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.candidates.first().map(|c| c.anime_id),
+        Some(2),
+        "got: {:?}",
+        result.candidates
+    );
+}
+
+/// "Final Season Part 2" names no season number, so it must not be demoted for
+/// an S04 file below an entry that explicitly says season 3.
+#[tokio::test]
+async fn final_season_part_two_is_not_demoted_for_a_season_four_file() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Shingeki no Kyojin Season 3 Part 2")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(2, "Shingeki no Kyojin: The Final Season Part 2")
+        .await
+        .unwrap();
+
+    let title = "Shingeki no Kyojin - S04E20 - mpv";
+    let result = recognize_file(title, Some(title), &state.storage)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.candidates.first().map(|c| c.anime_id),
+        Some(2),
+        "got: {:?}",
+        result.candidates
+    );
+}
+
+/// A mapped file for the same season is strong evidence only for a candidate
+/// that is plausibly the show at all; a weak word-overlap hit stays below.
+#[tokio::test]
+async fn an_indexed_file_does_not_float_a_weak_title_match_to_the_top() {
+    let state = test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Vinland Saga")
+        .await
+        .unwrap();
+    state
+        .storage
+        .insert_minimal_anime(2, "Zombieland Saga")
+        .await
+        .unwrap();
+    state
+        .storage
+        .upsert_file_index(
+            "Y:/Anime/Zombieland Saga/Season 2/Zombieland Saga - S02E05.mkv",
+            Some(2),
+            5,
+            100,
+            MappingSource::Manual,
+            1_782_769_008,
+        )
+        .await
+        .unwrap();
+
+    let title = "Vinland Saga - S02E05 - mpv";
+    let result = recognize_file(title, Some(title), &state.storage)
+        .await
+        .unwrap();
+
+    assert_eq!(result.candidates.first().map(|c| c.anime_id), Some(1), "got: {:?}", result.candidates);
+    assert_eq!(result.candidates[0].confidence, 100);
+}
+
+#[test]
+fn score_titles_json_counts_the_derived_english_title() {
+    use anivault_core::engine::matcher::score_titles_json;
+    let titles = r#"{"romaji":"Sousou no Frieren 3rd Season","english":null,"english_derived":"Frieren Season 3","synonyms":[]}"#;
+    assert_eq!(score_titles_json("Frieren Season 3", titles), 100);
+}

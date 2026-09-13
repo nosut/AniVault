@@ -11,12 +11,13 @@ pub struct RecognitionResult {
 }
 
 /// Score a query against every title variant stored in an anime row's `titles_json`
-/// (romaji, english, japanese, and synonyms). Returns the best match score 0..=100.
+/// (romaji, english, the derived English display title, japanese, and synonyms).
+/// Returns the best match score 0..=100.
 /// Shared by the real-time recognizer and the library scanner so both rank identically.
 pub fn score_titles_json(query: &str, titles_json: &str) -> u8 {
     let titles: serde_json::Value = serde_json::from_str(titles_json).unwrap_or_default();
     let mut best = 0u8;
-    for key in ["romaji", "english", "japanese"] {
+    for key in ["romaji", "english", "english_derived", "japanese"] {
         if let Some(t) = titles[key].as_str() {
             best = best.max(score_title_match(query, t));
         }
@@ -220,9 +221,10 @@ pub async fn recognize_file(
 }
 
 /// Only an exact or containment title hit (100 / 80, see `score_title_match`) may
-/// be re-ordered on the strength of a season in its *title*. A weak overlap match
-/// that happens to be some other show's "2nd Season" is not evidence, and floating
-/// it to the top would drop the real match below the auto-confirm threshold.
+/// be re-ordered on season evidence, whether a mapped file or its *title*. A weak
+/// overlap match that happens to be some other show's "2nd Season" (or has its
+/// own S02E05 on disk) is not evidence, and floating it to the top would drop the
+/// real match below the auto-confirm threshold.
 const TITLE_SEASON_MIN_CONFIDENCE: u8 = 80;
 
 /// Re-order title candidates against the season being played. Evidence, strongest
@@ -257,11 +259,13 @@ async fn rank_by_season(
     }
 
     let rank = |c: &MatchCandidate| -> i32 {
-        if mapped_here.contains(&c.anime_id) {
+        if c.confidence < TITLE_SEASON_MIN_CONFIDENCE {
+            0
+        } else if mapped_here.contains(&c.anime_id) {
             2
         } else if mapped_elsewhere.contains(&c.anime_id) {
             -2
-        } else if c.confidence >= TITLE_SEASON_MIN_CONFIDENCE {
+        } else {
             match season_in_title(&c.title) {
                 Some(s) if s == season => 1,
                 Some(_) => -1,
@@ -269,8 +273,6 @@ async fn rank_by_season(
                 // without a number. Neither confirms nor contradicts.
                 None => 0,
             }
-        } else {
-            0
         }
     };
 
