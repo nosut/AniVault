@@ -1,0 +1,36 @@
+# TODO
+
+Open items left over from the September 2026 code review. Everything else from that
+review shipped in 1.0.23.
+
+## Decisions (not bugs)
+
+- **Split `next/src-tauri/src/commands.rs`** (about 3,500 lines) by domain. A mechanical
+  refactor, best done as its own commit.
+- **Watcher rescans.** A filesystem event at a library root makes `scan_specific_dirs`
+  walk the whole tree recursively. Decide whether watcher-triggered passes should be
+  non-recursive.
+- **Quit on close.** Closing the window always goes to the tray; there is no setting to
+  quit instead.
+- **`--minimized` second launch.** The single-instance callback shows the window even
+  when the second launch passed `--minimized`; it arguably should stay hidden.
+- **Relation caching.** Relations are fetched from AniList on every detail-page open;
+  they could be cached in the database.
+- **Empty synopsis refetch.** `fetch_anime_detail_inner` calls AniList again on every
+  open when a synopsis is legitimately empty.
+
+## Manual testing for 1.0.23 (Windows)
+
+These can't be covered by unit tests.
+
+- [ ] Settings › AniList: "Retry blocked" appears when rows are blocked; the
+      expired-login notice appears (store a garbage token, then Sync Now or Import Library).
+- [ ] Settings › Tracking toggle starts and stops tracking at once and survives a
+      restart; Now Playing Start/Stop is remembered too.
+- [ ] Confirm on a low-confidence mpv/VLC match advances progress and stops re-prompting.
+- [ ] Export to file / Import from file dialogs; Backup, then Restore and restart.
+- [ ] No console window flashes at startup with launch-on-startup on.
+- [ ] A player run as administrator is detected.
+- [ ] Settings › Sonarr tag checkboxes list Sonarr's tags, save on toggle, and filter
+      the import.
+- [ ] The dashboard updates after an episode is detected, without switching views.
