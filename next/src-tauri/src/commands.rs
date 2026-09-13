@@ -425,10 +425,12 @@ pub async fn start_tracking_inner(state: &EngineState) -> Result<TrackingStatus,
     let (tx, rx) = watch::channel(false);
     ctrl.cancel_tx = Some(tx);
     ctrl.active = true;
+    ctrl.generation += 1;
+    let generation = ctrl.generation;
 
     let state_clone = state.clone();
     tokio::spawn(async move {
-        run_tracking_loop(state_clone, 2000, rx).await;
+        run_tracking_loop(state_clone, 2000, rx, generation).await;
     });
 
     Ok(TrackingStatus {
@@ -449,6 +451,20 @@ pub async fn stop_tracking_inner(state: &EngineState) -> Result<TrackingStatus, 
         active: false,
         watching: None,
     })
+}
+
+/// Persist the "Enable tracking" setting and apply it now: start or stop the
+/// tracking loop to match, so the toggle takes effect without a restart.
+pub async fn set_tracking_enabled_inner(
+    enabled: bool,
+    state: &EngineState,
+) -> Result<TrackingStatus, String> {
+    set_setting_inner("tracking.enabled", serde_json::json!(enabled), state).await?;
+    if enabled {
+        start_tracking_inner(state).await
+    } else {
+        stop_tracking_inner(state).await
+    }
 }
 
 pub async fn get_tracking_status_inner(state: &EngineState) -> Result<TrackingStatus, String> {
@@ -2254,6 +2270,14 @@ pub async fn start_tracking(
     state: tauri::State<'_, EngineState>,
 ) -> Result<TrackingStatus, String> {
     start_tracking_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn set_tracking_enabled(
+    enabled: bool,
+    state: tauri::State<'_, EngineState>,
+) -> Result<TrackingStatus, String> {
+    set_tracking_enabled_inner(enabled, &state).await
 }
 
 #[tauri::command]

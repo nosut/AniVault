@@ -87,11 +87,18 @@ fn strip_path(file_path: &str) -> &str {
 /// substring ending at the last video extension is the filename we indexed.
 fn extract_video_filename(text: &str) -> Option<String> {
     const EXTS: &[&str] = &["mkv", "mp4", "avi", "mov", "wmv", "flv", "webm", "m4v"];
-    let lower = text.to_lowercase();
+    // Match on the original bytes, ASCII case-insensitively: offsets taken from
+    // a lowercased copy drift wherever lowercasing changes a char's byte length
+    // (e.g. "İ"). The patterns are ASCII, so a match always ends on a char boundary.
+    let bytes = text.as_bytes();
     let mut best_end: Option<usize> = None;
     for ext in EXTS {
         let pat = format!(".{ext}");
-        if let Some(pos) = lower.rfind(&pat) {
+        let pat = pat.as_bytes();
+        if let Some(pos) = bytes
+            .windows(pat.len())
+            .rposition(|w| w.eq_ignore_ascii_case(pat))
+        {
             let end = pos + pat.len();
             best_end = Some(best_end.map_or(end, |b| b.max(end)));
         }
@@ -308,5 +315,46 @@ pub async fn confirm_identification(
         },
     ));
 
+    // Confirming means "this is what I am watching": record it the way a
+    // confident automatic match would. Without this a window-title confirm
+    // (which writes no mapping) recorded nothing and the same low-confidence
+    // candidates came straight back on the next tick.
+    if episode > 0 {
+        let path = looks_like_path(file_path).then_some(file_path);
+        crate::engine::session::record_progress(state, anime_id, episode, None, path, "confirmed")
+            .await;
+    }
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_video_filename_slices_on_char_boundaries_of_the_original() {
+        // "İ" lowercases to two chars (3 bytes vs 2), so offsets found in the
+        // lowercased string do not line up with the original.
+        assert_eq!(
+            extract_video_filename("İİ Show - 01.mkv - mpv").as_deref(),
+            Some("İİ Show - 01.mkv")
+        );
+        assert_eq!(
+            extract_video_filename("Show - 02.MKV - VLC media player").as_deref(),
+            Some("Show - 02.MKV")
+        );
+        assert_eq!(extract_video_filename("no video here"), None);
+    }
+
+    #[test]
+    fn extract_video_filename_does_not_panic_on_multibyte_case_changes() {
+        // Kelvin sign lowercases from 3 bytes to 1: a lowercased offset can land
+        // mid-character in the original and panic when slicing.
+        let _ = extract_video_filename("\u{212A}\u{212A}\u{212A}\u{212A} x.mp4 \u{212A}");
+        assert_eq!(
+            extract_video_filename("\u{212A}ino - 03.mp4 - mpv").as_deref(),
+            Some("\u{212A}ino - 03.mp4")
+        );
+    }
 }

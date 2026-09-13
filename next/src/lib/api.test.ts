@@ -51,6 +51,7 @@ import {
   setKnownFileMappings,
   setLaunchOnStartup,
   setSetting,
+  setTrackingEnabled,
   startTracking,
   stopTracking,
   storeAniListToken,
@@ -243,6 +244,13 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(status);
     await expect(stopTracking(invoke)).resolves.toEqual(status);
     expect(invoke).toHaveBeenCalledWith('stop_tracking');
+  });
+
+  it('persists and applies the tracking toggle in one call', async () => {
+    const status = { active: false, watching: null };
+    const invoke = vi.fn().mockResolvedValue(status);
+    await expect(setTrackingEnabled(false, invoke)).resolves.toEqual(status);
+    expect(invoke).toHaveBeenCalledWith('set_tracking_enabled', { enabled: false });
   });
 
   it('marks episode watched', async () => {

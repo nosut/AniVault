@@ -2,11 +2,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::LPARAM;
+use windows::core::PWSTR;
 use windows::Win32::System::ProcessStatus::K32EnumProcesses;
-use windows::Win32::System::ProcessStatus::K32GetModuleFileNameExW;
 use windows::Win32::System::Threading::OpenProcess;
-use windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION;
-use windows::Win32::System::Threading::PROCESS_VM_READ;
+use windows::Win32::System::Threading::QueryFullProcessImageNameW;
+use windows::Win32::System::Threading::PROCESS_NAME_WIN32;
+use windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
 use windows::Win32::UI::WindowsAndMessaging::EnumWindows;
 use windows::Win32::UI::WindowsAndMessaging::GetWindowTextLengthW;
 use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
@@ -99,6 +100,30 @@ unsafe fn get_process_window_title(target_pid: u32) -> Option<String> {
     state.title
 }
 
+/// Enumerate process ids with `enum_fn`, which fills the buffer and returns the
+/// bytes written (or `None` on failure) the way `EnumProcesses` does. That API
+/// cannot say how many processes exist: a completely full buffer may have been
+/// truncated, so grow it and ask again until there is room to spare.
+pub fn enumerate_pids_with<F>(mut enum_fn: F) -> (Vec<u32>, bool)
+where
+    F: FnMut(&mut [u32]) -> Option<u32>,
+{
+    const MAX_SLOTS: usize = 1 << 20;
+    let mut slots = 1024usize;
+    loop {
+        let mut pids = vec![0u32; slots];
+        let Some(bytes) = enum_fn(&mut pids) else {
+            return (Vec::new(), false);
+        };
+        let count = (bytes as usize / std::mem::size_of::<u32>()).min(slots);
+        if count < slots || slots >= MAX_SLOTS {
+            pids.truncate(count);
+            return (pids, true);
+        }
+        slots *= 2;
+    }
+}
+
 pub fn scan_active_players(config: &ScannerConfig) -> PlayerScan {
     let known = known_process_names(config);
     if known.is_empty() {
@@ -111,48 +136,47 @@ pub fn scan_active_players(config: &ScannerConfig) -> PlayerScan {
     }
 
     let mut results: Vec<ScanResult> = Vec::new();
-    let mut pids = vec![0u32; 1024];
-    let mut bytes_returned: u32 = 0;
+    let (pids, enumerated) = enumerate_pids_with(|buf| {
+        let mut bytes_returned: u32 = 0;
+        // SAFETY: the buffer pointer and its byte size describe the same slice.
+        let ok = unsafe {
+            K32EnumProcesses(
+                buf.as_mut_ptr(),
+                std::mem::size_of_val(buf) as u32,
+                &mut bytes_returned,
+            )
+        }
+        .as_bool();
+        ok.then_some(bytes_returned)
+    });
 
-    // SAFETY: pids is sized correctly; error means no permission/view, skip.
-    let enumerated = unsafe {
-        K32EnumProcesses(
-            pids.as_mut_ptr(),
-            (pids.len() * std::mem::size_of::<u32>()) as u32,
-            &mut bytes_returned,
-        )
-    }
-    .as_bool();
-
-    let count = (bytes_returned as usize) / std::mem::size_of::<u32>();
-
-    for &pid in &pids[..count.min(pids.len())] {
+    // Reused for every process: the longest possible Win32 path.
+    let mut exe_path = vec![0u16; 32_768];
+    for &pid in &pids {
         if pid == 0 {
             continue;
         }
 
+        // Limited query rights are enough for the image name and, unlike
+        // PROCESS_VM_READ, are granted for elevated processes too, so a player
+        // run as administrator is still seen.
         // SAFETY: OpenProcess may fail for system processes; skip on failure.
-        let handle = unsafe {
-            OpenProcess(
-                PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                false,
-                pid,
-            )
-        };
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) };
         let Ok(handle) = handle else {
             continue;
         };
 
-        let mut exe_path = vec![0u16; 260];
-        // SAFETY: handle is a valid process handle; buffer is correctly sized.
-        let len = unsafe {
-            K32GetModuleFileNameExW(
-                Some(handle),
-                None,
-                &mut exe_path,
+        let mut len = exe_path.len() as u32;
+        // SAFETY: handle is a valid process handle; `len` holds the buffer size in chars.
+        let queried = unsafe {
+            QueryFullProcessImageNameW(
+                handle,
+                PROCESS_NAME_WIN32,
+                PWSTR(exe_path.as_mut_ptr()),
+                &mut len,
             )
         };
-        if len != 0 {
+        if queried.is_ok() && len != 0 {
             let len = (len as usize).min(exe_path.len());
             let name = String::from_utf16_lossy(&exe_path[..len]);
             let name_lower = name.to_lowercase();

@@ -267,53 +267,16 @@ pub async fn process_scan_result(
                     evidence: format!("auto match: {fp}"),
                 }));
 
-            let old_episode = state
-                .storage
-                .get_list_entry(anime_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|e| e.watched_episodes)
-                .unwrap_or(0);
-
-            if episode > old_episode {
-                let _ = state
-                    .storage
-                    .upsert_list_entry_progress(anime_id, "watching", episode, now)
-                    .await;
-                // Record the watch in history, mirroring the manual mark path.
-                // The `episode > old_episode` guard means this fires once per
-                // newly-watched episode, not once per scan tick.
-                let hist_path = if crate::engine::matcher::looks_like_path(fp) {
-                    Some(fp)
-                } else {
-                    None
-                };
-                let _ = state
-                    .storage
-                    .append_watch_history(
-                        anime_id,
-                        episode,
-                        hist_path,
-                        Some(result.player_name.as_str()),
-                        "auto-detect",
-                        now,
-                    )
-                    .await;
-                // Auto-complete when playback reaches the episode cap.
-                let _ = state.storage.auto_complete_if_capped(anime_id).await;
-                // Push status + progress back to AniList.
-                crate::engine::sync_worker::enqueue_anilist_sync(state, anime_id).await;
-
-                state.events.publish(EngineEvent::ProgressAdvanced {
-                    anime_id,
-                    old_episode,
-                    new_episode: episode,
-                    source: "auto-detect".to_string(),
-                });
-
-                notify_progress(state, anime_id, episode).await;
-            }
+            let hist_path = crate::engine::matcher::looks_like_path(fp).then_some(fp);
+            record_progress(
+                state,
+                anime_id,
+                episode,
+                Some(result.player_name.as_str()),
+                hist_path,
+                "auto-detect",
+            )
+            .await;
         }
     }
 
@@ -333,6 +296,61 @@ pub async fn process_scan_result(
     });
 
     Ok(session_key)
+}
+
+/// Record that `episode` of `anime_id` was watched, if it is past the current
+/// progress: list progress, a history row, auto-complete at the episode cap,
+/// the AniList sync, a `ProgressAdvanced` event and a toast. A no-op for an
+/// episode at or below the recorded progress, so repeated ticks (or a repeated
+/// confirm) write once. Returns whether progress advanced.
+pub async fn record_progress(
+    state: &EngineState,
+    anime_id: i64,
+    episode: i32,
+    player: Option<&str>,
+    path: Option<&str>,
+    source: &str,
+) -> bool {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let old_episode = state
+        .storage
+        .get_list_entry(anime_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|e| e.watched_episodes)
+        .unwrap_or(0);
+
+    if episode <= old_episode {
+        return false;
+    }
+
+    let _ = state
+        .storage
+        .upsert_list_entry_progress(anime_id, "watching", episode, now)
+        .await;
+    let _ = state
+        .storage
+        .append_watch_history(anime_id, episode, path, player, source, now)
+        .await;
+    // Auto-complete when playback reaches the episode cap.
+    let _ = state.storage.auto_complete_if_capped(anime_id).await;
+    // Push status + progress back to AniList.
+    crate::engine::sync_worker::enqueue_anilist_sync(state, anime_id).await;
+
+    state.events.publish(EngineEvent::ProgressAdvanced {
+        anime_id,
+        old_episode,
+        new_episode: episode,
+        source: source.to_string(),
+    });
+
+    notify_progress(state, anime_id, episode).await;
+    true
 }
 
 /// Show a desktop toast when playback auto-advances an episode. Respects the

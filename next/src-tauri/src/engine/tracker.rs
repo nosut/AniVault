@@ -95,11 +95,47 @@ pub(crate) async fn publish_playback_ended(state: &EngineState, ended: EndedPlay
     }
 }
 
+/// Reset tracking state when the loop that owns `generation` ends — unless a
+/// newer loop has been started since, whose state must be left alone.
+pub fn finish_tracking_loop(state: &EngineState, generation: u64) {
+    let mut ctrl = match state.tracking.lock() {
+        Ok(ctrl) => ctrl,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if ctrl.generation != generation {
+        return;
+    }
+    ctrl.active = false;
+    ctrl.watching = None;
+    ctrl.cancel_tx = None;
+}
+
+/// Runs [`finish_tracking_loop`] when dropped, so the state is reset however
+/// the loop ends — cancelled, or unwound by a panic mid-tick.
+pub struct TrackingLoopGuard {
+    state: EngineState,
+    generation: u64,
+}
+
+impl TrackingLoopGuard {
+    pub fn new(state: EngineState, generation: u64) -> Self {
+        Self { state, generation }
+    }
+}
+
+impl Drop for TrackingLoopGuard {
+    fn drop(&mut self) {
+        finish_tracking_loop(&self.state, self.generation);
+    }
+}
+
 pub async fn run_tracking_loop(
     state: EngineState,
     interval_ms: u64,
     cancel: watch::Receiver<bool>,
+    generation: u64,
 ) {
+    let _guard = TrackingLoopGuard::new(state.clone(), generation);
     let config = ScannerConfig {
         known_players: builtin_player_registry(),
     };
@@ -130,15 +166,17 @@ pub async fn run_tracking_loop(
         let observed: Observation = if let Some(result) = scan.players.first() {
             {
                 let mut ctrl = state.tracking.lock().unwrap();
-                ctrl.watching = Some(crate::engine::runtime::ActivePlaybackPub {
-                    player_name: result.player_name.clone(),
-                    file_path: result.file_path.clone(),
-                    window_title: result.window_title.clone(),
-                    episode_guess: crate::engine::session::guess_episode(
-                        result.file_path.as_deref(),
-                        result.window_title.as_deref(),
-                    ),
-                });
+                if ctrl.generation == generation {
+                    ctrl.watching = Some(crate::engine::runtime::ActivePlaybackPub {
+                        player_name: result.player_name.clone(),
+                        file_path: result.file_path.clone(),
+                        window_title: result.window_title.clone(),
+                        episode_guess: crate::engine::session::guess_episode(
+                            result.file_path.as_deref(),
+                            result.window_title.as_deref(),
+                        ),
+                    });
+                }
             } // lock dropped here
 
             match process_scan_result(&state, result.clone()).await {
@@ -153,7 +191,9 @@ pub async fn run_tracking_loop(
             }
         } else {
             let mut ctrl = state.tracking.lock().unwrap();
-            ctrl.watching = None;
+            if ctrl.generation == generation {
+                ctrl.watching = None;
+            }
             if scan.enumerated {
                 Observation::NoPlayer
             } else {
@@ -179,12 +219,9 @@ pub async fn run_tracking_loop(
 
     // Cleanup — the loop is being cancelled (app shutdown, or tracking switched
     // off in Settings). Drop the session so it cannot go stale, silently: the
-    // user turned tracking off, they did not finish an episode.
+    // user turned tracking off, they did not finish an episode. `_guard` then
+    // resets the tracking state for this generation.
     close_session_silently(&mut session);
-
-    let mut ctrl = state.tracking.lock().unwrap();
-    ctrl.active = false;
-    ctrl.watching = None;
 }
 
 #[cfg(test)]

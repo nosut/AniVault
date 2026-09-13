@@ -363,6 +363,11 @@ export function stopTracking(invokeFn: InvokeFn = tauriInvoke): Promise<Tracking
   return invokeFn<TrackingStatus>('stop_tracking');
 }
 
+/** Persist the tracking toggle and start/stop the tracking loop to match. */
+export function setTrackingEnabled(enabled: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<TrackingStatus> {
+  return invokeFn<TrackingStatus>('set_tracking_enabled', { enabled });
+}
+
 export function markEpisodeWatched(anime_id: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('mark_episode_watched', { animeId: anime_id, episode });
 }

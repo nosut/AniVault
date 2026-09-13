@@ -67,3 +67,42 @@ async fn list_known_files_after_confirmation() {
     assert_eq!(files[0].anime_id, Some(99));
     assert_eq!(files[0].episode, Some(5));
 }
+
+#[tokio::test]
+async fn confirming_a_window_title_records_progress_and_history() {
+    let state = anivault_core::engine::runtime::fresh_test_state().await;
+    state
+        .storage
+        .insert_minimal_anime(77, "Frieren")
+        .await
+        .unwrap();
+
+    // mpv/VLC report a window title, not a path.
+    anivault_core::commands::confirm_identification_inner(
+        "[SubsPlease] Frieren - 04 (1080p).mkv - mpv",
+        77,
+        4,
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let entry = state.storage.get_list_entry(77).await.unwrap().unwrap();
+    assert_eq!(entry.watched_episodes, 4);
+    assert_eq!(state.storage.watch_history_count(77, 4).await.unwrap(), 1);
+    assert!(state.events.drain().iter().any(|e| matches!(
+        e,
+        anivault_core::engine::events::EngineEvent::ProgressAdvanced { anime_id: 77, new_episode: 4, .. }
+    )));
+
+    // Confirming the same episode again does not duplicate the history row.
+    anivault_core::commands::confirm_identification_inner(
+        "[SubsPlease] Frieren - 04 (1080p).mkv - mpv",
+        77,
+        4,
+        &state,
+    )
+    .await
+    .unwrap();
+    assert_eq!(state.storage.watch_history_count(77, 4).await.unwrap(), 1);
+}

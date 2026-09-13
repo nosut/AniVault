@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getEngineStatus, getLaunchOnStartup, getStartInTray, setStartInTray, getSetting, setLaunchOnStartup, setSetting, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport, type EngineEvent } from './api';
+  import { getEngineStatus, getLaunchOnStartup, getStartInTray, setStartInTray, getSetting, setLaunchOnStartup, setSetting, setTrackingEnabled, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport, type EngineEvent } from './api';
   import {
     discoverV1Data, previewMigration, runMigration,
     backupDatabase, restoreDatabase, exportDatabase, importDatabase,
@@ -202,7 +202,7 @@
     trackingSaveState = 'saving';
     if (trackingSaveTimer) clearTimeout(trackingSaveTimer);
     try {
-      await setSetting('tracking.enabled', next);
+      await setTrackingEnabled(next);
       trackingSaveState = 'saved';
       trackingSaveTimer = setTimeout(() => (trackingSaveState = 'idle'), 1500);
     } catch (e) {

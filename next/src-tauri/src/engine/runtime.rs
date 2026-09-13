@@ -39,6 +39,10 @@ pub struct TrackingControl {
     pub active: bool,
     pub watching: Option<ActivePlaybackPub>,
     pub cancel_tx: Option<watch::Sender<bool>>,
+    /// Bumped by every start. A loop only writes tracking state while this
+    /// still matches the generation it was started with, so a stopped loop
+    /// winding down can't clobber the loop that replaced it.
+    pub generation: u64,
 }
 
 impl Default for TrackingControl {
@@ -47,6 +51,7 @@ impl Default for TrackingControl {
             active: false,
             watching: None,
             cancel_tx: None,
+            generation: 0,
         }
     }
 }

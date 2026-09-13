@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { confirmIdentification, getTrackingStatus, startTracking, stopTracking, type TrackingStatus, type EngineEvent, type PlaybackDetectedEvent } from './api';
+  import { confirmIdentification, getTrackingStatus, setTrackingEnabled, type TrackingStatus, type EngineEvent, type PlaybackDetectedEvent } from './api';
 
   export let events: EngineEvent[] = [];
   export let collapsed = false;
@@ -70,7 +70,7 @@
   async function handleStart() {
     loading = true;
     try {
-      await startTracking();
+      await setTrackingEnabled(true);
       startPolling();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -98,7 +98,7 @@
     loading = true;
     stopPolling();
     try {
-      await stopTracking();
+      await setTrackingEnabled(false);
       status = { active: false, watching: null };
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
