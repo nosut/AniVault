@@ -161,6 +161,22 @@ pub struct AniListClient {
     http: reqwest::Client,
 }
 
+/// A non-2xx response from the AniList API. Kept typed so callers can tell a
+/// rejected request (4xx) from a transient outage (5xx, 429) or a bad token.
+#[derive(Debug)]
+pub struct AniListHttpError {
+    pub status: u16,
+    pub body: String,
+}
+
+impl std::fmt::Display for AniListHttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AniList HTTP {}: {}", self.status, self.body)
+    }
+}
+
+impl std::error::Error for AniListHttpError {}
+
 impl AniListClient {
     /// Create a new client with the given access token.
     pub fn new(token: String) -> Self {
@@ -225,12 +241,10 @@ impl AniListClient {
 
         // Return error for HTTP client/server errors.
         if status.is_client_error() || status.is_server_error() {
-            let text = String::from_utf8_lossy(&bytes);
-            return Err(anyhow::anyhow!(
-                "AniList HTTP {}: {}",
-                status.as_u16(),
-                text
-            ));
+            return Err(anyhow::Error::new(AniListHttpError {
+                status: status.as_u16(),
+                body: String::from_utf8_lossy(&bytes).into_owned(),
+            }));
         }
 
         // Deserialize as Value first to check for GraphQL errors.
@@ -321,25 +335,30 @@ mutation ($mediaId: Int, $progress: Int) {
         Ok(())
     }
 
-    /// Push both list status and episode progress. `status` is a local status
+    /// Push list status, episode progress and score. `status` is a local status
     /// string (watching/completed/...); unknown/unlisted maps to null so only
-    /// progress is written.
+    /// progress is written. `score` is 0-100 (the POINT_100 scale imports use)
+    /// and is left untouched on AniList when `None`.
     pub async fn push_list_entry(
         &self,
         anime_id: i64,
         status: Option<&str>,
         progress: i32,
+        score: Option<i32>,
     ) -> anyhow::Result<()> {
         let query_str = r#"
-mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int) {
-  SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) { id status progress }
+mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: Int) {
+  SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress, scoreRaw: $scoreRaw) { id status progress }
 }
 "#;
-        let variables = serde_json::json!({
+        let mut variables = serde_json::json!({
             "mediaId": anime_id,
             "status": status.and_then(map_anilist_status),
             "progress": progress,
         });
+        if let Some(score) = score {
+            variables["scoreRaw"] = serde_json::json!(score.clamp(0, 100));
+        }
         self.query::<serde_json::Value>(query_str, variables).await?;
         Ok(())
     }

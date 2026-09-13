@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { storeAniListToken, disconnectAniList, importAniListLibrary, connectAniListOauth, getAniListConnectionStatus } from './api';
+  import { storeAniListToken, disconnectAniList, importAniListLibrary, connectAniListOauth, getAniListConnectionStatus, getAniListTokenInvalid } from './api';
 
   // OAuth state
   let clientId = '';
@@ -11,6 +11,8 @@
   // Manual token state
   let manualToken = '';
   let connected = false;
+  // AniList rejected the saved token (it expires after a year): show a reconnect prompt.
+  let tokenExpired = false;
   let statusLoading = true;
   let loading = false;
   let error: string | null = null;
@@ -20,8 +22,10 @@
     statusLoading = true;
     try {
       connected = await getAniListConnectionStatus();
+      tokenExpired = !connected && (await getAniListTokenInvalid());
     } catch {
       connected = false;
+      tokenExpired = false;
     } finally {
       statusLoading = false;
     }
@@ -42,6 +46,7 @@
       clientId = '';
       clientSecret = '';
       connected = true;
+      tokenExpired = false;
     } catch (e) {
       oauthError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -56,6 +61,7 @@
     try {
       await storeAniListToken(manualToken.trim());
       connected = true;
+      tokenExpired = false;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       connected = false;
@@ -87,6 +93,7 @@
     try {
       await disconnectAniList();
       connected = false;
+      tokenExpired = false;
       manualToken = '';
       importReport = null;
     } catch (e) {
@@ -102,6 +109,8 @@
       importReport = await importAniListLibrary();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
+      // The import may have just found the token expired.
+      await loadStatus();
     } finally {
       loading = false;
     }
@@ -118,6 +127,9 @@
   {#if statusLoading}
     <p class="checking">Checking connection…</p>
   {:else if !connected}
+    {#if tokenExpired}
+      <p class="error" role="alert">AniList rejected the saved login (tokens expire after a year). Reconnect below; queued updates will sync afterwards.</p>
+    {/if}
     {#if oauthError}
       <p class="error" role="alert">{oauthError}</p>
     {/if}

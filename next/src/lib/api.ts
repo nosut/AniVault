@@ -456,6 +456,11 @@ export function getAniListConnectionStatus(invokeFn: InvokeFn = tauriInvoke): Pr
   return invokeFn<boolean>('get_anilist_connection_status');
 }
 
+/** True when AniList rejected the saved token (expired or revoked). */
+export function getAniListTokenInvalid(invokeFn: InvokeFn = tauriInvoke): Promise<boolean> {
+  return invokeFn<boolean>('get_anilist_token_invalid');
+}
+
 export function getSessionState(invokeFn: InvokeFn = tauriInvoke): Promise<SessionState> {
   return invokeFn<SessionState>('get_session_state');
 }
@@ -713,6 +718,11 @@ export function triggerSync(invokeFn: InvokeFn = tauriInvoke): Promise<SyncResul
 
 export function getSyncStatus(invokeFn: InvokeFn = tauriInvoke): Promise<AniListSyncStatus> {
   return invokeFn<AniListSyncStatus>('get_sync_status');
+}
+
+/** Put blocked AniList sync rows back in the queue; resolves to how many were reset. */
+export function retryBlockedSync(invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('retry_blocked_sync');
 }
 
 export function searchLibrary(

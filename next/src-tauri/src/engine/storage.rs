@@ -120,6 +120,11 @@ pub struct ListEntryFullRow {
     pub remote_updated: Option<i64>,
 }
 
+/// `sync_queue.retry_count` at or above this marks a row as blocked: AniList
+/// rejected the request itself, so it is not retried until the user asks.
+/// Transient failures count up but saturate below it and never block.
+pub const SYNC_BLOCKED_RETRY_COUNT: i32 = 1_000_000;
+
 pub struct SyncQueueRow {
     pub id: i64,
     pub anime_id: i64,
@@ -1405,15 +1410,15 @@ impl Storage {
             .unwrap_or_default()
             .as_secs() as i64;
 
-        // retry_count >= 3 is "blocked" (see sync_status_counts / drain_queue):
-        // those rows are excluded here so a permanently failing push isn't
-        // retried on every worker pass forever.
+        // Blocked rows (AniList rejected the request outright, see
+        // sync_worker::handle_push_failure) are excluded until the user asks
+        // for a retry; transient failures stay here and wait out their backoff.
         let rows = sqlx::query(
             "SELECT id, anime_id, service, operation, payload_json,
                     created_at, retry_count, next_retry_at
              FROM sync_queue
              WHERE service = ?1
-               AND retry_count < 3
+               AND retry_count < ?4
                AND (next_retry_at IS NULL OR next_retry_at <= ?2)
              ORDER BY created_at ASC
              LIMIT ?3",
@@ -1421,6 +1426,7 @@ impl Storage {
         .bind(service)
         .bind(now)
         .bind(limit)
+        .bind(SYNC_BLOCKED_RETRY_COUNT)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
@@ -1444,6 +1450,52 @@ impl Storage {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// Delete every queued row for one anime: a successful push reflects the
+    /// live list entry, so older rows (blocked ones included) are settled too.
+    pub async fn delete_sync_rows_for_anime(
+        &self,
+        anime_id: i64,
+        service: &str,
+    ) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM sync_queue WHERE anime_id = ?1 AND service = ?2")
+            .bind(anime_id)
+            .bind(service)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn delete_sync_rows_for_service(&self, service: &str) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM sync_queue WHERE service = ?1")
+            .bind(service)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Put blocked rows back in the queue as if freshly enqueued. Returns how
+    /// many rows were reset.
+    pub async fn reset_blocked_sync_rows(&self, service: &str) -> anyhow::Result<u64> {
+        let result = sqlx::query(
+            "UPDATE sync_queue SET retry_count = 0, next_retry_at = NULL
+             WHERE service = ?1 AND retry_count >= ?2",
+        )
+        .bind(service)
+        .bind(SYNC_BLOCKED_RETRY_COUNT)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected())
+    }
+
+    pub async fn sync_row_next_retry_at(&self, id: i64) -> anyhow::Result<Option<i64>> {
+        let value: Option<Option<i64>> =
+            sqlx::query_scalar("SELECT next_retry_at FROM sync_queue WHERE id = ?1")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await?;
+        Ok(value.flatten())
     }
 
     pub async fn delete_tracker_mappings(&self, service: &str) -> anyhow::Result<()> {
@@ -1470,11 +1522,6 @@ impl Storage {
     }
 
     pub async fn sync_status_counts(&self, service: &str) -> anyhow::Result<(i64, i64, i64)> {
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-
         let pending: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM sync_queue WHERE service = ?1 AND retry_count = 0",
         )
@@ -1482,22 +1529,23 @@ impl Storage {
         .fetch_one(&self.pool)
         .await?;
 
+        // Failed rows are still being retried, whether due now or backing off.
         let failed: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM sync_queue
              WHERE service = ?1
                AND retry_count > 0
-               AND retry_count < 3
-               AND (next_retry_at IS NULL OR next_retry_at <= ?2)",
+               AND retry_count < ?2",
         )
         .bind(service)
-        .bind(now)
+        .bind(SYNC_BLOCKED_RETRY_COUNT)
         .fetch_one(&self.pool)
         .await?;
 
         let blocked: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM sync_queue WHERE service = ?1 AND retry_count >= 3",
+            "SELECT COUNT(*) FROM sync_queue WHERE service = ?1 AND retry_count >= ?2",
         )
         .bind(service)
+        .bind(SYNC_BLOCKED_RETRY_COUNT)
         .fetch_one(&self.pool)
         .await?;
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getSyncStatus, triggerSync, type AniListSyncStatus, type SyncResult } from './api';
+  import { getSyncStatus, retryBlockedSync, triggerSync, type AniListSyncStatus, type SyncResult } from './api';
 
   let status: AniListSyncStatus | null = null;
   let error: string | null = null;
@@ -34,6 +34,20 @@
       error = e instanceof Error ? e.message : String(e);
     } finally {
       syncing = false;
+    }
+  }
+
+  let retrying = false;
+
+  async function handleRetryBlocked() {
+    retrying = true;
+    try {
+      await retryBlockedSync();
+      await handleSyncNow();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      retrying = false;
     }
   }
 
@@ -83,6 +97,15 @@
         <dd>{status.blocked}</dd>
       </div>
     </dl>
+
+    {#if status.blocked > 0}
+      <div class="blocked-row">
+        <p class="blocked-help">AniList rejected {status.blocked === 1 ? 'one update' : `${status.blocked} updates`}. They stay queued until you retry.</p>
+        <button type="button" class="btn-refresh" on:click={handleRetryBlocked} disabled={retrying || syncing}>
+          {retrying ? 'Retrying…' : 'Retry blocked'}
+        </button>
+      </div>
+    {/if}
 
     {#if status.last_sync_at}
       <p class="last-sync">
@@ -171,6 +194,20 @@
   .error {
     color: var(--color-error);
     font-size: 0.82rem;
+  }
+
+  .blocked-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .blocked-help {
+    color: var(--color-muted);
+    font-size: 0.82rem;
+    margin: 0;
   }
 
   .sync-result {

@@ -252,6 +252,8 @@ pub fn run() {
             commands::get_sonarr_status,
             commands::get_setting,
             commands::get_sync_status,
+            commands::get_anilist_token_invalid,
+            commands::retry_blocked_sync,
             commands::get_tracking_status,
             commands::get_watch_history,
             commands::identify_file,

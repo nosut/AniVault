@@ -27,6 +27,8 @@ import {
   getSonarrAvailability,
   getSonarrStatus,
   getSyncStatus,
+  getAniListTokenInvalid,
+  retryBlockedSync,
   getTrackingStatus,
   getUpNext,
   getWatchHistory,
@@ -318,6 +320,18 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(status);
     await expect(getSyncStatus(invoke)).resolves.toEqual(status);
     expect(invoke).toHaveBeenCalledWith('get_sync_status');
+  });
+
+  it('retries blocked sync rows', async () => {
+    const invoke = vi.fn().mockResolvedValue(3);
+    await expect(retryBlockedSync(invoke)).resolves.toBe(3);
+    expect(invoke).toHaveBeenCalledWith('retry_blocked_sync');
+  });
+
+  it('asks whether the anilist token has expired', async () => {
+    const invoke = vi.fn().mockResolvedValue(true);
+    await expect(getAniListTokenInvalid(invoke)).resolves.toBe(true);
+    expect(invoke).toHaveBeenCalledWith('get_anilist_token_invalid');
   });
 
   it('searches library through invoke', async () => {

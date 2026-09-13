@@ -146,6 +146,8 @@ pub async fn connect_anilist_oauth_inner(
 pub async fn disconnect_anilist_inner(state: &EngineState) -> anyhow::Result<()> {
     auth::delete_token(&state.storage).await?;
     state.storage.delete_tracker_mappings("anilist").await?;
+    // Queued rows would push stale state to whichever account connects next.
+    state.storage.delete_sync_rows_for_service("anilist").await?;
     Ok(())
 }
 
@@ -154,11 +156,28 @@ pub async fn import_anilist_library_inner(state: &EngineState) -> anyhow::Result
         .await?
         .ok_or_else(|| anyhow::anyhow!("not connected"))?;
     let client = AniListClient::new(token);
-    import_library(&client, &state.storage).await
+    let result = import_library(&client, &state.storage).await;
+    if let Err(err) = &result {
+        if crate::engine::sync_worker::is_token_error(err) {
+            auth::mark_token_invalid(&state.storage).await?;
+            anyhow::bail!("AniList rejected the saved login. Reconnect AniList in Settings.");
+        }
+    }
+    result
 }
 
 pub async fn get_anilist_connection_status_inner(state: &EngineState) -> anyhow::Result<bool> {
     auth::is_connected(&state.storage).await
+}
+
+/// True when AniList rejected the stored token, so the UI can ask to reconnect.
+pub async fn get_anilist_token_invalid_inner(state: &EngineState) -> anyhow::Result<bool> {
+    auth::is_token_invalid(&state.storage).await
+}
+
+/// Put blocked AniList sync rows back in the queue. Returns how many were reset.
+pub async fn retry_blocked_sync_inner(state: &EngineState) -> anyhow::Result<u64> {
+    state.storage.reset_blocked_sync_rows("anilist").await
 }
 
 pub async fn get_sync_status_inner(state: &EngineState) -> anyhow::Result<SyncStatus> {
@@ -2829,6 +2848,20 @@ pub async fn get_anilist_connection_status(
     get_anilist_connection_status_inner(&state)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_anilist_token_invalid(state: tauri::State<'_, EngineState>) -> Result<bool, String> {
+    get_anilist_token_invalid_inner(&state)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn retry_blocked_sync(state: tauri::State<'_, EngineState>) -> Result<u64, String> {
+    retry_blocked_sync_inner(&state)
+        .await
+        .map_err(command_error)
 }
 
 #[tauri::command]
