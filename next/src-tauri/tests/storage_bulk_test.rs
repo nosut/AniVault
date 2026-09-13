@@ -185,3 +185,12 @@ async fn sonarr_mapping_by_anime_returns_the_most_recent_mapping() {
     let found = storage.sonarr_mapping_by_anime(42).await.unwrap().unwrap();
     assert_eq!(found.sonarr_id, 2);
 }
+
+#[tokio::test]
+async fn a_negative_known_files_limit_returns_every_row() {
+    let storage = Tests::new_in_memory().await;
+    for i in 0..7 {
+        file(&storage, &format!("D:/a/Show - {i:02}.mkv"), None, i).await;
+    }
+    assert_eq!(storage.list_known_files(-1, 0).await.unwrap().len(), 7);
+}

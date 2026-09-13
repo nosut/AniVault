@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activateOnKey } from './a11y';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { getCalendar, getLibraryStats, type CalendarEntry, type LibraryStats } from './api';
   import { episodeMarker, entryLabel, markerLabels } from './calendarUi';
@@ -228,7 +229,7 @@
               role="button"
               aria-label={entryLabel(entry, marker)}
               on:click={() => selectEntry(entry)}
-              on:keydown={(e) => e.key === 'Enter' && selectEntry(entry)}
+              on:keydown={activateOnKey(() => selectEntry(entry))}
               on:mouseenter={(e) => placeTip(entry, e.clientX, e.clientY)}
               on:mousemove={(e) => placeTip(entry, e.clientX, e.clientY)}
               on:mouseleave={hideTip}

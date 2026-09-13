@@ -163,7 +163,8 @@
         <label for="anilist-token" class="input-label">AniList Access Token</label>
         <input
           id="anilist-token"
-          type="text"
+          type="password"
+          autocomplete="off"
           placeholder="Access Token"
           bind:value={manualToken}
           disabled={loading}

@@ -301,6 +301,16 @@ export function importDatabase(json: string, invokeFn: InvokeFn = tauriInvoke): 
   return invokeFn<MigrationReport>('import_database', { json });
 }
 
+/** Save a JSON export where the user chooses. Resolves to the path, or null if cancelled. */
+export function exportDatabaseToFile(invokeFn: InvokeFn = tauriInvoke): Promise<string | null> {
+  return invokeFn<string | null>('export_database_to_file');
+}
+
+/** Import a JSON export the user picks. Resolves to the report, or null if cancelled. */
+export function importDatabaseFromFile(invokeFn: InvokeFn = tauriInvoke): Promise<MigrationReport | null> {
+  return invokeFn<MigrationReport | null>('import_database_from_file');
+}
+
 export function getSetting<T>(key: string, invokeFn: InvokeFn = tauriInvoke): Promise<T | null> {
   return invokeFn<T | null>('get_setting', { key });
 }
@@ -383,6 +393,9 @@ export function identifyFile(filePath: string, windowTitle: string | null, invok
 export function confirmIdentification(filePath: string, animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('confirm_identification', { filePath: filePath, animeId: animeId, episode });
 }
+
+/** `listKnownFiles` limit meaning "no limit" (SQLite treats a negative LIMIT as none). */
+export const ALL_KNOWN_FILES = -1;
 
 export function listKnownFiles(limit: number, invokeFn: InvokeFn = tauriInvoke): Promise<KnownFileEntry[]> {
   return invokeFn<KnownFileEntry[]>('list_known_files', { limit });
@@ -565,10 +578,6 @@ export interface WatchHistoryEntry {
   player: string | null;
   watched_at: number;
   source: string;
-}
-
-export function queueAniListSync(animeId: number, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
-  return invokeFn<void>('queue_anilist_sync', { animeId, episode });
 }
 
 export function getWatchHistory(query?: string, limit?: number, offset?: number, invokeFn: InvokeFn = tauriInvoke): Promise<WatchHistoryEntry[]> {

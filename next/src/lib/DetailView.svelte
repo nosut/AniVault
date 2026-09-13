@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activateOnKey } from './a11y';
   import { createEventDispatcher } from 'svelte';
   import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { formatBytes } from './fileSize';
@@ -865,7 +866,7 @@
                     role="button"
                     tabindex="0"
                     on:click={() => dispatch('select', { anime_id: rel.id })}
-                    on:keydown={(e) => e.key === 'Enter' && dispatch('select', { anime_id: rel.id })}
+                    on:keydown={activateOnKey(() => dispatch('select', { anime_id: rel.id }))}
                   >
                     {#if rel.image_url}<img class="relation-thumb" src={rel.image_url} alt={rel.title} loading="lazy" />{/if}
                     <div class="relation-info">

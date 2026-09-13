@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { knownFileMappingLabel, mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
+import { knownFileMappingLabel, mappedEpisode, mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
 
 describe('file mapping UI helpers', () => {
   it('shows the actual mapped title rather than the filename group', () => {
@@ -56,5 +56,17 @@ describe('file mapping UI helpers', () => {
       repairable: false,
     };
     expect(partitionMappingConflicts([manual])).toEqual({ repairable: [], protected: [manual] });
+  });
+
+  it('shifts known episode numbers by the offset, never below zero', () => {
+    expect(mappedEpisode(5, 0)).toBe(5);
+    expect(mappedEpisode(13, -12)).toBe(1);
+    expect(mappedEpisode(3, -12)).toBe(0);
+  });
+
+  it('keeps a file with no episode number unknown instead of piling it onto one episode', () => {
+    expect(mappedEpisode(null, 0)).toBe(0);
+    expect(mappedEpisode(null, -12)).toBe(0);
+    expect(mappedEpisode(null, 5)).toBe(0);
   });
 });

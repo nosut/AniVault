@@ -12,6 +12,7 @@ import {
   discoverV1Data,
   drainEngineEvents,
   exportDatabase,
+  exportDatabaseToFile,
   fetchAnimeDetail,
   FUTURE_SEASON_KEY,
   getCollection,
@@ -36,6 +37,7 @@ import {
   identifyFile,
   importAniListLibrary,
   importDatabase,
+  importDatabaseFromFile,
   importSonarrSeries,
   listKnownFiles,
   listRecentHistory,
@@ -339,6 +341,18 @@ describe('api wrappers', () => {
     const files = await getEpisodeFilesBulk([], invoke);
     expect(files.size).toBe(0);
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('exports the database to a file the user picks', async () => {
+    const invoke = vi.fn().mockResolvedValue('C:/Users/me/anivault-export.json');
+    await expect(exportDatabaseToFile(invoke)).resolves.toBe('C:/Users/me/anivault-export.json');
+    expect(invoke).toHaveBeenCalledWith('export_database_to_file');
+  });
+
+  it('imports the database from a file the user picks, null when cancelled', async () => {
+    const invoke = vi.fn().mockResolvedValue(null);
+    await expect(importDatabaseFromFile(invoke)).resolves.toBeNull();
+    expect(invoke).toHaveBeenCalledWith('import_database_from_file');
   });
 
   it('gets sync status', async () => {

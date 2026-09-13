@@ -39,7 +39,8 @@ vi.mock('./api', () => ({
   confirmIdentification: vi.fn(async () => {}),
 }));
 
-import { searchSonarrEpisode } from './api';
+import { getLibraryStats, getReadyToWatch, searchSonarrEpisode } from './api';
+import { createClassComponent } from 'svelte/legacy';
 import DashboardView from './DashboardView.svelte';
 
 async function settle() {
@@ -115,5 +116,30 @@ describe('DashboardView home layout', () => {
     expect(sectionText('missing-downloads')).toContain('Sent');
 
     await unmount(app);
+  });
+
+  it('reloads when progress advances or the library changes, not on unrelated events', async () => {
+    const app = createClassComponent({
+      component: DashboardView,
+      target: document.getElementById('app')!,
+      props: { events: [] },
+    });
+    await settle();
+    vi.mocked(getLibraryStats).mockClear();
+    vi.mocked(getReadyToWatch).mockClear();
+
+    app.$set({ events: [{ SyncQueued: { anime_id: 1, service: 'anilist' } }] as never });
+    await settle();
+    expect(getLibraryStats).not.toHaveBeenCalled();
+
+    app.$set({ events: [{ ProgressAdvanced: { anime_id: 1, old_episode: 2, new_episode: 3, source: 'auto-detect' } }] as never });
+    await settle();
+    expect(getReadyToWatch).toHaveBeenCalledTimes(1);
+
+    app.$set({ events: [{ LibraryUpdated: { indexed: 1 } }] as never });
+    await settle();
+    expect(getLibraryStats).toHaveBeenCalledTimes(2);
+
+    app.$destroy();
   });
 });

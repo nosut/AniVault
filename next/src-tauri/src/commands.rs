@@ -1538,36 +1538,6 @@ pub async fn get_anime_relations(
         .map_err(command_error)
 }
 
-// ── Sync queue helpers ───────────────────────────────────────────────────────
-
-pub async fn queue_anilist_sync_inner(
-    state: &EngineState,
-    anime_id: i64,
-    episode: i32,
-) -> anyhow::Result<()> {
-    let payload = serde_json::json!({"episode": episode, "status": "plan_to_watch"}).to_string();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
-    state
-        .storage
-        .queue_sync(anime_id, "anilist", "update", &payload, now)
-        .await?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn queue_anilist_sync(
-    anime_id: i64,
-    episode: i32,
-    state: tauri::State<'_, EngineState>,
-) -> Result<(), String> {
-    queue_anilist_sync_inner(&state, anime_id, episode)
-        .await
-        .map_err(command_error)
-}
-
 // ── Calendar ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -2535,6 +2505,64 @@ pub async fn unmap_known_files(
         .await
         .map_err(command_error)?;
     Ok(count)
+}
+
+/// Ask where to save a JSON export, then write it. Returns the saved path, or
+/// None when the user cancels the dialog.
+#[tauri::command]
+pub async fn export_database_to_file(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let default_name = format!("anivault-export-{}.json", chrono::Local::now().format("%Y-%m-%d"));
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("AniVault export", &["json"])
+        .set_file_name(&default_name)
+        .save_file(move |res| {
+            let _ = tx.send(res);
+        });
+    let Some(path) = rx
+        .await
+        .map_err(|e| e.to_string())?
+        .and_then(|fp| fp.into_path().ok())
+    else {
+        return Ok(None);
+    };
+    backup::export_database_to_path(&state.storage, &path)
+        .await
+        .map_err(command_error)?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+/// Ask for a JSON export to import, then import it. Returns the report, or
+/// None when the user cancels the dialog.
+#[tauri::command]
+pub async fn import_database_from_file(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Option<MigrationReport>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("AniVault export", &["json"])
+        .pick_file(move |res| {
+            let _ = tx.send(res);
+        });
+    let Some(path) = rx
+        .await
+        .map_err(|e| e.to_string())?
+        .and_then(|fp| fp.into_path().ok())
+    else {
+        return Ok(None);
+    };
+    backup::import_database_from_path(&state.storage, &path)
+        .await
+        .map(Some)
+        .map_err(command_error)
 }
 
 /// Show a native folder-picker dialog; returns the chosen path (or None if cancelled).

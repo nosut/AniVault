@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activateOnKey } from './a11y';
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import {
@@ -268,7 +269,7 @@
           role="button"
           aria-label={`${entry.title}, ${entry.max_downloaded_episode} downloaded`}
           on:click={() => open(entry)}
-          on:keydown={(e) => e.key === 'Enter' && open(entry)}
+          on:keydown={activateOnKey(() => open(entry))}
           on:contextmenu={(e) => openContextMenu(e, entry)}
         >
           {#if entry.image_url}

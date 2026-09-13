@@ -25,3 +25,13 @@ export function partitionMappingConflicts(conflicts: FileMappingConflict[]): {
     protected: conflicts.filter((conflict) => !conflict.repairable),
   };
 }
+
+/**
+ * The episode a file is mapped to after applying the dialog's offset. A file
+ * whose episode number is unknown stays unknown (0): defaulting it to 1 would
+ * map every such file onto the same episode.
+ */
+export function mappedEpisode(episode: number | null, offset: number): number {
+  if (episode == null) return 0;
+  return Math.max(0, episode + offset);
+}

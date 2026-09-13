@@ -3,7 +3,7 @@
   import { getEngineStatus, getLaunchOnStartup, getStartInTray, setStartInTray, getSetting, setLaunchOnStartup, setSetting, setTrackingEnabled, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport, type EngineEvent } from './api';
   import {
     discoverV1Data, previewMigration, runMigration,
-    backupDatabase, restoreDatabase, exportDatabase, importDatabase,
+    backupDatabase, restoreDatabase, exportDatabaseToFile, importDatabaseFromFile,
     type V1DataPaths, type MigrationReport,
   } from './api';
   import { getVersion } from '@tauri-apps/api/app';
@@ -14,6 +14,8 @@
   import SonarrRemap from './SonarrRemap.svelte';
   import { listSonarrSeries, type SonarrSeriesListRow } from './api';
   import { loadStartPage, saveStartPage, START_PAGE_OPTIONS } from './startPage';
+  import { DEFAULT_SONARR_WANTED_TAGS, formatWantedTags, parseWantedTags } from './sonarrUi';
+  import { deleteSetting } from './api';
 
   export let events: EngineEvent[] = [];
 
@@ -53,6 +55,10 @@
   let sonarrStatusError: string | null = null;
 
   let sonarrUrl = '';
+  // Comma-separated Sonarr tag labels that filter which series are imported.
+  let sonarrWantedTags = '';
+  let sonarrWantedTagsState: 'idle' | 'saved' = 'idle';
+  let sonarrWantedTagsError: string | null = null;
   let sonarrApiKey = '';
 
   let sonarrConnecting = false;
@@ -130,10 +136,9 @@
   let migrationRestoreError: string | null = null;
 
   let migrationExporting = false;
-  let migrationExportedJson: string | null = null;
+  let migrationExportedPath: string | null = null;
   let migrationExportError: string | null = null;
 
-  let migrationImportJson: string = '';
   let migrationImporting = false;
   let migrationImportReport: MigrationReport | null = null;
   let migrationImportError: string | null = null;
@@ -259,9 +264,32 @@
     }
   }
 
+  async function loadSonarrWantedTags() {
+    try {
+      sonarrWantedTags = formatWantedTags(await getSetting<string[]>('sonarr.wanted_tags'));
+    } catch {
+      sonarrWantedTags = '';
+    }
+  }
+
+  async function saveSonarrWantedTags() {
+    sonarrWantedTagsError = null;
+    const tags = parseWantedTags(sonarrWantedTags);
+    try {
+      if (tags) await setSetting('sonarr.wanted_tags', tags);
+      else await deleteSetting('sonarr.wanted_tags');
+      sonarrWantedTags = formatWantedTags(tags);
+      sonarrWantedTagsState = 'saved';
+      setTimeout(() => (sonarrWantedTagsState = 'idle'), 1500);
+    } catch (e) {
+      sonarrWantedTagsError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   async function loadSonarrStatus() {
     sonarrStatusLoading = true;
     sonarrStatusError = null;
+    void loadSonarrWantedTags();
     try {
       sonarrStatus = await getSonarrStatus();
     } catch (e) {
@@ -403,16 +431,15 @@
   }
 
   async function handleExport() {
-    migrationExporting = true; migrationExportError = null;
-    try { migrationExportedJson = await exportDatabase(); }
+    migrationExporting = true; migrationExportError = null; migrationExportedPath = null;
+    try { migrationExportedPath = await exportDatabaseToFile(); }
     catch (e) { migrationExportError = e instanceof Error ? e.message : String(e); }
     finally { migrationExporting = false; }
   }
 
   async function handleImport() {
-    if (!migrationImportJson.trim()) return;
     migrationImporting = true; migrationImportError = null; migrationImportReport = null;
-    try { migrationImportReport = await importDatabase(migrationImportJson); }
+    try { migrationImportReport = await importDatabaseFromFile(); }
     catch (e) { migrationImportError = e instanceof Error ? e.message : String(e); }
     finally { migrationImporting = false; }
   }
@@ -702,6 +729,28 @@
               <p class="error">{sonarrConnectionError}</p>
             {/if}
 
+            <div class="form-group">
+              <label class="form-label" for="sonarr-wanted-tags">Import only series tagged</label>
+              <div class="form-actions">
+                <input
+                  id="sonarr-wanted-tags"
+                  class="form-input"
+                  type="text"
+                  style="flex:1;"
+                  placeholder={formatWantedTags(DEFAULT_SONARR_WANTED_TAGS)}
+                  bind:value={sonarrWantedTags}
+                  on:keydown={(e) => e.key === 'Enter' && saveSonarrWantedTags()}
+                />
+                <button type="button" class="action-btn outline" on:click={saveSonarrWantedTags}>
+                  {sonarrWantedTagsState === 'saved' ? 'Saved ✓' : 'Save'}
+                </button>
+              </div>
+              <p class="hint">Comma-separated Sonarr tag labels. Leave empty to use the default ({formatWantedTags(DEFAULT_SONARR_WANTED_TAGS)}). When none of the tags exist in Sonarr, every series is imported.</p>
+              {#if sonarrWantedTagsError}
+                <p class="error">{sonarrWantedTagsError}</p>
+              {/if}
+            </div>
+
             <div class="sonarr-actions">
               <button
                 type="button"
@@ -960,31 +1009,21 @@
           <div class="section-header">
             <h3>Export & Import</h3>
           </div>
-          <p class="hint">Export your library as JSON, or import from a previous export.</p>
+          <p class="hint">Export your library to a JSON file, or import a file from a previous export.</p>
           <div class="form-actions">
             <button class="action-btn outline" on:click={handleExport} disabled={migrationExporting}>
-              {migrationExporting ? 'Exporting…' : 'Export as JSON'}
+              {migrationExporting ? 'Exporting…' : 'Export to file…'}
+            </button>
+            <button class="action-btn" on:click={handleImport} disabled={migrationImporting}>
+              {migrationImporting ? 'Importing…' : 'Import from file…'}
             </button>
           </div>
           {#if migrationExportError}
             <p class="error">{migrationExportError}</p>
           {/if}
-          {#if migrationExportedJson}
-            <details class="export-details">
-              <summary>Exported JSON ({migrationExportedJson.length} chars)</summary>
-              <pre class="export-pre">{migrationExportedJson.slice(0, 2000)}{migrationExportedJson.length > 2000 ? '...' : ''}</pre>
-            </details>
+          {#if migrationExportedPath}
+            <p class="hint">Saved to {migrationExportedPath}</p>
           {/if}
-
-          <div class="form-group" style="margin-top: 1rem;">
-            <label class="form-label" for="migration-import">Import from JSON</label>
-            <textarea id="migration-import" class="form-input" bind:value={migrationImportJson} placeholder="Paste exported JSON here" rows={3}></textarea>
-          </div>
-          <div class="form-actions">
-            <button class="action-btn" on:click={handleImport} disabled={migrationImporting || !migrationImportJson.trim()}>
-              {migrationImporting ? 'Importing…' : 'Import JSON'}
-            </button>
-          </div>
           {#if migrationImportError}
             <p class="error">{migrationImportError}</p>
           {/if}
@@ -1422,37 +1461,9 @@
     margin-bottom: 0.15rem;
   }
 
-  .export-details {
-    margin-top: 0.75rem;
-    font-size: 0.82rem;
-    color: var(--color-muted);
-  }
 
-  .export-details summary {
-    cursor: pointer;
-  }
 
-  .export-pre {
-    margin-top: 0.5rem;
-    padding: 0.6rem;
-    border: 1px solid rgba(var(--color-accent-rgb), 0.2);
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    font-family: monospace;
-    font-size: 0.72rem;
-    color: var(--color-muted);
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 16rem;
-    overflow-y: auto;
-  }
 
-  textarea.form-input {
-    resize: vertical;
-    min-height: 3.5rem;
-    font-family: monospace;
-    font-size: 0.78rem;
-  }
 
   .action-btn.outline.active {
     background: rgba(var(--color-accent-rgb), 0.28);

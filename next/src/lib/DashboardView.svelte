@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activateOnKey } from './a11y';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import {
     getLibraryStats, getContinueWatching, getReadyToWatch, getCalendar,
@@ -42,13 +43,19 @@
   let now = Math.floor(Date.now() / 1000);
   let ticker: ReturnType<typeof setInterval>;
 
-  async function load() {
-    loading = true;
+  let loadGeneration = 0;
+
+  // `quiet` refreshes in place (no skeleton flash) when an engine event arrives.
+  async function load(quiet = false) {
+    const generation = ++loadGeneration;
+    if (!quiet) loading = true;
     // Each source is independent; a failure in one leaves the others alive.
     const [statsR, contR, readyR, calR, connR, syncR, sonarrR] = await Promise.allSettled([
       getLibraryStats(), getContinueWatching(), getReadyToWatch(), getCalendar(),
       getAniListConnectionStatus(), getSyncStatus(), getSonarrStatus(),
     ]);
+    // A newer load started while this one was waiting: let it win.
+    if (generation !== loadGeneration) return;
     if (statsR.status === 'fulfilled') stats = statsR.value;
     if (contR.status === 'fulfilled') continueEntries = contR.value;
     if (readyR.status === 'fulfilled') readyEntries = readyR.value;
@@ -64,6 +71,12 @@
     ticker = setInterval(() => { now = Math.floor(Date.now() / 1000); }, 1000);
   });
   onDestroy(() => clearInterval(ticker));
+
+  // Watching an episode or a library scan changes every section; refresh then.
+  function reloadOnEngineEvents(evs: EngineEvent[]) {
+    if (evs?.some((e) => 'ProgressAdvanced' in e || 'LibraryUpdated' in e)) void load(true);
+  }
+  $: reloadOnEngineEvents(events);
 
   $: pill = syncPill(connected, syncStatus);
 
@@ -131,7 +144,7 @@
       <div class="cw-grid">
         {#each continueEntries as entry (entry.anime_id)}
           {@const label = nextEpLabel(entry)}
-          <div class="cw-card" tabindex="0" role="button" on:click={() => select(entry.anime_id)} on:keydown={(e) => e.key === 'Enter' && select(entry.anime_id)}>
+          <div class="cw-card" tabindex="0" role="button" on:click={() => select(entry.anime_id)} on:keydown={activateOnKey(() => select(entry.anime_id))}>
             {#if entry.image_url}
               <img class="thumb" src={entry.image_url} alt={entry.anime_title} loading="lazy" />
             {:else}
@@ -188,7 +201,7 @@
       {:else}
         <div class="ready-grid">
           {#each readyEntries as entry (entry.anime_id)}
-            <div class="ready-card" tabindex="0" role="button" on:click={() => select(entry.anime_id)} on:keydown={(e) => e.key === 'Enter' && select(entry.anime_id)}>
+            <div class="ready-card" tabindex="0" role="button" on:click={() => select(entry.anime_id)} on:keydown={activateOnKey(() => select(entry.anime_id))}>
               {#if entry.image_url}
                 <img class="thumb" src={entry.image_url} alt={entry.title} loading="lazy" />
               {:else}
@@ -222,7 +235,7 @@
               role="button"
               tabindex="0"
               on:click={() => select(entry.anime_id)}
-              on:keydown={(e) => e.key === 'Enter' && select(entry.anime_id)}
+              on:keydown={activateOnKey(() => select(entry.anime_id))}
             >
               <span class="dot missing"></span>
               <span class="missing-title">{entry.title}</span>

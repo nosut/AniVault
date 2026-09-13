@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activateOnKey } from './a11y';
   import type { SeasonAnimeEntry, FutureAnimeEntry } from './api';
   import { createEventDispatcher } from 'svelte';
 
@@ -30,7 +31,7 @@
   aria-label={entry.title}
   on:click={() => dispatch('select', { anime_id: entry.id })}
   on:contextmenu|preventDefault={() => dispatch('quickAdd', { anime_id: entry.id })}
-  on:keydown={(e) => e.key === 'Enter' && dispatch('select', { anime_id: entry.id })}
+  on:keydown={activateOnKey(() => dispatch('select', { anime_id: entry.id }))}
 >
   {#if entry.image_url}
     <img class="poster-img" src={entry.image_url} alt={entry.title} loading="lazy" />

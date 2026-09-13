@@ -3,6 +3,7 @@
   import { ChevronRight, ChevronDown } from 'lucide-svelte';
   import {
     listKnownFiles,
+    ALL_KNOWN_FILES,
     rematchUnmappedFiles,
     setKnownFileIgnored,
     deleteKnownFile,
@@ -16,7 +17,7 @@
     type KnownFileEntry,
     type EngineEvent,
   } from './api';
-  import { knownFileMappingLabel } from './fileMappingUi';
+  import { knownFileMappingLabel, mappedEpisode } from './fileMappingUi';
 
   type Filter = 'all' | 'unmapped' | 'mapped' | 'ignored';
   type MapSource = 'library' | 'anilist';
@@ -76,7 +77,7 @@
     loading = true;
     error = null;
     try {
-      entries = await listKnownFiles(5000);
+      entries = await listKnownFiles(ALL_KNOWN_FILES);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {
@@ -393,7 +394,7 @@
       const mappings = sel.map((e) => ({
         file_path: e.file_path,
         anime_id: target.anime_id,
-        episode: Math.max(0, (e.episode ?? 1) + mapOffset),
+        episode: mappedEpisode(e.episode, mapOffset),
       }));
       const n = await setKnownFileMappings(mappings);
       closeMap();

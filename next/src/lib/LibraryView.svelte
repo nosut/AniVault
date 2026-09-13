@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
@@ -734,7 +735,7 @@
             role="button"
             aria-label={`${entry.title}, ${entry.status}`}
             on:click={() => handleRowActivate(entry)}
-            on:keydown={(e) => e.key === 'Enter' && handleRowActivate(entry)}
+            on:keydown={activateOnKey(() => handleRowActivate(entry))}
             on:contextmenu={(e) => openContextMenu(e, entry)}
           >
             <div class="poster-check">

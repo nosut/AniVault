@@ -171,6 +171,22 @@ pub async fn export_database(storage: &Storage) -> anyhow::Result<String> {
     Ok(serde_json::to_string_pretty(&export)?)
 }
 
+/// Export the database as JSON to `path`.
+pub async fn export_database_to_path(storage: &Storage, path: &std::path::Path) -> anyhow::Result<()> {
+    let json = export_database(storage).await?;
+    tokio::fs::write(path, json).await?;
+    Ok(())
+}
+
+/// Import a JSON export previously written by [`export_database_to_path`].
+pub async fn import_database_from_path(
+    storage: &Storage,
+    path: &std::path::Path,
+) -> anyhow::Result<super::importer::MigrationReport> {
+    let json = tokio::fs::read_to_string(path).await?;
+    import_database(storage, &json).await
+}
+
 /// Import a database export JSON string into the current DB.
 /// Uses upsert semantics (INSERT OR REPLACE).
 pub async fn import_database(
@@ -187,12 +203,16 @@ pub async fn import_database(
 
     for anime in &export.anime {
         let ep_count = anime.episode_count.unwrap_or(0);
+        // The full upsert: the narrow one drops type, airing status and synopsis.
         storage
-            .upsert_anime(
+            .upsert_anime_full(
                 anime.id,
                 &anime.titles_json,
                 ep_count,
                 anime.image_url.as_deref(),
+                anime.synopsis.as_deref(),
+                anime.anime_type.as_deref(),
+                anime.status.as_deref(),
                 anime.last_modified,
             )
             .await?;
@@ -279,6 +299,36 @@ mod tests {
 
         let history = storage2.list_recent_watch_history(10).await.unwrap();
         assert_eq!(history.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn export_to_a_file_and_import_it_keeps_every_anime_field() {
+        let storage = Tests::new_in_memory().await;
+        let titles = serde_json::json!({"romaji": "Test", "english": null, "japanese": null, "synonyms": []}).to_string();
+        storage
+            .upsert_anime_full(1, &titles, 12, Some("img"), Some("A synopsis."), Some("TV"), Some("FINISHED"), 1000)
+            .await
+            .unwrap();
+        storage.upsert_list_entry_full(1, "completed", 12, Some(90), "", 2000, 0).await.unwrap();
+
+        let path = std::env::temp_dir().join(format!(
+            "anivault-test-export-{}.json",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        export_database_to_path(&storage, &path).await.unwrap();
+
+        let storage2 = Tests::new_in_memory().await;
+        let report = import_database_from_path(&storage2, &path).await.unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(report.imported_anime, 1);
+        let exported = export_database(&storage2).await.unwrap();
+        let export: DatabaseExport = serde_json::from_str(&exported).unwrap();
+        let anime = &export.anime[0];
+        assert_eq!(anime.synopsis.as_deref(), Some("A synopsis."));
+        assert_eq!(anime.anime_type.as_deref(), Some("TV"));
+        assert_eq!(anime.status.as_deref(), Some("FINISHED"));
+        assert_eq!(anime.image_url.as_deref(), Some("img"));
     }
 
     #[tokio::test]
