@@ -28,6 +28,7 @@ import {
   getSetting,
   getSonarrAvailability,
   getSonarrStatus,
+  listSonarrTags,
   getSyncStatus,
   getAniListTokenInvalid,
   retryBlockedSync,
@@ -353,6 +354,13 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(null);
     await expect(importDatabaseFromFile(invoke)).resolves.toBeNull();
     expect(invoke).toHaveBeenCalledWith('import_database_from_file');
+  });
+
+  it('lists Sonarr tags for the import filter', async () => {
+    const tags = [{ id: 1, label: 'mine', series_count: 12 }];
+    const invoke = vi.fn().mockResolvedValue(tags);
+    await expect(listSonarrTags(invoke)).resolves.toEqual(tags);
+    expect(invoke).toHaveBeenCalledWith('list_sonarr_tags');
   });
 
   it('gets sync status', async () => {

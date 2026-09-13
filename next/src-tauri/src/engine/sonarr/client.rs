@@ -43,6 +43,37 @@ pub struct SonarrTag {
     pub label: String,
 }
 
+/// A tag from Sonarr's `/api/v3/tag/detail`, which also lists what uses it.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SonarrTagDetail {
+    pub id: i64,
+    pub label: String,
+    #[serde(rename = "seriesIds", default)]
+    pub series_ids: Vec<i64>,
+}
+
+/// A Sonarr tag as offered in the import filter.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SonarrTagOption {
+    pub id: i64,
+    pub label: String,
+    pub series_count: usize,
+}
+
+/// Tag options sorted by label (case-insensitive), with how many series carry each.
+pub fn tag_options(details: Vec<SonarrTagDetail>) -> Vec<SonarrTagOption> {
+    let mut options: Vec<SonarrTagOption> = details
+        .into_iter()
+        .map(|d| SonarrTagOption {
+            id: d.id,
+            series_count: d.series_ids.len(),
+            label: d.label,
+        })
+        .collect();
+    options.sort_by_key(|o| o.label.to_lowercase());
+    options
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SonarrSeasonRaw {
     #[serde(default)]
@@ -165,6 +196,20 @@ impl SonarrClient {
         }
         let body: Vec<SonarrTag> = resp.json().await?;
         Ok(body)
+    }
+
+    /// Fetch tags with the series that use them (`/api/v3/tag/detail`).
+    pub async fn fetch_tag_details(&self) -> anyhow::Result<Vec<SonarrTagDetail>> {
+        let resp = self
+            .http
+            .get(format!("{}/api/v3/tag/detail", self.url))
+            .headers(self.headers())
+            .send()
+            .await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            return Err(anyhow::anyhow!("Sonarr returned HTTP {}", resp.status()));
+        }
+        Ok(resp.json().await?)
     }
 
     /// Fetch upcoming calendar entries from Sonarr.

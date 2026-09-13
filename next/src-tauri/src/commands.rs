@@ -1905,6 +1905,24 @@ async fn sonarr_client_from_settings(
     Some(crate::engine::sonarr::client::SonarrClient::new(url, api_key))
 }
 
+/// The tags defined in Sonarr, for the import filter in Settings.
+pub async fn list_sonarr_tags_inner(
+    state: &EngineState,
+) -> anyhow::Result<Vec<crate::engine::sonarr::client::SonarrTagOption>> {
+    let client = sonarr_client_from_settings(state)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
+    let details = client.fetch_tag_details().await?;
+    Ok(crate::engine::sonarr::client::tag_options(details))
+}
+
+#[tauri::command]
+pub async fn list_sonarr_tags(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<crate::engine::sonarr::client::SonarrTagOption>, String> {
+    list_sonarr_tags_inner(&state).await.map_err(command_error)
+}
+
 pub async fn search_sonarr_episode_inner(
     state: &EngineState,
     anime_id: i64,

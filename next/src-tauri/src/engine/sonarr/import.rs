@@ -94,7 +94,10 @@ pub async fn import_sonarr_series(
         })
         .map(|t| t.id)
         .collect();
-    let raw_series: Vec<&SonarrSeriesRaw> = if wanted_ids.is_empty() {
+    let raw_series: Vec<&SonarrSeriesRaw> = if wanted_labels.is_empty() {
+        tracing::info!("No Sonarr tag filter set — importing all series");
+        all_series.iter().collect()
+    } else if wanted_ids.is_empty() {
         tracing::info!(
             "No Sonarr tags match {:?} — importing all series (set the \
              sonarr.wanted_tags setting to filter)",

@@ -61,3 +61,32 @@ async fn fetch_series_returns_error_for_nonexistent_host() {
     let client = SonarrClient::new("http://127.0.0.1:19999".into(), "bad".into());
     assert!(client.fetch_series().await.is_err());
 }
+
+#[test]
+fn tag_details_become_options_with_series_counts_sorted_by_label() {
+    use anivault_core::engine::sonarr::client::{tag_options, SonarrTagDetail};
+    let details: Vec<SonarrTagDetail> = serde_json::from_str(
+        r#"[
+            {"id": 3, "label": "mine", "seriesIds": [10, 11, 12], "delayProfileIds": []},
+            {"id": 1, "label": "1 - nosut", "seriesIds": [10]},
+            {"id": 2, "label": "Anime"}
+        ]"#,
+    )
+    .expect("tag detail deserializes, seriesIds optional");
+
+    let options = tag_options(details);
+    let summary: Vec<(i64, &str, usize)> = options
+        .iter()
+        .map(|o| (o.id, o.label.as_str(), o.series_count))
+        .collect();
+    assert_eq!(summary, vec![(1, "1 - nosut", 1), (2, "Anime", 0), (3, "mine", 3)]);
+}
+
+#[tokio::test]
+async fn listing_sonarr_tags_requires_a_connection() {
+    let state = anivault_core::engine::runtime::fresh_test_state().await;
+    let err = anivault_core::commands::list_sonarr_tags_inner(&state)
+        .await
+        .expect_err("not connected");
+    assert!(err.to_string().contains("not connected"), "{err}");
+}

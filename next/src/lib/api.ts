@@ -537,6 +537,17 @@ export function listSonarrSeries(invokeFn: InvokeFn = tauriInvoke): Promise<Sona
   return invokeFn<SonarrSeriesListRow[]>('list_sonarr_series');
 }
 
+export interface SonarrTagOption {
+  id: number;
+  label: string;
+  series_count: number;
+}
+
+/** Tags defined in Sonarr, sorted by label, with how many series carry each. */
+export function listSonarrTags(invokeFn: InvokeFn = tauriInvoke): Promise<SonarrTagOption[]> {
+  return invokeFn<SonarrTagOption[]>('list_sonarr_tags');
+}
+
 export function testSonarrConnection(url: string, apiKey: string, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('test_sonarr_connection', { url, apiKey });
 }

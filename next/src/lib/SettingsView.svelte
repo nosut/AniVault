@@ -14,8 +14,8 @@
   import SonarrRemap from './SonarrRemap.svelte';
   import { listSonarrSeries, type SonarrSeriesListRow } from './api';
   import { loadStartPage, saveStartPage, START_PAGE_OPTIONS } from './startPage';
-  import { DEFAULT_SONARR_WANTED_TAGS, formatWantedTags, parseWantedTags } from './sonarrUi';
-  import { deleteSetting } from './api';
+  import { selectedWantedTags, toggleWantedTag, wantedTagRows, type WantedTagRow } from './sonarrUi';
+  import { listSonarrTags } from './api';
 
   export let events: EngineEvent[] = [];
 
@@ -56,9 +56,11 @@
 
   let sonarrUrl = '';
   // Comma-separated Sonarr tag labels that filter which series are imported.
-  let sonarrWantedTags = '';
+  let sonarrTagRows: WantedTagRow[] = [];
+  let sonarrTagsLoading = false;
   let sonarrWantedTagsState: 'idle' | 'saved' = 'idle';
   let sonarrWantedTagsError: string | null = null;
+  let sonarrWantedTagsTimer: ReturnType<typeof setTimeout> | null = null;
   let sonarrApiKey = '';
 
   let sonarrConnecting = false;
@@ -265,23 +267,33 @@
   }
 
   async function loadSonarrWantedTags() {
+    sonarrTagsLoading = true;
+    sonarrWantedTagsError = null;
     try {
-      sonarrWantedTags = formatWantedTags(await getSetting<string[]>('sonarr.wanted_tags'));
-    } catch {
-      sonarrWantedTags = '';
+      const [tags, saved] = await Promise.all([
+        listSonarrTags(),
+        getSetting<string[]>('sonarr.wanted_tags'),
+      ]);
+      sonarrTagRows = wantedTagRows(tags, saved);
+    } catch (e) {
+      sonarrWantedTagsError = e instanceof Error ? e.message : String(e);
+    } finally {
+      sonarrTagsLoading = false;
     }
   }
 
-  async function saveSonarrWantedTags() {
+  // Saves on every toggle. Nothing checked stores [], which imports every series.
+  async function toggleSonarrTag(label: string) {
+    const previous = sonarrTagRows;
+    sonarrTagRows = toggleWantedTag(sonarrTagRows, label);
     sonarrWantedTagsError = null;
-    const tags = parseWantedTags(sonarrWantedTags);
     try {
-      if (tags) await setSetting('sonarr.wanted_tags', tags);
-      else await deleteSetting('sonarr.wanted_tags');
-      sonarrWantedTags = formatWantedTags(tags);
+      await setSetting('sonarr.wanted_tags', selectedWantedTags(sonarrTagRows));
       sonarrWantedTagsState = 'saved';
-      setTimeout(() => (sonarrWantedTagsState = 'idle'), 1500);
+      if (sonarrWantedTagsTimer) clearTimeout(sonarrWantedTagsTimer);
+      sonarrWantedTagsTimer = setTimeout(() => (sonarrWantedTagsState = 'idle'), 1500);
     } catch (e) {
+      sonarrTagRows = previous;
       sonarrWantedTagsError = e instanceof Error ? e.message : String(e);
     }
   }
@@ -289,9 +301,9 @@
   async function loadSonarrStatus() {
     sonarrStatusLoading = true;
     sonarrStatusError = null;
-    void loadSonarrWantedTags();
     try {
       sonarrStatus = await getSonarrStatus();
+      if (sonarrStatus.connected) void loadSonarrWantedTags();
     } catch (e) {
       sonarrStatusError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -729,27 +741,42 @@
               <p class="error">{sonarrConnectionError}</p>
             {/if}
 
-            <div class="form-group">
-              <label class="form-label" for="sonarr-wanted-tags">Import only series tagged</label>
-              <div class="form-actions">
-                <input
-                  id="sonarr-wanted-tags"
-                  class="form-input"
-                  type="text"
-                  style="flex:1;"
-                  placeholder={formatWantedTags(DEFAULT_SONARR_WANTED_TAGS)}
-                  bind:value={sonarrWantedTags}
-                  on:keydown={(e) => e.key === 'Enter' && saveSonarrWantedTags()}
-                />
-                <button type="button" class="action-btn outline" on:click={saveSonarrWantedTags}>
-                  {sonarrWantedTagsState === 'saved' ? 'Saved ✓' : 'Save'}
-                </button>
-              </div>
-              <p class="hint">Comma-separated Sonarr tag labels. Leave empty to use the default ({formatWantedTags(DEFAULT_SONARR_WANTED_TAGS)}). When none of the tags exist in Sonarr, every series is imported.</p>
-              {#if sonarrWantedTagsError}
-                <p class="error">{sonarrWantedTagsError}</p>
+            <fieldset class="form-group tag-filter">
+              <legend class="form-label">
+                Import only series tagged
+                {#if sonarrWantedTagsState === 'saved'}<span class="save-state">Saved ✓</span>{/if}
+              </legend>
+              {#if sonarrTagsLoading && sonarrTagRows.length === 0}
+                <p class="muted">Loading Sonarr tags…</p>
+              {:else if sonarrWantedTagsError && sonarrTagRows.length === 0}
+                <div class="error-row">
+                  <p class="error">Could not load Sonarr tags: {sonarrWantedTagsError}</p>
+                  <button type="button" class="btn-retry" on:click={loadSonarrWantedTags}>Retry</button>
+                </div>
+              {:else if sonarrTagRows.length === 0}
+                <p class="muted">This Sonarr has no tags, so every series is imported.</p>
+              {:else}
+                <ul class="tag-list">
+                  {#each sonarrTagRows as row (row.label)}
+                    <li>
+                      <label class="tag-option" class:missing={row.missing}>
+                        <input type="checkbox" checked={row.checked} on:change={() => toggleSonarrTag(row.label)} />
+                        <span class="tag-label">{row.label}</span>
+                        {#if row.missing}
+                          <span class="tag-count">not found in Sonarr</span>
+                        {:else}
+                          <span class="tag-count">{row.seriesCount} series</span>
+                        {/if}
+                      </label>
+                    </li>
+                  {/each}
+                </ul>
+                {#if sonarrWantedTagsError}
+                  <p class="error">{sonarrWantedTagsError}</p>
+                {/if}
               {/if}
-            </div>
+              <p class="hint">Only series carrying at least one checked tag are imported. With nothing checked, every series is imported.</p>
+            </fieldset>
 
             <div class="sonarr-actions">
               <button
@@ -1307,6 +1334,40 @@
   .sonarr-stat-label {
     font-size: 0.72rem;
     color: var(--color-muted);
+  }
+
+  .tag-filter {
+    border: none;
+    padding: 0;
+    margin: 0 0 0.5rem;
+  }
+
+  .tag-list {
+    list-style: none;
+    margin: 0.35rem 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.35rem 1rem;
+  }
+
+  .tag-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.88rem;
+  }
+
+  .tag-option.missing .tag-label {
+    text-decoration: line-through;
+    opacity: 0.7;
+  }
+
+  .tag-count {
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    margin-left: auto;
   }
 
   .sonarr-actions {
