@@ -125,3 +125,73 @@ async fn drain_engine_events_returns_and_clears_events() {
     assert_eq!(events.len(), 1);
     assert!(drain_engine_events_inner(&state).await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn an_empty_calendar_is_cached_when_no_source_failed() {
+    let state = test_state("calnegative").await;
+
+    let entries = get_calendar_inner(&state).await.unwrap();
+    assert!(entries.is_empty());
+
+    assert!(
+        state.storage.get_setting("calendar.cache").await.unwrap().is_some(),
+        "an empty result is cached so the next open does not hit the network again"
+    );
+}
+
+#[tokio::test]
+async fn a_fresh_empty_cache_still_falls_back_to_the_watching_list() {
+    let state = test_state("calemptyfresh").await;
+    let now = unix_now();
+    state
+        .storage
+        .set_setting(
+            "calendar.cache",
+            &serde_json::json!({ "fetched_at": now - 60, "entries": [] }).to_string(),
+            now,
+        )
+        .await
+        .unwrap();
+    state.storage.insert_minimal_anime(7, "Local Show").await.unwrap();
+    state
+        .storage
+        .upsert_list_entry_progress(7, "watching", 2, now)
+        .await
+        .unwrap();
+
+    let entries = get_calendar_inner(&state).await.unwrap();
+    assert_eq!(entries.iter().map(|e| e.anime_id).collect::<Vec<_>>(), vec![7]);
+}
+
+#[tokio::test]
+async fn backup_and_restore_round_trip_a_live_database() {
+    let state = test_state("backup").await;
+    state.storage.insert_minimal_anime(1, "Before Backup").await.unwrap();
+
+    let backup_path = anivault_core::commands::backup_database_inner(&state).await.unwrap();
+    assert!(std::path::Path::new(&backup_path).exists(), "backup at {backup_path}");
+
+    // The backup is a complete, openable database.
+    let backup = anivault_core::engine::storage::Storage::connect(
+        &anivault_core::engine::runtime::sqlite_url_for_path(std::path::Path::new(&backup_path)),
+    )
+    .await
+    .unwrap();
+    assert!(backup.fetch_anime(1).await.unwrap().is_some());
+    backup.close().await;
+
+    state.storage.insert_minimal_anime(2, "After Backup").await.unwrap();
+    anivault_core::commands::restore_database_inner(&state, backup_path.clone())
+        .await
+        .unwrap();
+
+    let db_path = state.database_path.clone();
+    let restored = anivault_core::engine::storage::Storage::connect(
+        &anivault_core::engine::runtime::sqlite_url_for_path(&db_path),
+    )
+    .await
+    .unwrap();
+    assert!(restored.fetch_anime(1).await.unwrap().is_some());
+    assert!(restored.fetch_anime(2).await.unwrap().is_none(), "restored to the backup");
+    restored.close().await;
+}

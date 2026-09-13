@@ -68,5 +68,9 @@ async fn remap_sonarr_updates_mapping() {
 
     let updated = state.storage.sonarr_mapping_by_anime(99).await.unwrap();
     assert!(updated.is_some());
-    assert_eq!(updated.unwrap().sonarr_id, 42);
+    let updated = updated.unwrap();
+    assert_eq!(updated.sonarr_id, 42);
+    assert!(updated.user_confirmed);
+    // The Sonarr title is what the unmapped list sorts and displays by.
+    assert_eq!(updated.title_match, "Test");
 }

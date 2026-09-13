@@ -819,6 +819,16 @@ export function getEpisodeFiles(animeId: number, invokeFn: InvokeFn = tauriInvok
   return invokeFn<FileIndexEntry[]>('get_episode_files', { animeId });
 }
 
+/** Episode files for many anime in one call. Anime with no files are absent. */
+export async function getEpisodeFilesBulk(
+  animeIds: number[],
+  invokeFn: InvokeFn = tauriInvoke,
+): Promise<Map<number, FileIndexEntry[]>> {
+  if (animeIds.length === 0) return new Map();
+  const byId = await invokeFn<Record<string, FileIndexEntry[]>>('get_episode_files_bulk', { animeIds });
+  return new Map(Object.entries(byId).map(([id, files]) => [Number(id), files]));
+}
+
 export function getSeriesDiskSize(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<number> {
   return invokeFn<number>('get_series_disk_size', { animeId });
 }

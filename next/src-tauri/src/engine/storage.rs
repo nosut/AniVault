@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, SqlitePool};
@@ -250,6 +251,53 @@ pub struct SonarrAvailabilityDb {
     pub sonarr_status: Option<String>,
 }
 
+/// The title shown to the user: AniList's English title, then the derived
+/// English title, then romaji (`a` is the `anime` row). A macro rather than a
+/// const so it can be `concat!`ed into static query strings.
+macro_rules! display_title_sql {
+    () => {
+        "COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), \
+         NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), \
+         json_extract(a.titles_json, '$.romaji'))"
+    };
+}
+
+/// The database file path as `std::fs` accepts it. A `sqlite:///C:/...` URL
+/// leaves sqlx with `/C:/...`, which SQLite tolerates but Windows file APIs
+/// reject ("The specified path is invalid"), breaking backup and restore.
+fn filesystem_path(sqlite_filename: &str) -> String {
+    let bytes = sqlite_filename.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        sqlite_filename[1..].to_string()
+    } else {
+        sqlite_filename.to_string()
+    }
+}
+
+/// SQLite's default bound-parameter limit is 999 on older builds; stay well under.
+const SQL_IN_CHUNK: usize = 500;
+
+/// Escape `%`, `_` and the escape character itself for a `LIKE ... ESCAPE '\'`.
+fn escape_like(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+fn placeholders(n: usize) -> String {
+    vec!["?"; n].join(", ")
+}
+
+fn file_index_row(r: &sqlx::sqlite::SqliteRow) -> FileIndexRow {
+    FileIndexRow {
+        file_path: r.get("file_path"),
+        anime_id: r.get("anime_id"),
+        episode: r.get("episode"),
+        confidence: r.get("confidence"),
+        mapping_source: MappingSource::from_db(&r.get::<String, _>("mapping_source")),
+        indexed_at: r.get("indexed_at"),
+        ignored: r.get::<i64, _>("ignored") != 0,
+    }
+}
+
 #[derive(Clone)]
 pub struct Storage {
     pool: SqlitePool,
@@ -259,6 +307,7 @@ pub struct Storage {
 impl Storage {
     pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
         let opts = SqliteConnectOptions::from_str(database_url)?.create_if_missing(true);
+        let db_opts = opts.clone();
         // Each `sqlite::memory:` connection is a separate empty database, so an
         // in-memory pool must stay at 1 connection or queries can land on a
         // connection that never ran the migrations.
@@ -271,10 +320,7 @@ impl Storage {
             .max_connections(max_connections)
             .connect_with(opts)
             .await?;
-        let db_path = database_url
-            .strip_prefix("sqlite:")
-            .unwrap_or(database_url)
-            .to_string();
+        let db_path = filesystem_path(&db_opts.get_filename().to_string_lossy());
         Ok(Self {
             pool,
             database_path: db_path,
@@ -519,13 +565,11 @@ impl Storage {
         anime_id: i64,
     ) -> anyhow::Result<Option<(String, Option<String>, i32)>> {
         let row = sqlx::query(
-            "SELECT COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), \
-                    NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), \
-                    json_extract(a.titles_json, '$.romaji'), 'Unknown') as title, \
+            concat!("SELECT COALESCE(", display_title_sql!(), ", 'Unknown') as title, \
                     a.image_url as image_url, \
                     COALESCE(le.watched_episodes, 0) as watched_episodes \
              FROM anime a LEFT JOIN list_entry le ON a.id = le.anime_id \
-             WHERE a.id = ?1",
+             WHERE a.id = ?1"),
         )
         .bind(anime_id)
         .fetch_optional(&self.pool)
@@ -545,13 +589,13 @@ impl Storage {
         offset: i64,
     ) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
         let rows = sqlx::query(
-            "SELECT wh.id, wh.anime_id, \
-             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+            concat!("SELECT wh.id, wh.anime_id, \
+             COALESCE(", display_title_sql!(), ", 'Unknown') as anime_title, \
              wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
              FROM watch_history wh \
              LEFT JOIN anime a ON wh.anime_id = a.id \
              ORDER BY wh.watched_at DESC \
-             LIMIT ?1 OFFSET ?2",
+             LIMIT ?1 OFFSET ?2"),
         )
         .bind(limit)
         .bind(offset)
@@ -586,20 +630,20 @@ impl Storage {
         limit: i64,
         offset: i64,
     ) -> anyhow::Result<Vec<WatchHistoryFullRow>> {
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{}%", escape_like(query));
         let rows = sqlx::query(
-            "SELECT wh.id, wh.anime_id, \
-             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+            concat!("SELECT wh.id, wh.anime_id, \
+             COALESCE(", display_title_sql!(), ", 'Unknown') as anime_title, \
              wh.episode, wh.file_path, wh.player, wh.watched_at, wh.source \
              FROM watch_history wh \
              LEFT JOIN anime a ON wh.anime_id = a.id \
-             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? \
-                OR json_extract(a.titles_json, '$.english') LIKE ? \
-                OR json_extract(a.titles_json, '$.english_derived') LIKE ? \
-                OR json_extract(a.titles_json, '$.japanese') LIKE ? \
-                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?)) \
+             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? ESCAPE '\\' \
+                OR json_extract(a.titles_json, '$.english') LIKE ? ESCAPE '\\' \
+                OR json_extract(a.titles_json, '$.english_derived') LIKE ? ESCAPE '\\' \
+                OR json_extract(a.titles_json, '$.japanese') LIKE ? ESCAPE '\\' \
+                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ? ESCAPE '\\')) \
              ORDER BY wh.watched_at DESC \
-             LIMIT ? OFFSET ?",
+             LIMIT ? OFFSET ?"),
         )
         .bind(&pattern)
         .bind(&pattern)
@@ -916,6 +960,107 @@ impl Storage {
         }))
     }
 
+    /// `file_index_by_anime` for many anime in a few queries: rows grouped by
+    /// anime id, each group ordered by episode. Ids with no rows are absent.
+    pub async fn file_index_for_anime_ids(
+        &self,
+        anime_ids: &[i64],
+    ) -> anyhow::Result<HashMap<i64, Vec<FileIndexRow>>> {
+        let mut out: HashMap<i64, Vec<FileIndexRow>> = HashMap::new();
+        for chunk in anime_ids.chunks(SQL_IN_CHUNK) {
+            let sql = format!(
+                "SELECT file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored \
+                 FROM file_index WHERE anime_id IN ({}) ORDER BY anime_id, episode",
+                placeholders(chunk.len())
+            );
+            let mut q = sqlx::query(&sql);
+            for id in chunk {
+                q = q.bind(id);
+            }
+            for r in q.fetch_all(&self.pool).await? {
+                let row = file_index_row(&r);
+                if let Some(id) = row.anime_id {
+                    out.entry(id).or_default().push(row);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Distinct watched episodes per anime. Ids with no history are absent.
+    pub async fn watch_history_episodes_for(
+        &self,
+        anime_ids: &[i64],
+    ) -> anyhow::Result<HashMap<i64, Vec<i32>>> {
+        let mut out: HashMap<i64, Vec<i32>> = HashMap::new();
+        for chunk in anime_ids.chunks(SQL_IN_CHUNK) {
+            let sql = format!(
+                "SELECT DISTINCT anime_id, episode FROM watch_history WHERE anime_id IN ({})",
+                placeholders(chunk.len())
+            );
+            let mut q = sqlx::query(&sql);
+            for id in chunk {
+                q = q.bind(id);
+            }
+            for r in q.fetch_all(&self.pool).await? {
+                out.entry(r.get::<i64, _>("anime_id"))
+                    .or_default()
+                    .push(r.get::<i32, _>("episode"));
+            }
+        }
+        Ok(out)
+    }
+
+    /// List entries for many anime. Ids that are not in the list are absent.
+    pub async fn list_entries_for(
+        &self,
+        anime_ids: &[i64],
+    ) -> anyhow::Result<HashMap<i64, ListEntryRow>> {
+        let mut out = HashMap::new();
+        for chunk in anime_ids.chunks(SQL_IN_CHUNK) {
+            let sql = format!(
+                "SELECT anime_id, status, watched_episodes FROM list_entry WHERE anime_id IN ({})",
+                placeholders(chunk.len())
+            );
+            let mut q = sqlx::query(&sql);
+            for id in chunk {
+                q = q.bind(id);
+            }
+            for r in q.fetch_all(&self.pool).await? {
+                let entry = ListEntryRow {
+                    anime_id: r.get("anime_id"),
+                    status: r.get("status"),
+                    watched_episodes: r.get("watched_episodes"),
+                };
+                out.insert(entry.anime_id, entry);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every file-index row whose path starts with `dir` (LIKE metacharacters in
+    /// `dir` match literally). Lets a scan look files up in memory instead of
+    /// one query per file.
+    pub async fn file_index_rows_under(&self, dir: &str) -> anyhow::Result<Vec<FileIndexRow>> {
+        let pattern = format!("{}%", escape_like(dir));
+        let rows = sqlx::query(
+            "SELECT file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored \
+             FROM file_index WHERE file_path LIKE ?1 ESCAPE '\\'",
+        )
+        .bind(pattern)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(file_index_row).collect())
+    }
+
+    /// Write a consistent snapshot of the live database to `path` (which must
+    /// not exist yet). Unlike copying the file, this includes pages still in
+    /// the WAL and cannot catch a write half-applied.
+    pub async fn vacuum_into(&self, path: &str) -> anyhow::Result<()> {
+        sqlx::query("VACUUM INTO ?1").bind(path).execute(&self.pool).await?;
+        Ok(())
+    }
+
     pub async fn file_index_by_anime(&self, anime_id: i64) -> anyhow::Result<Vec<FileIndexRow>> {
         let rows = sqlx::query(
             "SELECT file_path, anime_id, episode, confidence, mapping_source, indexed_at, ignored FROM file_index WHERE anime_id = ?1 ORDER BY episode",
@@ -1003,22 +1148,18 @@ impl Storage {
         offset: i64,
     ) -> anyhow::Result<Vec<KnownFileRow>> {
         let rows = sqlx::query(
-            "SELECT fi.file_path,
+            concat!("SELECT fi.file_path,
                     fi.anime_id,
                     fi.episode,
                     fi.confidence,
                     fi.indexed_at,
                     fi.ignored,
                     fi.mapping_source,
-                    COALESCE(
-                      NULLIF(json_extract(a.titles_json, '$.english'), ''),
-                      NULLIF(json_extract(a.titles_json, '$.english_derived'), ''),
-                      NULLIF(json_extract(a.titles_json, '$.romaji'), '')
-                    ) AS anime_title
+                    NULLIF(", display_title_sql!(), ", '') AS anime_title
              FROM file_index fi
              LEFT JOIN anime a ON a.id = fi.anime_id
              ORDER BY fi.indexed_at DESC
-             LIMIT ?1 OFFSET ?2",
+             LIMIT ?1 OFFSET ?2"),
         )
         .bind(limit)
         .bind(offset)
@@ -1592,23 +1733,23 @@ impl Storage {
         limit: i64,
         offset: i64,
     ) -> anyhow::Result<Vec<LibraryRow>> {
-        let pattern = format!("%{}%", query);
+        let pattern = format!("%{}%", escape_like(query));
 
         let mut sql = String::from(
-            "SELECT a.id as anime_id, COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji')) as title, \
+            concat!("SELECT a.id as anime_id, ", display_title_sql!(), " as title, \
              COALESCE(le.status, 'unlisted') as status, \
              COALESCE(le.watched_episodes, 0) as watched_episodes, \
              a.episode_count, le.score, a.image_url, a.season, a.season_year, \
              a.status as airing_status \
              FROM anime a \
              LEFT JOIN list_entry le ON a.id = le.anime_id \
-             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? \
-                OR json_extract(a.titles_json, '$.english') LIKE ? \
-                OR json_extract(a.titles_json, '$.english_derived') LIKE ? \
-                OR json_extract(a.titles_json, '$.japanese') LIKE ? \
-                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ?)) \
+             WHERE (json_extract(a.titles_json, '$.romaji') LIKE ? ESCAPE '\\' \
+                OR json_extract(a.titles_json, '$.english') LIKE ? ESCAPE '\\' \
+                OR json_extract(a.titles_json, '$.english_derived') LIKE ? ESCAPE '\\' \
+                OR json_extract(a.titles_json, '$.japanese') LIKE ? ESCAPE '\\' \
+                OR EXISTS (SELECT 1 FROM json_each(a.titles_json, '$.synonyms') syn WHERE syn.value LIKE ? ESCAPE '\\')) \
              AND (le.anime_id IS NOT NULL \
-                OR EXISTS (SELECT 1 FROM file_index fi WHERE fi.anime_id = a.id AND fi.ignored = 0))",
+                OR EXISTS (SELECT 1 FROM file_index fi WHERE fi.anime_id = a.id AND fi.ignored = 0))"),
         );
 
         let use_filter = status_filter.is_some_and(|s| !s.is_empty());
@@ -2020,7 +2161,8 @@ impl Storage {
     ) -> anyhow::Result<Option<SonarrMappingDb>> {
         let row = sqlx::query(
             "SELECT id, sonarr_id, anime_id, title_match, confidence, mapped_at, user_confirmed
-             FROM sonarr_mapping WHERE anime_id = ?1",
+             FROM sonarr_mapping WHERE anime_id = ?1
+             ORDER BY mapped_at DESC, id DESC LIMIT 1",
         )
         .bind(anime_id)
         .fetch_optional(&self.pool)
@@ -2115,13 +2257,13 @@ impl Storage {
     /// for the manual-mapping UI.
     pub async fn list_sonarr_series(&self) -> anyhow::Result<Vec<SonarrSeriesListRow>> {
         let rows = sqlx::query(
-            "SELECT s.sonarr_id, s.title, s.poster_url, s.episode_count, \
+            concat!("SELECT s.sonarr_id, s.title, s.poster_url, s.episode_count, \
                     m.anime_id, m.confidence, \
-                    COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji')) as anime_title \
+                    ", display_title_sql!(), " as anime_title \
              FROM sonarr_series s \
              LEFT JOIN sonarr_mapping m ON m.sonarr_id = s.sonarr_id \
              LEFT JOIN anime a ON a.id = m.anime_id \
-             ORDER BY s.title COLLATE NOCASE",
+             ORDER BY s.title COLLATE NOCASE"),
         )
         .fetch_all(&self.pool)
         .await?;
@@ -2494,19 +2636,19 @@ impl Storage {
 
     pub async fn continue_watching(&self, limit: i64) -> anyhow::Result<Vec<ContinueWatchingRow>> {
         let rows = sqlx::query(
-            "SELECT a.id as anime_id, \
-             COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), json_extract(a.titles_json, '$.romaji'), 'Unknown') as anime_title, \
+            concat!("SELECT a.id as anime_id, \
+             COALESCE(", display_title_sql!(), ", 'Unknown') as anime_title, \
              a.image_url, \
              COALESCE(le.watched_episodes, 0) as watched_episodes, \
              a.episode_count, \
-             MAX(wh.watched_at) as last_watched_at \
-             FROM watch_history wh \
-             JOIN anime a ON wh.anime_id = a.id \
-             LEFT JOIN list_entry le ON a.id = le.anime_id \
+             COALESCE(MAX(wh.watched_at), le.local_updated) as last_watched_at \
+             FROM list_entry le \
+             JOIN anime a ON le.anime_id = a.id \
+             LEFT JOIN watch_history wh ON wh.anime_id = a.id \
              WHERE le.status = 'watching' \
              GROUP BY a.id \
              ORDER BY last_watched_at DESC \
-             LIMIT ?1"
+             LIMIT ?1")
         )
         .bind(limit)
         .fetch_all(&self.pool)

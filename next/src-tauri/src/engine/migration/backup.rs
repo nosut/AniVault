@@ -6,7 +6,7 @@ use crate::engine::storage::Storage;
 
 // ── Backup / Restore ─────────────────────────────────────────────────────────
 
-/// Copy the current database file to a timestamped backup.
+/// Snapshot the current database to a timestamped backup file.
 /// Returns the backup file path.
 pub async fn backup_database(storage: &Storage) -> anyhow::Result<String> {
     let db_path = storage.database_path().to_owned();
@@ -16,10 +16,10 @@ pub async fn backup_database(storage: &Storage) -> anyhow::Result<String> {
         .as_secs();
     let backup_path = format!("{}.backup.{}", db_path, timestamp);
 
-    // Close pool, copy, reopen (sqlx doesn't expose the file handle)
-    // For safety: copy while pool is alive by using WAL checkpoint
-    storage.wal_checkpoint().await?;
-    std::fs::copy(&db_path, &backup_path)?;
+    // VACUUM INTO writes a transactionally consistent copy through SQLite
+    // itself, so writes landing mid-backup (the tracker, the sync worker) can't
+    // produce a torn file the way copying a live WAL database can.
+    storage.vacuum_into(&backup_path).await?;
 
     Ok(backup_path)
 }
@@ -47,17 +47,39 @@ pub async fn restore_database(
         .unwrap_or_default()
         .as_secs();
     let pre_restore_path = format!("{}.pre-restore.{}", db_path, pre_restore_timestamp);
-    storage.wal_checkpoint().await?;
-    std::fs::copy(&db_path, &pre_restore_path)?;
+    storage.vacuum_into(&pre_restore_path).await?;
 
-    // Close pool, then replace DB file.
+    // Stage the backup next to the live file while the pool is still open: if
+    // this copy fails (disk full, permissions) the app keeps working.
+    let staged_path = format!("{db_path}.restoring");
+    std::fs::copy(backup_path, &staged_path)?;
+
+    // Close the pool, then swap the staged file in. `close` returns while the
+    // connections' worker threads are still releasing their file handles; a
+    // connection that finishes closing after the swap would checkpoint its WAL
+    // into the restored file, and a stale `-wal` left beside it would be
+    // replayed on the next open. So wait until the sidecars can be removed and
+    // the rename goes through.
     storage.close().await;
-
-    // Replace DB file. Remove stale WAL/SHM sidecars so leftover journal pages
-    // from the old database can't be replayed over the restored file.
-    std::fs::copy(backup_path, &db_path)?;
-    let _ = std::fs::remove_file(format!("{db_path}-wal"));
-    let _ = std::fs::remove_file(format!("{db_path}-shm"));
+    let wal_path = format!("{db_path}-wal");
+    let shm_path = format!("{db_path}-shm");
+    let mut attempts = 0;
+    loop {
+        let _ = std::fs::remove_file(&wal_path);
+        let _ = std::fs::remove_file(&shm_path);
+        let released = !std::path::Path::new(&wal_path).exists();
+        if released && std::fs::rename(&staged_path, &db_path).is_ok() {
+            break;
+        }
+        attempts += 1;
+        if attempts >= 200 {
+            anyhow::bail!(
+                "The database is still in use, so it was not replaced. The backup was staged at {}. Restart AniVault and restore again.",
+                staged_path
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
 
     Ok(format!(
         "Database restored from {}. Previous database saved to {}. Restart required.",

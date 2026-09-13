@@ -824,10 +824,24 @@ pub async fn update_list_entry_inner(
     score: Option<i32>,
     state: &EngineState,
 ) -> anyhow::Result<()> {
+    let old_progress = state
+        .storage
+        .get_list_entry(anime_id)
+        .await?
+        .map(|e| e.watched_episodes)
+        .unwrap_or(0);
     state
         .storage
         .update_list_entry_partial(anime_id, status.as_deref(), watched_episodes, score)
         .await?;
+    // A manual +1 is a watch like any other: record it so Continue Watching,
+    // Ready to Watch and History see it, the same as mark_episode_watched does.
+    if let Some(new_progress) = watched_episodes.filter(|p| *p > old_progress) {
+        state
+            .storage
+            .append_watch_history(anime_id, new_progress, None, None, "manual", unix_now_inner()?)
+            .await?;
+    }
     // When progress advances to the episode cap (and the caller didn't set an
     // explicit status), auto-move the show to "completed".
     if status.is_none() && watched_episodes.is_some() {
@@ -937,6 +951,15 @@ pub async fn get_episode_files_inner(
     anime_id: i64,
 ) -> anyhow::Result<Vec<FileIndexRow>> {
     state.storage.file_index_by_anime(anime_id).await
+}
+
+/// Episode files for many anime at once, keyed by anime id (ids with no files
+/// are absent). Replaces one `get_episode_files` call per library row.
+pub async fn get_episode_files_bulk_inner(
+    state: &EngineState,
+    anime_ids: Vec<i64>,
+) -> anyhow::Result<std::collections::HashMap<i64, Vec<FileIndexRow>>> {
+    state.storage.file_index_for_anime_ids(&anime_ids).await
 }
 
 pub async fn open_episode_file_inner(path: String) -> anyhow::Result<()> {
@@ -1104,12 +1127,19 @@ pub async fn remap_sonarr_inner(
 ) -> anyhow::Result<()> {
     let now = unix_now().map_err(|e| anyhow::anyhow!(e))?;
 
-    // Update existing mapping or insert new
+    // Update existing mapping or insert new. `title_match` holds the Sonarr
+    // title the unmapped list sorts and displays by, so keep it.
+    let title_match = state
+        .storage
+        .sonarr_mapping_by_sonarr_id(sonarr_id)
+        .await?
+        .map(|m| m.title_match)
+        .unwrap_or_else(|| "manual".into());
     let mapping = crate::engine::storage::SonarrMappingDb {
         id: None,
         sonarr_id,
         anime_id,
-        title_match: "manual".into(),
+        title_match,
         confidence: if anime_id.is_some() { 100 } else { 0 },
         mapped_at: now,
         user_confirmed: true,
@@ -1600,28 +1630,26 @@ async fn attach_local_status(state: &EngineState, entries: &mut [CalendarEntry])
         .filter(|e| e.next_episode.is_some())
         .map(|e| e.anime_id)
         .collect();
+    let ids: Vec<i64> = marker_ids.into_iter().collect();
     let mut have: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
     let mut history: std::collections::HashSet<(i64, i32)> = std::collections::HashSet::new();
     let mut progress: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
-    for id in marker_ids {
-        if let Ok(rows) = state.storage.file_index_by_anime(id).await {
-            for row in rows {
-                if row.ignored {
-                    continue;
-                }
+    if let Ok(files) = state.storage.file_index_for_anime_ids(&ids).await {
+        for (id, rows) in files {
+            for row in rows.iter().filter(|r| !r.ignored) {
                 if let Some(ep) = row.episode {
                     have.insert((id, ep));
                 }
             }
         }
-        if let Ok(eps) = state.storage.watch_history_episodes(id).await {
-            for ep in eps {
-                history.insert((id, ep));
-            }
+    }
+    if let Ok(watched) = state.storage.watch_history_episodes_for(&ids).await {
+        for (id, eps) in watched {
+            history.extend(eps.into_iter().map(|ep| (id, ep)));
         }
-        if let Ok(Some(entry)) = state.storage.get_list_entry(id).await {
-            progress.insert(id, entry.watched_episodes);
-        }
+    }
+    if let Ok(entries) = state.storage.list_entries_for(&ids).await {
+        progress.extend(entries.into_iter().map(|(id, e)| (id, e.watched_episodes)));
     }
     apply_has_file(entries, &have);
     apply_watched(entries, &history, &progress);
@@ -1667,10 +1695,16 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
         if now - c.fetched_at < CALENDAR_CACHE_TTL_SECS {
             let mut entries = c.entries.clone();
             refresh_time_until_airing(&mut entries, now);
+            if entries.is_empty() {
+                entries = local_watching_calendar(state).await?;
+            }
             attach_local_status(state, &mut entries).await;
             return Ok(entries);
         }
     }
+    // Set when a configured source failed, so an empty result is not cached as
+    // if nothing were airing.
+    let mut source_failed = false;
 
     // Universe of the airing calendar: the shows you're watching or plan to watch.
     let calendar_ids: Vec<i64> = state.storage.calendar_anime_ids().await.unwrap_or_default();
@@ -1723,7 +1757,10 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                         anilist_covered.len()
                     );
                 }
-                Err(e) => tracing::warn!("AniList calendar failed: {}, relying on Sonarr", e),
+                Err(e) => {
+                    source_failed = true;
+                    tracing::warn!("AniList calendar failed: {}, relying on Sonarr", e)
+                }
             }
         }
     }
@@ -1800,16 +1837,20 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                     }
                     tracing::info!("Calendar Sonarr fallback: {} episodes filled", filled);
                 }
-                Err(e) => tracing::warn!("Sonarr calendar failed: {}", e),
+                Err(e) => {
+                    source_failed = true;
+                    tracing::warn!("Sonarr calendar failed: {}", e)
+                }
             }
         }
     }
 
     result.sort_by_key(|e| e.airing_at.unwrap_or(i64::MAX));
 
+    let stale = cache.filter(|c| !c.entries.is_empty());
     if !result.is_empty() {
         save_calendar_cache(state, now, &result).await;
-    } else if let Some(c) = cache {
+    } else if let Some(c) = stale {
         // Remote sources came back empty (rate limit, offline) but an expired
         // cache exists — stale data beats a blank calendar.
         tracing::info!(
@@ -1818,35 +1859,45 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
         );
         result = c.entries;
         refresh_time_until_airing(&mut result, now);
+    } else if !source_failed {
+        // Nothing is airing (or no source is set up): remember that for the TTL
+        // instead of asking AniList again on every Dashboard/Calendar open.
+        save_calendar_cache(state, now, &result).await;
     }
 
     // ── LAST RESORT: no airing data from either source → local watching list ──
     if result.is_empty() {
-        let watching = state.storage.continue_watching(50).await?;
-        result = watching
-            .into_iter()
-            .map(|w| CalendarEntry {
-                anime_id: w.anime_id,
-                title: w.anime_title,
-                image_url: w.image_url,
-                episode_count: w.episode_count,
-                progress: Some(w.watched_episodes),
-                next_episode: None,
-                airing_at: None,
-                time_until_airing: None,
-                has_file: false,
-                watched: false,
-            })
-            .collect();
-        tracing::info!(
-            "Calendar fallback: {} watching entries from local DB",
-            result.len()
-        );
+        result = local_watching_calendar(state).await?;
     }
 
     attach_local_status(state, &mut result).await;
 
     Ok(result)
+}
+
+/// The calendar of last resort: the local watching list, without airing data.
+async fn local_watching_calendar(state: &EngineState) -> anyhow::Result<Vec<CalendarEntry>> {
+    let watching = state.storage.continue_watching(50).await?;
+    let entries: Vec<CalendarEntry> = watching
+        .into_iter()
+        .map(|w| CalendarEntry {
+            anime_id: w.anime_id,
+            title: w.anime_title,
+            image_url: w.image_url,
+            episode_count: w.episode_count,
+            progress: Some(w.watched_episodes),
+            next_episode: None,
+            airing_at: None,
+            time_until_airing: None,
+            has_file: false,
+            watched: false,
+        })
+        .collect();
+    tracing::info!(
+        "Calendar fallback: {} watching entries from local DB",
+        entries.len()
+    );
+    Ok(entries)
 }
 
 pub async fn get_statistics_inner(state: &EngineState) -> anyhow::Result<AnimeStats> {
@@ -2018,21 +2069,17 @@ pub async fn get_ready_to_watch_inner(
     state: &EngineState,
 ) -> anyhow::Result<Vec<ReadyToWatchEntry>> {
     let watching = state.storage.continue_watching(50).await?;
-    let mut files: std::collections::HashMap<i64, std::collections::HashSet<i32>> =
-        std::collections::HashMap::new();
-    for w in &watching {
-        if let Ok(rows) = state.storage.file_index_by_anime(w.anime_id).await {
-            let eps = files.entry(w.anime_id).or_default();
-            for row in rows {
-                if row.ignored {
-                    continue;
-                }
-                if let Some(ep) = row.episode {
-                    eps.insert(ep);
-                }
-            }
-        }
-    }
+    let ids: Vec<i64> = watching.iter().map(|w| w.anime_id).collect();
+    let files: std::collections::HashMap<i64, std::collections::HashSet<i32>> = state
+        .storage
+        .file_index_for_anime_ids(&ids)
+        .await?
+        .into_iter()
+        .map(|(id, rows)| {
+            let eps = rows.iter().filter(|r| !r.ignored).filter_map(|r| r.episode).collect();
+            (id, eps)
+        })
+        .collect();
     Ok(ready_to_watch_entries(watching, &files))
 }
 
@@ -2117,14 +2164,12 @@ pub async fn get_collection_inner(state: &EngineState) -> anyhow::Result<Vec<Col
     // non-ignored files (see its WHERE clause), so it is a superset of the
     // collection; collection_entry drops the ones without files.
     let library = state.storage.search_library("", None, i64::MAX, 0).await?;
-    let mut out = Vec::new();
-    for row in &library {
-        let files = state.storage.file_index_by_anime(row.anime_id).await?;
-        if let Some(entry) = collection_entry(row, &files) {
-            out.push(entry);
-        }
-    }
-    Ok(out)
+    let ids: Vec<i64> = library.iter().map(|row| row.anime_id).collect();
+    let files = state.storage.file_index_for_anime_ids(&ids).await?;
+    Ok(library
+        .iter()
+        .filter_map(|row| collection_entry(row, files.get(&row.anime_id).map_or(&[][..], |f| f)))
+        .collect())
 }
 
 #[tauri::command]
@@ -3005,6 +3050,16 @@ pub async fn repair_anime_file_mappings(
     state: tauri::State<'_, EngineState>,
 ) -> Result<FileMappingRepairReport, String> {
     repair_anime_file_mappings_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_episode_files_bulk(
+    anime_ids: Vec<i64>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<std::collections::HashMap<i64, Vec<FileIndexRow>>, String> {
+    get_episode_files_bulk_inner(&state, anime_ids)
         .await
         .map_err(command_error)
 }

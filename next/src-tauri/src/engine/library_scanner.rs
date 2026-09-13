@@ -1,5 +1,6 @@
 use crate::engine::parser::parse_filename;
-use crate::engine::storage::{MappingSource, Storage};
+use crate::engine::storage::{FileIndexRow, MappingSource, Storage};
+use std::collections::HashMap;
 use std::path::Path;
 
 const LIBRARY_FOLDERS_KEY: &str = "library.folders";
@@ -554,13 +555,33 @@ async fn index_new_files_in_dir(
     let mut video_files = Vec::new();
     find_video_files(dir, &mut video_files, &mut report.errors);
 
+    // Load the rows under this directory once, keyed case-insensitively like
+    // `get_file_index`, instead of one query per file on every hourly scan.
+    let mut known: HashMap<String, Vec<FileIndexRow>> = HashMap::new();
+    for row in storage
+        .file_index_rows_under(&dir.to_string_lossy())
+        .await?
+    {
+        known.entry(row.file_path.to_lowercase()).or_default().push(row);
+    }
+
     for file_path in &video_files {
         let file_path_str = file_path.to_string_lossy().to_string();
         report.found += 1;
 
         // Skip if already indexed with a valid match; re-evaluate if unmatched
         // (confidence 0). Ignored files are tombstoned — never re-index them.
-        let existing = storage.get_file_index(&file_path_str).await?;
+        let existing = match known.get(&file_path_str.to_lowercase()) {
+            // Exact spelling preferred, as in `get_file_index`.
+            Some(rows) => rows
+                .iter()
+                .find(|r| r.file_path == file_path_str)
+                .or_else(|| rows.first())
+                .cloned(),
+            // LIKE only folds ASCII case, so a prefix differing in non-ASCII
+            // case lands here: fall back to the exact lookup.
+            None => storage.get_file_index(&file_path_str).await?,
+        };
         if let Some(ref ex) = existing {
             // The lookup is case-insensitive: a hit under a different spelling
             // is the same file after a case-only rename. Follow the on-disk

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { createEventDispatcher } from 'svelte';
-  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
+  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
   import {
     normalizeStatusFilter, groupBySeason, flattenGroups, asDisplayRows,
     seasonSortVal, getCurrentSeason,
@@ -265,14 +265,12 @@
   }
 
   async function loadEpisodeFiles(entries: LibraryEntry[]) {
-    for (const entry of entries.slice(0, 50)) {
-      try {
-        const files = await getEpisodeFiles(entry.anime_id);
-        if (files.length > 0) {
-          episodeFilesMap.set(entry.anime_id, files);
-        }
-      } catch {}
-    }
+    try {
+      const byId = await getEpisodeFilesBulk(entries.map((e) => e.anime_id));
+      for (const [id, files] of byId) {
+        if (files.length > 0) episodeFilesMap.set(id, files);
+      }
+    } catch {}
     episodeFilesMap = new Map(episodeFilesMap);
   }
 

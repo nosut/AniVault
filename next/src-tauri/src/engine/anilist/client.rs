@@ -721,33 +721,21 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: In
                 "query {{ Page(page: 1, perPage: 50) {{ media(id_in: [{id_list}], type: ANIME) {{ \
                  id relations {{ edges {{ relationType node {{ title {{ romaji english }} }} }} }} }} }} }}"
             );
+            // `query` already turns a GraphQL `errors` array into an Err.
             let raw: serde_json::Value = self.query(&query_str, serde_json::json!({})).await?;
-            if let Some(errors) = raw.get("errors").and_then(|e| e.as_array()) {
-                if !errors.is_empty() {
-                    let msgs: Vec<String> = errors
-                        .iter()
-                        .filter_map(|e| e.get("message").and_then(|m| m.as_str()).map(String::from))
-                        .collect();
-                    return Err(anyhow::anyhow!("AniList error: {}", msgs.join("; ")));
-                }
-            }
             let media = raw
                 .get("data")
                 .and_then(|d| d.get("Page"))
                 .and_then(|p| p.get("media"))
-                .and_then(|m| m.as_array())
-                .cloned()
-                .unwrap_or_default();
-            for m in &media {
+                .and_then(|m| m.as_array());
+            for m in media.into_iter().flatten() {
                 let Some(id) = m.get("id").and_then(|v| v.as_i64()) else { continue };
                 let edges = m
                     .get("relations")
                     .and_then(|r| r.get("edges"))
-                    .and_then(|e| e.as_array())
-                    .cloned()
-                    .unwrap_or_default();
+                    .and_then(|e| e.as_array());
                 let mut rels = Vec::new();
-                for e in &edges {
+                for e in edges.into_iter().flatten() {
                     let Some(rt) = e.get("relationType").and_then(|v| v.as_str()) else { continue };
                     let english = e
                         .get("node")

@@ -16,6 +16,7 @@ import {
   FUTURE_SEASON_KEY,
   getCollection,
   getEngineStatus,
+  getEpisodeFilesBulk,
   getFutureAnime,
   getLaunchOnStartup,
   getLibraryIds,
@@ -321,6 +322,23 @@ describe('api wrappers', () => {
     const invoke = vi.fn().mockResolvedValue(report);
     await expect(importAniListLibrary(invoke)).resolves.toEqual(report);
     expect(invoke).toHaveBeenCalledWith('import_anilist_library');
+  });
+
+  it('loads episode files for many anime in one call, keyed by numeric id', async () => {
+    const file = { file_path: 'D:/a/One - 01.mkv', anime_id: 1, episode: 1, confidence: 100, mapping_source: 'manual', indexed_at: 1, ignored: false };
+    // Rust HashMap<i64, _> keys arrive as JSON object strings.
+    const invoke = vi.fn().mockResolvedValue({ '1': [file] });
+    const files = await getEpisodeFilesBulk([1, 2], invoke);
+    expect(invoke).toHaveBeenCalledWith('get_episode_files_bulk', { animeIds: [1, 2] });
+    expect(files.get(1)).toEqual([file]);
+    expect(files.has(2)).toBe(false);
+  });
+
+  it('skips the call when there are no ids', async () => {
+    const invoke = vi.fn();
+    const files = await getEpisodeFilesBulk([], invoke);
+    expect(files.size).toBe(0);
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it('gets sync status', async () => {
