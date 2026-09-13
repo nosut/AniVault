@@ -299,10 +299,16 @@ pub fn desired_run_value(enabled: bool, start_in_tray: bool, exe_path: &str) -> 
 }
 
 /// Write (`Some`) or remove (`None`) the AniVault HKCU Run entry via `reg`.
+/// `CREATE_NO_WINDOW`: release builds are GUI-subsystem, so a console child
+/// would otherwise flash a console window on screen.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 fn write_run_key(value: Option<&str>) -> anyhow::Result<()> {
+    use std::os::windows::process::CommandExt;
     match value {
         Some(v) => {
             let output = std::process::Command::new("reg")
+                .creation_flags(CREATE_NO_WINDOW)
                 .args([
                     "add",
                     RUN_KEY,
@@ -323,6 +329,7 @@ fn write_run_key(value: Option<&str>) -> anyhow::Result<()> {
             // Deleting an absent value is a no-op that returns a nonzero exit;
             // ignore it so turning the feature off never surfaces an error.
             let _ = std::process::Command::new("reg")
+                .creation_flags(CREATE_NO_WINDOW)
                 .args(["delete", RUN_KEY, "/v", RUN_VALUE_NAME, "/f"])
                 .output()?;
         }

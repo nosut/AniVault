@@ -83,7 +83,10 @@ pub async fn start_oauth_flow(client_id: &str, client_secret: &str) -> anyhow::R
 fn open_browser(url: &str) {
     // Try `open` crate first, fall back to cmd /c start on Windows
     if open::that(url).is_err() {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let _ = std::process::Command::new("cmd")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["/c", "start", url])
             .spawn();
     }

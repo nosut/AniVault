@@ -1,6 +1,22 @@
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
+/// Daily log files kept on disk; older ones are deleted when the app starts
+/// and at each daily rollover.
+const MAX_LOG_FILES: usize = 14;
+
+/// The daily-rolling file appender (`anivault.log.YYYY-MM-DD`), pruned to the
+/// newest [`MAX_LOG_FILES`] files.
+pub fn build_log_appender(
+    log_dir: &std::path::Path,
+) -> Result<tracing_appender::rolling::RollingFileAppender, tracing_appender::rolling::InitError> {
+    tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_prefix("anivault.log")
+        .max_log_files(MAX_LOG_FILES)
+        .build(log_dir)
+}
+
 /// Initialize tracing.
 ///
 /// Writes a daily-rolling log file to `log_dir` (the file is named
@@ -17,7 +33,16 @@ pub fn init_logging(log_dir: &std::path::Path) {
         );
     }
 
-    let file_appender = tracing_appender::rolling::daily(log_dir, "anivault.log");
+    let file_appender = match build_log_appender(log_dir) {
+        Ok(appender) => appender,
+        Err(e) => {
+            eprintln!(
+                "[AniVault] could not open log file in {} ({e}); file logging disabled",
+                log_dir.display()
+            );
+            return;
+        }
+    };
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,anivault_core=debug"));
 

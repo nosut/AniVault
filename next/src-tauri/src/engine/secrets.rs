@@ -42,9 +42,10 @@ pub fn unprotect_secret(ciphertext_b64: &str) -> anyhow::Result<String> {
     unsafe {
         CryptUnprotectData(&input, None, None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut output)?;
 
-        let bytes = std::slice::from_raw_parts(output.pbData, output.cbData as usize);
-        let plaintext = String::from_utf8(bytes.to_vec())?;
+        // Copy out and free the DPAPI buffer before decoding, so a UTF-8 error
+        // can't return early past the LocalFree.
+        let bytes = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
         LocalFree(Some(HLOCAL(output.pbData.cast())));
-        Ok(plaintext)
+        Ok(String::from_utf8(bytes)?)
     }
 }
