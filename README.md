@@ -132,8 +132,6 @@ next/
 │   ├── migrations/ # SQLite schema
 │   └── tests/      # Rust integration tests
 └── scripts/        # verify.ps1, bundle.ps1
-
-docs/               # design specs and implementation plans
 ```
 
 ## Credits
