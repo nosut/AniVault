@@ -473,6 +473,30 @@ impl Storage {
         Ok(())
     }
 
+    /// Raise watched progress to at least `watched_episodes` without changing the
+    /// status of an existing entry (a completed show stays completed). A missing
+    /// entry is created as "watching".
+    pub async fn bump_list_entry_progress(
+        &self,
+        anime_id: i64,
+        watched_episodes: i32,
+        updated: i64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO list_entry (anime_id, status, watched_episodes, local_updated)
+             VALUES (?1, 'watching', ?2, ?3)
+             ON CONFLICT(anime_id) DO UPDATE SET
+               watched_episodes = MAX(excluded.watched_episodes, list_entry.watched_episodes),
+               local_updated = excluded.local_updated",
+        )
+        .bind(anime_id)
+        .bind(watched_episodes)
+        .bind(updated)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_list_entry(&self, anime_id: i64) -> anyhow::Result<Option<ListEntryRow>> {
         let row = sqlx::query(
             "SELECT anime_id, status, watched_episodes FROM list_entry WHERE anime_id = ?1",
@@ -1254,7 +1278,9 @@ impl Storage {
             "INSERT INTO anime (id, titles_json, episode_count, image_url, last_modified)
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(id) DO UPDATE SET
-               titles_json = excluded.titles_json,
+               titles_json = json_patch(excluded.titles_json, json_object(
+                 'english_derived', json_extract(anime.titles_json, '$.english_derived'),
+                 'english_derived_checked', json_extract(anime.titles_json, '$.english_derived_checked'))),
                episode_count = excluded.episode_count,
                image_url = excluded.image_url,
                last_modified = excluded.last_modified",
@@ -1288,6 +1314,10 @@ impl Storage {
         Ok(())
     }
 
+    /// Insert or refresh an anime from AniList. `titles_json` replaces the stored
+    /// titles, except for the locally derived `english_derived` and its
+    /// `english_derived_checked` marker, which AniList knows nothing about
+    /// (json_patch drops a key whose carried-over value is null).
     pub async fn upsert_anime_full(
         &self,
         id: i64,
@@ -1303,7 +1333,9 @@ impl Storage {
             "INSERT INTO anime (id, titles_json, type, status, episode_count, image_url, synopsis, last_modified)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(id) DO UPDATE SET
-               titles_json = excluded.titles_json,
+               titles_json = json_patch(excluded.titles_json, json_object(
+                 'english_derived', json_extract(anime.titles_json, '$.english_derived'),
+                 'english_derived_checked', json_extract(anime.titles_json, '$.english_derived_checked'))),
                type = COALESCE(excluded.type, anime.type),
                status = COALESCE(excluded.status, anime.status),
                episode_count = excluded.episode_count,
@@ -2329,24 +2361,49 @@ impl Storage {
     /// the derived-title pass; the caller applies `title_resolver::looks_unresolved`
     /// to decide which of them are actually worth deriving a title for.
     ///
-    /// Rows that already carry a derived title are excluded, so the pass is
-    /// incremental and re-running it is cheap.
+    /// Only library rows are considered. Rows that already carry a derived title
+    /// are excluded, and so are rows the pass tried within the last week without
+    /// deciding (see [`Self::mark_derived_title_checked`]) — otherwise those would
+    /// fill the `LIMIT` window forever and starve every row after them.
     pub async fn anime_missing_english_title(&self, limit: i64) -> anyhow::Result<Vec<(i64, String)>> {
+        const RECHECK_AFTER_SECS: i64 = 7 * 24 * 60 * 60;
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
         let rows = sqlx::query(
             "SELECT a.id, json_extract(a.titles_json, '$.romaji') AS romaji \
              FROM anime a \
+             JOIN list_entry le ON le.anime_id = a.id \
              WHERE COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), '') = '' \
                AND COALESCE(NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), '') = '' \
                AND COALESCE(NULLIF(json_extract(a.titles_json, '$.romaji'), ''), '') <> '' \
+               AND COALESCE(json_extract(a.titles_json, '$.english_derived_checked'), 0) <= ?2 \
              ORDER BY a.id LIMIT ?1",
         )
         .bind(limit)
+        .bind(now - RECHECK_AFTER_SECS)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
             .iter()
             .map(|r| (r.get::<i64, _>("id"), r.get::<String, _>("romaji")))
             .collect())
+    }
+
+    /// Record that the derived-title pass looked at these rows at `checked_at`
+    /// and found nothing, so they sit out the candidate window for a while.
+    pub async fn mark_derived_title_checked(&self, ids: &[i64], checked_at: i64) -> anyhow::Result<()> {
+        for id in ids {
+            sqlx::query(
+                "UPDATE anime SET titles_json = json_set(titles_json, '$.english_derived_checked', ?2) WHERE id = ?1",
+            )
+            .bind(id)
+            .bind(checked_at)
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
     }
 
     /// Store a derived English display title on `titles_json.english_derived`.

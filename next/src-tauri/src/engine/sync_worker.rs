@@ -227,18 +227,21 @@ pub async fn enqueue_anilist_sync(state: &EngineState, anime_id: i64) {
         .await;
 }
 
-// Backfill missing episode counts / airing status from AniList (best-effort,
-/// only when connected). Called on the sync worker's first pass and periodically.
+/// Backfill missing episode counts / airing status from AniList (only when
+/// connected) and derived English titles (AniDB needs no connection).
+/// Best-effort. Called on the sync worker's first pass and periodically.
 async fn run_meta_backfill(state: &EngineState) {
-    let token = match load_token(&state.storage).await {
-        Ok(Some(t)) => t,
-        _ => return, // not connected
+    let client = match load_token(&state.storage).await {
+        Ok(Some(token)) => Some(AniListClient::new(token)),
+        _ => None,
     };
-    let client = AniListClient::new(token);
-    match crate::engine::anilist::import::backfill_anime_meta(&state.storage, &client, 100).await {
-        Ok(n) if n > 0 => tracing::info!("Backfilled episode metadata for {n} anime"),
-        Ok(_) => {}
-        Err(e) => tracing::warn!("episode metadata backfill failed: {e}"),
+    if let Some(client) = &client {
+        match crate::engine::anilist::import::backfill_anime_meta(&state.storage, client, 100).await
+        {
+            Ok(n) if n > 0 => tracing::info!("Backfilled episode metadata for {n} anime"),
+            Ok(_) => {}
+            Err(e) => tracing::warn!("episode metadata backfill failed: {e}"),
+        }
     }
     // Sequel seasons AniList hasn't given an English title yet inherit one from
     // their prequel, so the library doesn't mix "Sousou no Frieren 3rd Season"
@@ -246,7 +249,7 @@ async fn run_meta_backfill(state: &EngineState) {
     let data_dir = state.database_path.parent();
     match crate::engine::anilist::import::backfill_derived_titles(
         &state.storage,
-        &client,
+        client.as_ref(),
         data_dir,
         100,
     )

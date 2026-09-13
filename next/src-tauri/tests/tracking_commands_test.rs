@@ -116,3 +116,44 @@ async fn set_tracking_enabled_persists_and_starts_or_stops_the_loop() {
     let status = set_tracking_enabled_inner(false, &state).await.unwrap();
     assert!(!status.active);
 }
+
+#[tokio::test]
+async fn marking_an_earlier_episode_keeps_a_completed_show_completed() {
+    let state = fresh_test_state().await;
+    state
+        .storage
+        .upsert_anime(9, r#"{"romaji":"Done Show"}"#, 12, None, 1000)
+        .await
+        .unwrap();
+    state
+        .storage
+        .upsert_list_entry_full(9, "completed", 12, None, "", 1000, 0)
+        .await
+        .unwrap();
+
+    mark_episode_watched_inner(9, 3, &state).await.unwrap();
+
+    let entry = state.storage.get_list_entry(9).await.unwrap().unwrap();
+    assert_eq!(entry.status, "completed");
+    assert_eq!(entry.watched_episodes, 12);
+}
+
+#[tokio::test]
+async fn marking_the_last_episode_completes_a_watching_show() {
+    let state = fresh_test_state().await;
+    state
+        .storage
+        .upsert_anime(10, r#"{"romaji":"Almost Done"}"#, 12, None, 1000)
+        .await
+        .unwrap();
+    state
+        .storage
+        .upsert_list_entry_full(10, "watching", 11, None, "", 1000, 0)
+        .await
+        .unwrap();
+
+    mark_episode_watched_inner(10, 12, &state).await.unwrap();
+
+    let entry = state.storage.get_list_entry(10).await.unwrap().unwrap();
+    assert_eq!((entry.status.as_str(), entry.watched_episodes), ("completed", 12));
+}

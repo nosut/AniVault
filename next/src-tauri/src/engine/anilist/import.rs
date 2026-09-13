@@ -18,22 +18,33 @@ pub struct ImportReport {
 /// [`crate::engine::title_resolver`] for the two rules that keep it from
 /// touching rows whose romaji is already the name people know.
 ///
+/// The relation pass needs AniList (`client`); the AniDB pass runs without it,
+/// so users who never connected AniList still get derived titles.
+///
 /// Best-effort; returns the number of titles derived. Writes only to
-/// `titles_json.english_derived`, never to `english`.
+/// `titles_json.english_derived`, never to `english`. Rows it could not decide
+/// are marked checked so the next cycle moves on to other rows.
 pub async fn backfill_derived_titles(
     storage: &Storage,
-    client: &AniListClient,
+    client: Option<&AniListClient>,
     data_dir: Option<&std::path::Path>,
     limit: i64,
 ) -> anyhow::Result<usize> {
     use crate::engine::title_resolver as tr;
 
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
     let candidates = storage.anime_missing_english_title(limit).await?;
     // The gate: only entries that still read as romaji are worth deriving for.
-    let targets: Vec<(i64, String)> = candidates
+    // The rest never will be (the romaji is the English name), so mark them.
+    let (targets, settled): (Vec<(i64, String)>, Vec<(i64, String)>) = candidates
         .into_iter()
-        .filter(|(_, romaji)| tr::looks_unresolved(romaji))
-        .collect();
+        .partition(|(_, romaji)| tr::looks_unresolved(romaji));
+    let settled_ids: Vec<i64> = settled.iter().map(|(id, _)| *id).collect();
+    storage.mark_derived_title_checked(&settled_ids, now).await?;
     if targets.is_empty() {
         return Ok(0);
     }
@@ -41,8 +52,8 @@ pub async fn backfill_derived_titles(
     // Pass one: inherit from a prequel. Preferred over any external source
     // because the title comes from AniList itself.
     let ids: Vec<i64> = targets.iter().map(|(id, _)| *id).collect();
-    let by_id: std::collections::HashMap<i64, Vec<(String, String)>> =
-        match client.fetch_media_relation_titles(&ids).await {
+    let by_id: std::collections::HashMap<i64, Vec<(String, String)>> = match client {
+        Some(client) => match client.fetch_media_relation_titles(&ids).await {
             Ok(rels) => rels.into_iter().collect(),
             Err(e) => {
                 // AniList being unavailable must not block the AniDB pass, which
@@ -50,7 +61,9 @@ pub async fn backfill_derived_titles(
                 tracing::warn!("relation fetch failed, falling back to AniDB only: {e}");
                 Default::default()
             }
-        };
+        },
+        None => Default::default(),
+    };
 
     let mut derived = 0usize;
     let mut unresolved: Vec<(i64, String)> = Vec::new();
@@ -72,19 +85,22 @@ pub async fn backfill_derived_titles(
 
     // Pass two: first entries have no prequel to inherit from, so fall back to
     // AniDB's language-tagged English titles.
-    if !unresolved.is_empty() {
-        if let Some(dir) = data_dir {
-            if let Some(titles) = crate::engine::anidb_titles::load_or_refresh(storage, dir).await {
-                for (id, romaji) in &unresolved {
-                    if let Some(english) = titles.english_for(romaji) {
-                        storage.set_anime_derived_english(*id, english).await?;
-                        tracing::debug!(anime_id = id, romaji = %romaji, derived = %english, source = "anidb");
-                        derived += 1;
-                    }
-                }
+    let mut undecided: Vec<i64> = Vec::new();
+    let anidb = match (unresolved.is_empty(), data_dir) {
+        (false, Some(dir)) => crate::engine::anidb_titles::load_or_refresh(storage, dir).await,
+        _ => None,
+    };
+    for (id, romaji) in &unresolved {
+        match anidb.as_ref().and_then(|titles| titles.english_for(romaji)) {
+            Some(english) => {
+                storage.set_anime_derived_english(*id, english).await?;
+                tracing::debug!(anime_id = id, romaji = %romaji, derived = %english, source = "anidb");
+                derived += 1;
             }
+            None => undecided.push(*id),
         }
     }
+    storage.mark_derived_title_checked(&undecided, now).await?;
 
     tracing::info!(candidates = ids.len(), derived, "derived-title backfill");
     Ok(derived)

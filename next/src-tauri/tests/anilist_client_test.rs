@@ -22,3 +22,20 @@ async fn fetch_season_anime_errors_on_bad_token() {
         .await
         .is_err());
 }
+
+#[test]
+fn a_null_synonym_is_skipped_instead_of_failing_the_whole_response() {
+    use anivault_core::engine::anilist::client::{Media, SearchAnimeResult};
+    let media: Media =
+        serde_json::from_str(r#"{"id":1,"synonyms":["Foo",null,"Bar"]}"#).expect("deserializes");
+    assert_eq!(media.synonyms, Some(vec!["Foo".to_string(), "Bar".to_string()]));
+
+    let search: SearchAnimeResult =
+        serde_json::from_str(r#"{"id":2,"synonyms":[null]}"#).expect("deserializes");
+    assert_eq!(search.synonyms, Some(vec![]));
+
+    let absent: Media = serde_json::from_str(r#"{"id":3}"#).unwrap();
+    assert_eq!(absent.synonyms, None);
+    let null: Media = serde_json::from_str(r#"{"id":4,"synonyms":null}"#).unwrap();
+    assert_eq!(null.synonyms, None);
+}

@@ -493,23 +493,16 @@ pub async fn mark_episode_watched_inner(
         .await
         .map_err(command_error)?;
 
+    // Progress only: marking an earlier episode of a completed show must not
+    // flip it back to "watching".
     state
         .storage
-        .upsert_list_entry_progress(anime_id, "watching", episode, unix_now()?)
+        .bump_list_entry_progress(anime_id, episode, unix_now()?)
         .await
         .map_err(command_error)?;
 
-    // Auto-complete if last episode marked
-    if let Ok(detail) = state.storage.anime_detail(anime_id).await {
-        if let Some(count) = detail.episode_count {
-            if count > 0 && episode >= count {
-                let _ = state
-                    .storage
-                    .update_list_entry_partial(anime_id, Some("completed"), None, None)
-                    .await;
-            }
-        }
-    }
+    // Auto-complete if the last episode is now watched.
+    let _ = state.storage.auto_complete_if_capped(anime_id).await;
 
     // Push status + progress back to AniList (best-effort, queued), mirroring
     // the auto-detect path. After the auto-complete above so the queued status

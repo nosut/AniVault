@@ -25,6 +25,8 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::SystemTime;
 
 use crate::engine::storage::Storage;
 
@@ -211,9 +213,40 @@ async fn download(url: &str) -> anyhow::Result<String> {
         .user_agent(concat!("AniVault/", env!("CARGO_PKG_VERSION")))
         .build()?;
     let bytes = client.get(url).send().await?.error_for_status()?.bytes().await?;
-    let mut out = String::new();
-    flate2::read::GzDecoder::new(&bytes[..]).read_to_string(&mut out)?;
-    Ok(out)
+    tokio::task::spawn_blocking(move || {
+        let mut out = String::new();
+        flate2::read::GzDecoder::new(&bytes[..]).read_to_string(&mut out)?;
+        Ok(out)
+    })
+    .await?
+}
+
+/// Parsed dumps by cache path, with the file mtime they were parsed from. The
+/// backfill asks for the dump every ten minutes; re-reading and re-parsing
+/// megabytes each time would be pure waste while the file is unchanged.
+static PARSED: LazyLock<Mutex<HashMap<PathBuf, (SystemTime, Arc<AniDbTitles>)>>> =
+    LazyLock::new(Default::default);
+
+/// Read and index the cached dump, reusing the parsed copy while the file's
+/// mtime is unchanged. Parsing runs on a blocking thread.
+async fn read_cached(path: &Path) -> Option<Arc<AniDbTitles>> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    if let Some((parsed_at, titles)) = PARSED.lock().ok()?.get(path) {
+        if *parsed_at == modified {
+            return Some(Arc::clone(titles));
+        }
+    }
+    let owned = path.to_path_buf();
+    let titles = tokio::task::spawn_blocking(move || {
+        std::fs::read_to_string(&owned).ok().map(|d| AniDbTitles::parse(&d))
+    })
+    .await
+    .ok()??;
+    let titles = Arc::new(titles);
+    if let Ok(mut parsed) = PARSED.lock() {
+        parsed.insert(path.to_path_buf(), (modified, Arc::clone(&titles)));
+    }
+    Some(titles)
 }
 
 /// Return an indexed dump, downloading a fresh copy at most once per day.
@@ -221,13 +254,13 @@ async fn download(url: &str) -> anyhow::Result<String> {
 /// Falls back to a stale cache whenever a download is not allowed or fails, and
 /// returns `None` only when there is nothing usable at all — in which case the
 /// caller simply derives no titles from AniDB this cycle.
-pub async fn load_or_refresh(storage: &Storage, data_dir: &Path) -> Option<AniDbTitles> {
+pub async fn load_or_refresh(storage: &Storage, data_dir: &Path) -> Option<Arc<AniDbTitles>> {
     let path = cache_path(data_dir);
     let age = cache_age(&path);
 
     if let Some(age) = age {
         if age < MIN_REFRESH_SECS {
-            return std::fs::read_to_string(&path).ok().map(|d| AniDbTitles::parse(&d));
+            return read_cached(&path).await;
         }
     }
 
@@ -242,7 +275,7 @@ pub async fn load_or_refresh(storage: &Storage, data_dir: &Path) -> Option<AniDb
         .unwrap_or(0);
     let now = now_secs();
     if now - last_attempt < MIN_REFRESH_SECS {
-        return std::fs::read_to_string(&path).ok().map(|d| AniDbTitles::parse(&d));
+        return read_cached(&path).await;
     }
     let _ = storage.set_setting(LAST_ATTEMPT_KEY, &now.to_string(), now).await;
 
@@ -251,15 +284,18 @@ pub async fn load_or_refresh(storage: &Storage, data_dir: &Path) -> Option<AniDb
             if let Some(parent) = path.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
+            tracing::info!(bytes = dat.len(), "refreshed AniDB title dump");
             if let Err(e) = std::fs::write(&path, &dat) {
                 tracing::warn!("could not cache AniDB title dump: {e}");
+                return tokio::task::spawn_blocking(move || Arc::new(AniDbTitles::parse(&dat)))
+                    .await
+                    .ok();
             }
-            tracing::info!(bytes = dat.len(), "refreshed AniDB title dump");
-            Some(AniDbTitles::parse(&dat))
+            read_cached(&path).await
         }
         Err(e) => {
             tracing::warn!("AniDB title dump download failed: {e}");
-            std::fs::read_to_string(&path).ok().map(|d| AniDbTitles::parse(&d))
+            read_cached(&path).await
         }
     }
 }

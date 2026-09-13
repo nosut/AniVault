@@ -97,7 +97,7 @@ pub struct Media {
     /// Alternative titles AniList records outside the three `title` fields.
     /// Frequently carries the English title for entries whose `title.english`
     /// is null, and feeds filename matching via `matcher::score_titles_json`.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_strings")]
     pub synonyms: Option<Vec<String>>,
     pub episodes: Option<i32>,
     #[serde(rename = "type")]
@@ -159,6 +159,16 @@ pub struct AniListDate {
 pub struct AniListClient {
     pub token: String,
     http: reqwest::Client,
+}
+
+/// A list of strings in which AniList may put `null` elements (it does for
+/// synonyms). The nulls are dropped rather than failing the whole response.
+fn nullable_strings<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Option<Vec<Option<String>>> = Option::deserialize(deserializer)?;
+    Ok(raw.map(|items| items.into_iter().flatten().collect()))
 }
 
 /// A non-2xx response from the AniList API. Kept typed so callers can tell a
@@ -816,7 +826,7 @@ pub struct FutureAnime {
 pub struct SearchAnimeResult {
     pub id: i64,
     pub title: Option<MediaTitle>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_strings")]
     pub synonyms: Option<Vec<String>>,
     pub episodes: Option<i32>,
     pub status: Option<String>,
