@@ -188,3 +188,40 @@ export function nextAiringSortVal(
   const hit = map.get(animeId);
   return hit?.airing_at ?? Number.POSITIVE_INFINITY;
 }
+
+/// How far ahead a premiere earns the Plan to Watch marker.
+export const PREMIERE_SOON_SECS = 7 * 86400;
+
+export interface AiringMarker {
+  kind: 'premiere' | 'airing';
+  label: string;
+  /// Under a day away; styled like the Watching column's accent countdown.
+  soon: boolean;
+}
+
+/// The "you could start this" marker for a Plan to Watch entry: a premiere
+/// within a week, or a show that is already airing. Null for everything else
+/// (finished, unannounced, premiering further out, not plan-to-watch).
+///
+/// The calendar wins over the locally stored airing status, which is only as
+/// fresh as the last list sync: a next episode past 1 means it has started.
+export function airingSoonMarker(
+  entry: { anime_id: number; status: string; airing_status: string | null },
+  nextAiring: Map<number, AiringLike>,
+  nowSec: number,
+): AiringMarker | null {
+  if (entry.status !== 'plan_to_watch') return null;
+  const na = nextAiring.get(entry.anime_id);
+  const secs = na?.airing_at != null ? na.airing_at - nowSec : null;
+
+  if (na && secs != null && na.next_episode === 1) {
+    if (secs > PREMIERE_SOON_SECS) return null;
+    return { kind: 'premiere', label: `Premieres in ${formatAiringCountdown(secs)}`, soon: secs < 86400 };
+  }
+
+  const started = entry.airing_status === 'RELEASING' || (na?.next_episode ?? 0) > 1;
+  if (!started) return null;
+  if (!na || secs == null) return { kind: 'airing', label: 'Airing', soon: false };
+  const what = na.next_episode != null ? `Ep ${na.next_episode}` : 'next';
+  return { kind: 'airing', label: `Airing \u00b7 ${what} in ${formatAiringCountdown(secs)}`, soon: secs < 86400 };
+}

@@ -6,7 +6,7 @@
   import {
     normalizeStatusFilter, groupBySeason, flattenGroups, asDisplayRows,
     seasonSortVal, getCurrentSeason,
-    nextAiringByAnime, formatAiringCountdown, nextAiringSortVal,
+    nextAiringByAnime, formatAiringCountdown, nextAiringSortVal, airingSoonMarker,
   } from './libraryUi';
   import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2 } from 'lucide-svelte';
 
@@ -730,6 +730,7 @@
           </button>
         {:else}
           {@const entry = row.entry}
+          {@const marker = airingSoonMarker(entry, nextAiring, nowSec)}
           <div class="poster-card"
             tabindex="0"
             role="button"
@@ -748,6 +749,9 @@
             {/if}
             <div class="poster-info">
               <p class="poster-title" class:has-new={hasNewEpisode(entry)}>{entry.title}</p>
+              {#if marker}
+                <span class="airing-chip" class:soon={marker.soon}>{marker.label}</span>
+              {/if}
               {#if entry.status === 'unlisted'}
                 <span class="no-status" aria-label="No list status">—</span>
               {:else}
@@ -963,6 +967,7 @@
                 </tr>
               {:else}
                 {@const entry = row.entry}
+                {@const marker = airingSoonMarker(entry, nextAiring, nowSec)}
                 <tr
                   class="data-row"
                   draggable="true"
@@ -990,7 +995,14 @@
                       <div class="thumb fallback" aria-hidden="true"></div>
                     {/if}
                   </td>
-                  <td class="title-cell" class:has-new={hasNewEpisode(entry)}>{entry.title}</td>
+                  <td class="title-cell" class:has-new={hasNewEpisode(entry)}>
+                    <span class="title-wrap">
+                      <span class="title-text">{entry.title}</span>
+                      {#if marker}
+                        <span class="airing-chip" class:soon={marker.soon}>{marker.label}</span>
+                      {/if}
+                    </span>
+                  </td>
                   <td>
                     {#if entry.status === 'unlisted'}
                       <span class="no-status" aria-label="No list status">—</span>
@@ -1457,6 +1469,32 @@
   .airing-in.soon { color: var(--color-accent); font-weight: 650; }
 
   table.compact .airing-in { font-size: 0.72rem; }
+
+  /* The chip must survive a long title, so the text truncates, not the cell. */
+  .title-wrap { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  .airing-chip {
+    flex-shrink: 0;
+    align-self: flex-start;
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+    border: 1px solid rgba(var(--color-accent-rgb), 0.18);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+  }
+  .title-wrap .airing-chip { align-self: center; }
+
+  .airing-chip.soon {
+    color: var(--color-accent);
+    background: rgba(var(--color-accent-rgb), 0.14);
+    border-color: rgba(var(--color-accent-rgb), 0.3);
+  }
+
+  table.compact .airing-chip { font-size: 0.62rem; }
 
   .empty-row td {
     text-align: center;

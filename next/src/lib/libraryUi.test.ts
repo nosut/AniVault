@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  asDisplayRows, flattenGroups, formatAiringCountdown, groupBySeason,
+  airingSoonMarker, asDisplayRows, flattenGroups, formatAiringCountdown, groupBySeason,
   nextAiringByAnime, nextAiringSortVal, normalizeStatusFilter,
   seasonGroupKey, seasonGroupLabel, seasonSortVal,
 } from './libraryUi';
@@ -241,5 +241,62 @@ describe('nextAiringSortVal', () => {
 
   it('returns Infinity for a show with no airing, so it sorts last', () => {
     expect(nextAiringSortVal(1, nextAiringByAnime([], NOW))).toBe(Number.POSITIVE_INFINITY);
+  });
+});
+
+describe('airingSoonMarker', () => {
+  const DAY = 86400;
+  const ptw = (airing_status: string | null = 'NOT_YET_RELEASED', status = 'plan_to_watch') =>
+    ({ anime_id: 1, status, airing_status });
+  const mapOf = (next_episode: number | null, airing_at: number) =>
+    nextAiringByAnime([air(1, next_episode, airing_at)], NOW);
+  const none = nextAiringByAnime([], NOW);
+
+  it('marks a premiere inside the week', () => {
+    expect(airingSoonMarker(ptw(), mapOf(1, NOW + 3 * DAY + 4 * 3600), NOW))
+      .toEqual({ kind: 'premiere', label: 'Premieres in 3d 4h', soon: false });
+  });
+
+  it('marks a premiere exactly a week out', () => {
+    expect(airingSoonMarker(ptw(), mapOf(1, NOW + 7 * DAY), NOW)?.kind).toBe('premiere');
+  });
+
+  it('leaves a premiere more than a week out unmarked', () => {
+    expect(airingSoonMarker(ptw(), mapOf(1, NOW + 7 * DAY + 60), NOW)).toBeNull();
+  });
+
+  it('flags a premiere under a day away as soon', () => {
+    expect(airingSoonMarker(ptw(), mapOf(1, NOW + 5 * 3600), NOW))
+      .toEqual({ kind: 'premiere', label: 'Premieres in 5h 0m', soon: true });
+  });
+
+  it('marks a show already mid-season with its next episode', () => {
+    expect(airingSoonMarker(ptw('RELEASING'), mapOf(5, NOW + 2 * DAY), NOW))
+      .toEqual({ kind: 'airing', label: 'Airing · Ep 5 in 2d 0h', soon: false });
+  });
+
+  it('keeps a mid-season show marked when its next episode is over a week out', () => {
+    expect(airingSoonMarker(ptw('RELEASING'), mapOf(5, NOW + 12 * DAY), NOW)?.kind).toBe('airing');
+  });
+
+  it('trusts the calendar over a stale local airing status', () => {
+    expect(airingSoonMarker(ptw('NOT_YET_RELEASED'), mapOf(4, NOW + DAY), NOW)?.kind).toBe('airing');
+  });
+
+  it('marks a releasing show with nothing upcoming as plain Airing', () => {
+    expect(airingSoonMarker(ptw('RELEASING'), none, NOW))
+      .toEqual({ kind: 'airing', label: 'Airing', soon: false });
+  });
+
+  it('leaves a finished show unmarked', () => {
+    expect(airingSoonMarker(ptw('FINISHED'), none, NOW)).toBeNull();
+  });
+
+  it('leaves an unannounced show unmarked', () => {
+    expect(airingSoonMarker(ptw(null), none, NOW)).toBeNull();
+  });
+
+  it('only marks plan-to-watch entries', () => {
+    expect(airingSoonMarker(ptw('RELEASING', 'watching'), mapOf(5, NOW + DAY), NOW)).toBeNull();
   });
 });
