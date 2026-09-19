@@ -12,7 +12,9 @@
 
   export let events: EngineEvent[] = [];
 
-  const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
+  // `loaded` fires after every load() settles, success or not, so App can
+  // restore the scroll position once the list is back.
+  const dispatch = createEventDispatcher<{ select: { anime_id: number }; loaded: null }>();
 
   // Every value a tab can select. Declared here rather than derived from
   // `statusOptions` because that constant is defined further down the file,
@@ -262,6 +264,7 @@
       error = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
+      dispatch('loaded');
     }
   }
 

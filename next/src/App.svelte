@@ -182,6 +182,28 @@
   let seasonEverOpened = currentView === 'season';
   $: if (currentView === 'season') seasonEverOpened = true;
   let detailAnimeId: number | null = null;
+
+  // `.content` is the one scroll container every view shares, so a list's
+  // scroll offset is lost when the detail view takes the container over. It
+  // is carried across the round trip by hand. Null when there is nothing to
+  // restore.
+  let contentEl: HTMLElement | undefined;
+  let savedScroll: { view: View; top: number } | null = null;
+
+  // Seasons stays mounted and Search keeps its results in App state, so both
+  // are full height a tick after Back. Library and Collection unmount behind
+  // a detail view and refetch, so theirs is restored when they report
+  // `loaded`. Other views are not restored.
+  const INSTANT_VIEWS: View[] = ['season', 'search'];
+
+  async function restoreScroll(view: View) {
+    if (savedScroll?.view !== view || currentView !== view) return;
+    const { top } = savedScroll;
+    savedScroll = null;
+    // The list has to be back in layout before the container can scroll that far.
+    await tick();
+    if (contentEl) contentEl.scrollTop = top;
+  }
   let searchQuery = '';
   let searchEntries: SeasonAnimeEntry[] = [];
   let searchHasSearched = false;
@@ -265,34 +287,14 @@
     lastPromptKey = null;
   }
 
-  function handleLibrarySelect(event: CustomEvent<{ anime_id: number }>) {
+  async function handleSelect(event: CustomEvent<{ anime_id: number }>) {
+    savedScroll = contentEl ? { view: currentView, top: contentEl.scrollTop } : null;
     previousView = currentView;
     detailAnimeId = event.detail.anime_id;
     currentView = 'detail';
-  }
-
-  function handleCollectionSelect(event: CustomEvent<{ anime_id: number }>) {
-    previousView = currentView;
-    detailAnimeId = event.detail.anime_id;
-    currentView = 'detail';
-  }
-
-  function handleSeasonSelect(event: CustomEvent<{ anime_id: number }>) {
-    previousView = currentView;
-    detailAnimeId = event.detail.anime_id;
-    currentView = 'detail';
-  }
-
-  function handleSearchSelect(event: CustomEvent<{ anime_id: number }>) {
-    previousView = currentView;
-    detailAnimeId = event.detail.anime_id;
-    currentView = 'detail';
-  }
-
-  function handleCalendarSelect(event: CustomEvent<{ anime_id: number }>) {
-    previousView = currentView;
-    detailAnimeId = event.detail.anime_id;
-    currentView = 'detail';
+    // Otherwise the detail view opens scrolled as far down as the list was.
+    await tick();
+    if (contentEl) contentEl.scrollTop = 0;
   }
 
   function handleDetailSelect(event: CustomEvent<{ anime_id: number }>) {
@@ -302,6 +304,7 @@
 
   function handleDetailBack() {
     currentView = previousView;
+    if (INSTANT_VIEWS.includes(currentView)) void restoreScroll(currentView);
   }
 
   function isNavActive(itemId: View): boolean {
@@ -311,6 +314,8 @@
   }
 
   function setView(view: View) {
+    // The rail starts a fresh visit; only Back returns to a saved position.
+    savedScroll = null;
     currentView = view;
     if (view !== 'detail') {
       detailAnimeId = null;
@@ -407,7 +412,7 @@
     </div>
   </aside>
 
-  <section class="content">
+  <section class="content" bind:this={contentEl}>
     {#if update && shouldShowUpdate(update, updateDismissed)}
       <div class="update-banner" role="status">
         <span>AniVault {update.latest} is available</span>
@@ -436,23 +441,23 @@
     -->
     {#if seasonEverOpened}
       <div class="season-view-slot" style={currentView === 'season' ? 'display: contents' : 'display: none'}>
-        <SeasonView on:select={handleSeasonSelect} />
+        <SeasonView on:select={handleSelect} />
       </div>
     {/if}
     {#if currentView === 'dashboard'}
       <DashboardView
         events={latestEvents}
-        on:select={handleLibrarySelect}
+        on:select={handleSelect}
         on:navigate={(e) => { previousView = currentView; currentView = e.detail.view as View; }}
       />
     {:else if currentView === 'library'}
-      <LibraryView events={latestEvents} on:select={handleLibrarySelect} />
+      <LibraryView events={latestEvents} on:select={handleSelect} on:loaded={() => restoreScroll('library')} />
     {:else if currentView === 'collection'}
-      <CollectionView events={latestEvents} on:select={handleCollectionSelect} />
+      <CollectionView events={latestEvents} on:select={handleSelect} on:loaded={() => restoreScroll('collection')} />
     {:else if currentView === 'search'}
-      <SearchView bind:query={searchQuery} bind:entries={searchEntries} bind:hasSearched={searchHasSearched} on:select={handleSearchSelect} />
+      <SearchView bind:query={searchQuery} bind:entries={searchEntries} bind:hasSearched={searchHasSearched} on:select={handleSelect} />
     {:else if currentView === 'calendar'}
-      <CalendarView on:select={handleCalendarSelect} />
+      <CalendarView on:select={handleSelect} />
     {:else if currentView === 'history'}
       <HistoryView bind:entries={historyEntries} bind:query={historyQuery} bind:offset={historyOffset} bind:hasMore={historyHasMore} />
     {:else if currentView === 'stats'}

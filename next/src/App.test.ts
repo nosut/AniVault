@@ -30,7 +30,7 @@ vi.mock('./lib/api', async (importOriginal) => {
   return mocked;
 });
 
-import { getSeasonAnime, diffSeason, getLibraryIds, fetchAnimeDetail, getTrackingStatus, searchLibrary, getCalendar } from './lib/api';
+import { getSeasonAnime, diffSeason, getLibraryIds, fetchAnimeDetail, getTrackingStatus, searchLibrary, getCalendar, getCollection } from './lib/api';
 import App from './App.svelte';
 
 async function settle() {
@@ -106,6 +106,32 @@ describe('App keeps the Seasons view mounted across a detail round trip', () => 
     expect(document.querySelector('.group-count')?.textContent).toBe('1');
     expect(getSeasonAnime).toHaveBeenCalledTimes(1);
     expect(diffSeason).toHaveBeenCalledTimes(1);
+
+    unmount(app);
+  });
+
+  // Seasons and the detail view share `.content` as their one scroll
+  // container, so the offset has to be carried across the round trip by hand.
+  it('returns to the same scroll position after a detail round trip', async () => {
+    const app = mount(App, { target: document.getElementById('app')! });
+    await settle();
+
+    const content = document.querySelector('.content') as HTMLElement;
+    content.scrollTop = 800;
+
+    (document.querySelector('.poster-card') as HTMLElement).click();
+    await settle();
+
+    // The detail view opens at its own top, not 800px into itself.
+    expect(content.scrollTop).toBe(0);
+
+    // Reading the detail page moves the shared container.
+    content.scrollTop = 120;
+
+    (document.querySelector('[aria-label="Back"]') as HTMLElement).click();
+    await settle();
+
+    expect(content.scrollTop).toBe(800);
 
     unmount(app);
   });
@@ -197,6 +223,81 @@ describe('App does not mount the Seasons view before it has ever been opened', (
     expect(document.querySelector('.group-count')?.textContent).toBe('1');
     expect(getSeasonAnime).toHaveBeenCalledTimes(1);
     expect(diffSeason).toHaveBeenCalledTimes(1);
+
+    unmount(app);
+  });
+
+  // Unlike Seasons, these views unmount behind a detail view and reload on
+  // Back, so the offset can only be restored once their list has loaded.
+  const libraryEntry = {
+    anime_id: 11, title: 'Library Show', status: 'watching', watched_episodes: 1, episode_count: 12,
+    score: null, image_url: null, season: 'FALL', season_year: 2026, airing_status: 'RELEASING',
+  };
+
+  it('returns Library to the same scroll position after a detail round trip', async () => {
+    vi.mocked(searchLibrary).mockResolvedValue([libraryEntry] as never);
+    const app = mount(App, { target: document.getElementById('app')! });
+    await settle();
+
+    const content = document.querySelector('.content') as HTMLElement;
+    content.scrollTop = 500;
+    (document.querySelector('tr.data-row') as HTMLElement).click();
+    await settle();
+    expect(content.scrollTop).toBe(0);
+
+    content.scrollTop = 120;
+    (document.querySelector('[aria-label="Back"]') as HTMLElement).click();
+    await settle();
+
+    expect(document.querySelector('tr.data-row')).toBeTruthy();
+    expect(content.scrollTop).toBe(500);
+
+    unmount(app);
+  });
+
+  it('returns Collection to the same scroll position after a detail round trip', async () => {
+    vi.mocked(getCollection).mockResolvedValue([{
+      anime_id: 12, title: 'Collected Show', image_url: null, status: 'watching', watched_episodes: 1,
+      episode_count: 12, downloaded_count: 3, max_downloaded_episode: 3, next_unwatched_episode: 2,
+      next_episode_path: null, new_count: 0, last_indexed_at: 100,
+    }] as never);
+    const app = mount(App, { target: document.getElementById('app')! });
+    await settle();
+    // Collection cannot be a start page, so reach it through the rail.
+    (document.querySelector('[aria-label="Collection"]') as HTMLElement).click();
+    await settle();
+
+    const content = document.querySelector('.content') as HTMLElement;
+    content.scrollTop = 640;
+    (document.querySelector('.poster-card') as HTMLElement).click();
+    await settle();
+    expect(content.scrollTop).toBe(0);
+
+    content.scrollTop = 120;
+    (document.querySelector('[aria-label="Back"]') as HTMLElement).click();
+    await settle();
+
+    expect(content.scrollTop).toBe(640);
+
+    unmount(app);
+  });
+
+  it('forgets the saved position when the rail is used instead of Back', async () => {
+    vi.mocked(searchLibrary).mockResolvedValue([libraryEntry] as never);
+    const app = mount(App, { target: document.getElementById('app')! });
+    await settle();
+
+    const content = document.querySelector('.content') as HTMLElement;
+    content.scrollTop = 500;
+    (document.querySelector('tr.data-row') as HTMLElement).click();
+    await settle();
+
+    // Leave the detail view through the rail: a fresh visit, not a return.
+    (document.querySelector('[aria-label="Library"]') as HTMLElement).click();
+    await settle();
+
+    expect(document.querySelector('tr.data-row')).toBeTruthy();
+    expect(content.scrollTop).toBe(0);
 
     unmount(app);
   });

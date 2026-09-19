@@ -21,7 +21,9 @@
   import { Play, FolderOpen, Info, Trash2, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, LayoutGrid, List } from 'lucide-svelte';
 
   export let events: EngineEvent[] = [];
-  const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
+  // `loaded` fires after every load() settles, success or not, so App can
+  // restore the scroll position once the list is back.
+  const dispatch = createEventDispatcher<{ select: { anime_id: number }; loaded: null }>();
 
   function loadPref(k: string, f: string) { try { return localStorage.getItem(k) ?? f; } catch { return f; } }
   function persistPref(k: string, v: string) { try { localStorage.setItem(k, v); } catch {} }
@@ -82,7 +84,7 @@
       entries = await getCollection();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
-    } finally { loading = false; }
+    } finally { loading = false; dispatch('loaded'); }
   }
 
   function completeness(e: CollectionEntry): number {
