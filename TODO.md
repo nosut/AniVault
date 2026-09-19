@@ -34,3 +34,13 @@ These can't be covered by unit tests.
 - [ ] Settings › Sonarr tag checkboxes list Sonarr's tags, save on toggle, and filter
       the import.
 - [ ] The dashboard updates after an episode is detected, without switching views.
+
+## Manual testing for 1.0.24 (Windows)
+
+Both changes are layout-dependent, which jsdom can't reproduce.
+
+- [ ] Library › Plan to Watch: the airing chip sits next to long titles without being
+      clipped, in table, compact table and grid view, grouped and ungrouped.
+- [ ] Scroll down Seasons (a dated season and Future Seasons), open a show, press Back:
+      the page returns to the same spot. Same for Library, Collection and Search.
+- [ ] A detail view opened from far down a list starts at its top.
