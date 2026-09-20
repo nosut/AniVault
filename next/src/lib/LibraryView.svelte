@@ -793,7 +793,7 @@
                 <span class="badge">{formatStatus(entry.status)}</span>
               {/if}
               <div class="progress-wrap poster-progress">
-                <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
+                <div class="progress-bar" style="transform: scaleX({progressPct(entry) / 100})"></div>
                 <div class="progress-inner">
                   <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
                   <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
@@ -1072,7 +1072,7 @@
                   {/if}
                   <td class="num-cell progress-cell" class:completed={entry.watched_episodes > 0 && entry.episode_count != null && entry.watched_episodes >= entry.episode_count}>
                     <div class="progress-wrap">
-                      <div class="progress-bar" style="width: {progressPct(entry)}%"></div>
+                      <div class="progress-bar" style="transform: scaleX({progressPct(entry) / 100})"></div>
                       <div class="progress-inner">
                         <button class="progress-btn" on:click|stopPropagation={() => handleDecrement(entry)} aria-label="Decrease">&minus;</button>
                         <span class="progress-text">{entry.watched_episodes} / {totalLabel(entry)}</span>
@@ -1266,10 +1266,13 @@
     position: absolute;
     left: 0;
     top: 0;
+    width: 100%;
     height: 100%;
     background: rgba(var(--color-accent-rgb), 0.25);
-    border-radius: 4px;
-    transition: width 0.3s ease;
+    /* Scaled rather than resized so a progress change never relayouts the
+       row. The wrap clips the corners; a radius here would be squashed. */
+    transform-origin: left;
+    transition: transform 0.3s ease;
   }
 
   .progress-cell.completed .progress-bar {
