@@ -136,6 +136,44 @@ export function asDisplayRows<T>(entries: T[]): DisplayRow<T>[] {
   return entries.map((entry) => ({ kind: 'entry', entry }));
 }
 
+/// How much of a season group is checked, for its tri-state checkbox.
+export type GroupSelection = 'none' | 'some' | 'all';
+
+export function groupSelection(
+  entries: { anime_id: number }[],
+  selected: Set<number>,
+): GroupSelection {
+  const hits = entries.filter((e) => selected.has(e.anime_id)).length;
+  if (hits === 0) return 'none';
+  return hits === entries.length ? 'all' : 'some';
+}
+
+/// Toggle a whole group. A partly checked group fills in rather than clears,
+/// matching what a tri-state checkbox does everywhere else. Checks outside the
+/// group are untouched.
+export function toggleGroupSelection(
+  entries: { anime_id: number }[],
+  selected: Set<number>,
+): Set<number> {
+  const next = new Set(selected);
+  const clear = groupSelection(entries, selected) === 'all';
+  for (const e of entries) {
+    if (clear) next.delete(e.anime_id);
+    else next.add(e.anime_id);
+  }
+  return next;
+}
+
+/// Drop checks for shows that are no longer listed, so the batch bar never
+/// counts (or acts on) a row the user cannot see.
+export function pruneSelection(
+  selected: Set<number>,
+  entries: { anime_id: number }[],
+): Set<number> {
+  const listed = new Set(entries.map((e) => e.anime_id));
+  return new Set([...selected].filter((id) => listed.has(id)));
+}
+
 /// The airing fields the Watching column needs. Structural, so CalendarEntry
 /// and test fixtures both satisfy it.
 export interface AiringLike {

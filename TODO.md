@@ -44,3 +44,14 @@ Both changes are layout-dependent, which jsdom can't reproduce.
 - [ ] Scroll down Seasons (a dated season and Future Seasons), open a show, press Back:
       the page returns to the same spot. Same for Library, Collection and Search.
 - [ ] A detail view opened from far down a list starts at its top.
+
+## Manual testing for 1.0.25 (Windows)
+
+The selection logic is unit-tested; the header layout is not.
+
+- [ ] Library › Plan to Watch, grouped: each season header has a checkbox that lines up
+      with the row checkboxes (table, compact table) and sits left of the chevron (grid).
+      The accent stripe on "This season" / "Next season" still shows.
+- [ ] Clicking a season checkbox does not collapse or expand the season; a partly checked
+      season shows a dash.
+- [ ] Check a season, open a show, press Back: the checks and the batch bar are still there.

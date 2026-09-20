@@ -46,6 +46,7 @@ vi.mock('./api', () => ({
 
 import { createClassComponent } from 'svelte/legacy';
 import LibraryView from './LibraryView.svelte';
+import { searchLibrary } from './api';
 
 async function settle() {
   await tick();
@@ -104,5 +105,130 @@ describe('LibraryView plan-to-watch airing marker', () => {
 
     const chips = [...document.querySelectorAll('.poster-info .airing-chip')].map((n) => n.textContent?.trim());
     expect(chips.sort()).toEqual(['Airing · Ep 5 in 5h 0m', 'Premieres in 3d 4h']);
+  });
+});
+
+describe('LibraryView selection', () => {
+  let component: { $destroy: () => void } | undefined;
+
+  const fall = (id: number, title: string) => entry(id, title, 'FINISHED');
+  const winter = (id: number, title: string) => ({ ...entry(id, title, 'FINISHED'), season: 'WINTER', season_year: 2027 });
+
+  function mount() {
+    component = createClassComponent({ component: LibraryView, target: document.getElementById('app')! });
+  }
+
+  const groupCheck = (label: string) =>
+    document.querySelector<HTMLInputElement>(`input[aria-label="Select all of ${label}"]`)!;
+  const rowCheck = (title: string) =>
+    document.querySelector<HTMLInputElement>(`input[aria-label="Select ${title}"]`)!;
+  const checkedTitles = () =>
+    [...document.querySelectorAll<HTMLInputElement>('.data-row .col-check input, .poster-check input')]
+      .filter((i) => i.checked)
+      .map((i) => i.getAttribute('aria-label')!.replace('Select ', ''));
+  const batchCount = () => document.querySelector('.batch-count')?.textContent?.trim() ?? null;
+
+  async function click(el: HTMLElement) {
+    el.click();
+    await settle();
+  }
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="app"></div>';
+    localStorage.clear();
+    localStorage.setItem('anivault-library-filter', 'plan_to_watch');
+    vi.mocked(searchLibrary).mockResolvedValue([
+      fall(1, 'Fall One'), fall(2, 'Fall Two'), winter(3, 'Winter One'),
+    ] as never);
+  });
+
+  afterEach(async () => {
+    // The selection deliberately outlives the component, so empty it here or
+    // it leaks into the next test.
+    for (const box of document.querySelectorAll<HTMLInputElement>('.data-row .col-check input, .poster-check input')) {
+      if (box.checked) await click(box);
+    }
+    component?.$destroy();
+    component = undefined;
+  });
+
+  it('checks one season from its header without touching the others', async () => {
+    mount();
+    await settle();
+
+    await click(groupCheck('Fall 2026'));
+
+    expect(checkedTitles()).toEqual(['Fall One', 'Fall Two']);
+    expect(batchCount()).toBe('2 selected');
+    expect(groupCheck('Fall 2026').checked).toBe(true);
+    expect(groupCheck('Winter 2027').checked).toBe(false);
+  });
+
+  it('shows a partly checked season as indeterminate, then fills and clears it', async () => {
+    mount();
+    await settle();
+
+    await click(rowCheck('Fall Two'));
+    expect(groupCheck('Fall 2026').indeterminate).toBe(true);
+    expect(groupCheck('Fall 2026').checked).toBe(false);
+
+    await click(groupCheck('Fall 2026'));
+    expect(checkedTitles()).toEqual(['Fall One', 'Fall Two']);
+    expect(groupCheck('Fall 2026').indeterminate).toBe(false);
+
+    await click(groupCheck('Fall 2026'));
+    expect(checkedTitles()).toEqual([]);
+  });
+
+  it('selects a collapsed season without expanding it', async () => {
+    localStorage.setItem('anivault-library-season-collapsed', JSON.stringify({ fall2026: true }));
+    mount();
+    await settle();
+
+    await click(groupCheck('Fall 2026'));
+
+    expect(batchCount()).toBe('2 selected');
+    expect(rowCheck('Fall One')).toBeNull();
+
+    await click(groupCheck('Fall 2026'));
+    expect(batchCount()).toBeNull();
+  });
+
+  it('offers the season checkbox on the poster grid too', async () => {
+    localStorage.setItem('anivault-library-viewmode', 'grid');
+    mount();
+    await settle();
+
+    await click(groupCheck('Winter 2027'));
+
+    expect(checkedTitles()).toEqual(['Winter One']);
+  });
+
+  it('keeps checks across a detail round trip', async () => {
+    mount();
+    await settle();
+    await click(groupCheck('Fall 2026'));
+
+    component!.$destroy();
+    mount();
+    await settle();
+
+    expect(checkedTitles()).toEqual(['Fall One', 'Fall Two']);
+    expect(batchCount()).toBe('2 selected');
+    expect(groupCheck('Fall 2026').checked).toBe(true);
+  });
+
+  it('drops checks for shows that left the list while the detail view was open', async () => {
+    mount();
+    await settle();
+    await click(groupCheck('Fall 2026'));
+
+    component!.$destroy();
+    vi.mocked(searchLibrary).mockResolvedValue([fall(1, 'Fall One'), winter(3, 'Winter One')] as never);
+    mount();
+    await settle();
+
+    expect(checkedTitles()).toEqual(['Fall One']);
+    expect(batchCount()).toBe('1 selected');
   });
 });

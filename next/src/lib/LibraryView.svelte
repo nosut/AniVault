@@ -1,3 +1,10 @@
+<script module lang="ts">
+  // App unmounts the Library behind a detail view, so the checked rows are
+  // held at module level to survive the round trip. Deliberately not
+  // persisted: a restart starts with nothing checked.
+  let keptSelection = new Set<number>();
+</script>
+
 <script lang="ts">
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
@@ -6,6 +13,7 @@
   import {
     normalizeStatusFilter, groupBySeason, flattenGroups, asDisplayRows,
     seasonSortVal, getCurrentSeason,
+    groupSelection, toggleGroupSelection, pruneSelection,
     nextAiringByAnime, formatAiringCountdown, nextAiringSortVal, airingSoonMarker,
   } from './libraryUi';
   import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2 } from 'lucide-svelte';
@@ -257,6 +265,13 @@
       const searchFilter = query.trim() ? null : statusFilter;
       const results = await searchLibrary(query, searchFilter, LIBRARY_FETCH_LIMIT, 0);
       entries = results;
+      // Only the first load after a remount prunes: a show deleted or moved to
+      // another status from its detail page must not come back still checked.
+      // Later loads (tab switches, searches) leave the selection alone.
+      if (!selectionPruned) {
+        selectionPruned = true;
+        selectedIds = pruneSelection(selectedIds, results);
+      }
       if (results.length > 0) {
         loadEpisodeFiles(results);
       }
@@ -380,8 +395,13 @@
     }
   }
 
-  let selectedIds = new Set<number>();
-  let allSelected = false;
+  let selectedIds = new Set<number>(keptSelection);
+  // A call, not `$: keptSelection = ...`, which svelte-check reads as a fresh
+  // reactive declaration shadowing the module-level variable.
+  function keepSelection(ids: Set<number>) { keptSelection = ids; }
+  $: keepSelection(selectedIds);
+  let selectionPruned = false;
+  $: allSelected = groupSelection(sortedEntries, selectedIds) === 'all';
   let batchUpdating = false;
 
   function toggleSelectAll() {
@@ -390,15 +410,17 @@
     } else {
       sortedEntries.forEach(e => selectedIds.add(e.anime_id));
     }
-    allSelected = !allSelected;
     selectedIds = new Set(selectedIds);
   }
 
   function toggleSelect(animeId: number) {
     if (selectedIds.has(animeId)) { selectedIds.delete(animeId); }
     else { selectedIds.add(animeId); }
-    allSelected = sortedEntries.length > 0 && selectedIds.size === sortedEntries.length;
     selectedIds = new Set(selectedIds);
+  }
+
+  function toggleSeason(group: { entries: LibraryEntry[] }) {
+    selectedIds = toggleGroupSelection(group.entries, selectedIds);
   }
 
   function batchSetStatus(status: string) {
@@ -412,7 +434,7 @@
           if (entry) entry.status = status;
         } catch { /* continue */ }
       }
-      selectedIds.clear(); allSelected = false;
+      selectedIds.clear();
       selectedIds = new Set(selectedIds);
       commitEntries();
       void loadStats();
@@ -436,7 +458,7 @@
         }
       } catch { /* continue */ }
     }
-    selectedIds.clear(); allSelected = false;
+    selectedIds.clear();
     selectedIds = new Set(selectedIds);
     commitEntries();
     batchUpdating = false;
@@ -470,7 +492,7 @@
       } catch { /* continue */ }
     }
     entries = entries.filter((e) => !selectedIds.has(e.anime_id));
-    selectedIds.clear(); allSelected = false;
+    selectedIds.clear();
     selectedIds = new Set(selectedIds);
     void loadStats();
     batchUpdating = false;
@@ -717,20 +739,30 @@
     <div class="poster-grid">
       {#each displayRows as row (row.kind === 'group' ? `g:${row.group.key}` : `e:${row.entry.anime_id}`)}
         {#if row.kind === 'group'}
-          <button
-            type="button"
-            class="group-band"
-            class:is-marked={row.group.chip !== null}
-            aria-expanded={!collapsedSeasons[row.group.key]}
-            on:click={() => toggleGroup(row.group.key)}
-          >
-            <span class="chev" class:collapsed={collapsedSeasons[row.group.key]} aria-hidden="true">
-              <ChevronDown size={13} />
-            </span>
-            <span class="group-name">{row.group.label}</span>
-            <span class="group-count">{row.group.entries.length}</span>
-            {#if row.group.chip}<span class="next-chip">{row.group.chip}</span>{/if}
-          </button>
+          {@const picked = groupSelection(row.group.entries, selectedIds)}
+          <div class="group-band" class:is-marked={row.group.chip !== null}>
+            <input
+              type="checkbox"
+              class="group-check"
+              checked={picked === 'all'}
+              indeterminate={picked === 'some'}
+              on:change={() => toggleSeason(row.group)}
+              aria-label={`Select all of ${row.group.label}`}
+            />
+            <button
+              type="button"
+              class="group-band-btn"
+              aria-expanded={!collapsedSeasons[row.group.key]}
+              on:click={() => toggleGroup(row.group.key)}
+            >
+              <span class="chev" class:collapsed={collapsedSeasons[row.group.key]} aria-hidden="true">
+                <ChevronDown size={13} />
+              </span>
+              <span class="group-name">{row.group.label}</span>
+              <span class="group-count">{row.group.entries.length}</span>
+              {#if row.group.chip}<span class="next-chip">{row.group.chip}</span>{/if}
+            </button>
+          </div>
         {:else}
           {@const entry = row.entry}
           {@const marker = airingSoonMarker(entry, nextAiring, nowSec)}
@@ -951,8 +983,18 @@
           {:else}
             {#each displayRows as row (row.kind === 'group' ? `g:${row.group.key}` : `e:${row.entry.anime_id}`)}
               {#if row.kind === 'group'}
+                {@const picked = groupSelection(row.group.entries, selectedIds)}
                 <tr class="group-row" class:is-marked={row.group.chip !== null}>
-                  <td colspan={columnCount}>
+                  <td class="col-check">
+                    <input
+                      type="checkbox"
+                      checked={picked === 'all'}
+                      indeterminate={picked === 'some'}
+                      on:change={() => toggleSeason(row.group)}
+                      aria-label={`Select all of ${row.group.label}`}
+                    />
+                  </td>
+                  <td colspan={columnCount - 1}>
                     <button
                       type="button"
                       class="group-btn"
@@ -982,7 +1024,7 @@
                   on:dragend={() => dragEntry = null}
                 >
                   <td class="col-check">
-                    <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation />
+                    <input type="checkbox" checked={selectedIds.has(entry.anime_id)} on:change={() => toggleSelect(entry.anime_id)} on:click|stopPropagation aria-label={`Select ${entry.title}`} />
                   </td>
                   <td>
                     {#if entry.image_url}
@@ -1371,10 +1413,9 @@
     align-items: center;
     gap: 0.55rem;
     width: 100%;
-    padding: 0.5rem 0.7rem;
+    padding: 0.5rem 0.7rem 0.5rem 0.35rem;
     background: transparent;
     border: 0;
-    border-left: 3px solid transparent;
     color: var(--color-text);
     font-family: var(--font-ui);
     font-size: 0.85rem;
@@ -1384,7 +1425,9 @@
 
   .group-btn:hover { background: rgba(var(--color-accent-rgb), 0.07); }
   .group-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
-  .group-row.is-marked .group-btn { border-left-color: var(--color-accent); }
+  /* The season stripe sits on the row's first cell, which is now the checkbox. */
+  .group-row td.col-check { border-left: 3px solid transparent; }
+  .group-row.is-marked td.col-check { border-left-color: var(--color-accent); }
 
   .chev {
     display: inline-flex;
@@ -1618,25 +1661,38 @@
     grid-column: 1 / -1;
     display: flex;
     align-items: center;
-    gap: 0.55rem;
     width: 100%;
-    padding: 0.45rem 0.7rem;
+    padding-left: 0.7rem;
     margin-top: 0.35rem;
     background: var(--color-surface-raised);
     border: 1px solid rgba(var(--color-accent-rgb), 0.14);
     border-left: 3px solid transparent;
     border-radius: 8px;
+  }
+
+  .group-band:first-child { margin-top: 0; }
+  .group-band:hover { background: rgba(var(--color-accent-rgb), 0.1); }
+  .group-band.is-marked { border-left-color: var(--color-accent); }
+
+  .group-check { accent-color: var(--color-accent); flex: none; }
+
+  .group-band-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+    padding: 0.45rem 0.7rem 0.45rem 0.55rem;
+    background: transparent;
+    border: 0;
+    border-radius: 0 8px 8px 0;
     color: var(--color-text);
     font-family: var(--font-ui);
     font-size: 0.85rem;
     text-align: left;
     cursor: pointer;
   }
-
-  .group-band:first-child { margin-top: 0; }
-  .group-band:hover { background: rgba(var(--color-accent-rgb), 0.1); }
-  .group-band:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-  .group-band.is-marked { border-left-color: var(--color-accent); }
+  .group-band-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
   .poster-thumb {
     width: 100%;

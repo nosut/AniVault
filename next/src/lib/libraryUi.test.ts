@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   airingSoonMarker, asDisplayRows, flattenGroups, formatAiringCountdown, groupBySeason,
-  nextAiringByAnime, nextAiringSortVal, normalizeStatusFilter,
-  seasonGroupKey, seasonGroupLabel, seasonSortVal,
+  groupSelection, nextAiringByAnime, nextAiringSortVal, normalizeStatusFilter,
+  pruneSelection, seasonGroupKey, seasonGroupLabel, seasonSortVal, toggleGroupSelection,
 } from './libraryUi';
 
 const KNOWN = [null, 'watching', 'completed', 'on_hold', 'dropped', 'plan_to_watch'];
@@ -298,5 +298,50 @@ describe('airingSoonMarker', () => {
 
   it('only marks plan-to-watch entries', () => {
     expect(airingSoonMarker(ptw('RELEASING', 'watching'), mapOf(5, NOW + DAY), NOW)).toBeNull();
+  });
+});
+
+const ids = (...xs: number[]) => xs.map((anime_id) => ({ anime_id }));
+
+describe('groupSelection', () => {
+  it('reports none, some and all', () => {
+    expect(groupSelection(ids(1, 2), new Set())).toBe('none');
+    expect(groupSelection(ids(1, 2), new Set([2]))).toBe('some');
+    expect(groupSelection(ids(1, 2), new Set([1, 2]))).toBe('all');
+  });
+
+  it('ignores checks that belong to other groups', () => {
+    expect(groupSelection(ids(1, 2), new Set([7, 8]))).toBe('none');
+    expect(groupSelection(ids(1, 2), new Set([1, 2, 7]))).toBe('all');
+  });
+
+  it('treats an empty group as none', () => {
+    expect(groupSelection([], new Set([1]))).toBe('none');
+  });
+});
+
+describe('toggleGroupSelection', () => {
+  it('checks the whole group from none, leaving other groups alone', () => {
+    expect(toggleGroupSelection(ids(1, 2), new Set([7]))).toEqual(new Set([7, 1, 2]));
+  });
+
+  it('completes a partly checked group rather than clearing it', () => {
+    expect(toggleGroupSelection(ids(1, 2), new Set([2]))).toEqual(new Set([1, 2]));
+  });
+
+  it('clears only the group when it is fully checked', () => {
+    expect(toggleGroupSelection(ids(1, 2), new Set([1, 2, 7]))).toEqual(new Set([7]));
+  });
+
+  it('returns a new set', () => {
+    const before = new Set([1]);
+    expect(toggleGroupSelection(ids(1), before)).not.toBe(before);
+    expect(before).toEqual(new Set([1]));
+  });
+});
+
+describe('pruneSelection', () => {
+  it('drops checks for shows that are no longer listed', () => {
+    expect(pruneSelection(new Set([1, 2, 3]), ids(1, 3, 9))).toEqual(new Set([1, 3]));
   });
 });
