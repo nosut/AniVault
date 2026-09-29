@@ -17,3 +17,10 @@ export function candidateLabel(c: SonarrCandidate): string {
   const seasons = `${c.season_count} season${c.season_count === 1 ? '' : 's'}`;
   return `${c.title}${year} · ${seasons} · TVDB ${c.tvdb_id}`;
 }
+
+/** Shows the user chose to leave out of the check, sorted by title. */
+export function ignoredRows(rows: CoverageRow[]): CoverageRow[] {
+  return rows
+    .filter((r) => r.state === 'ignored')
+    .sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
+}

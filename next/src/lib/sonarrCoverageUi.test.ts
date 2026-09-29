@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { candidateAction, candidateLabel, missingRows } from './sonarrCoverageUi';
+import { candidateAction, candidateLabel, ignoredRows, missingRows } from './sonarrCoverageUi';
 import type { CoverageRow, SonarrCandidate } from './api';
 
 const row = (anime_id: number, title: string, state: CoverageRow['state']): CoverageRow =>
@@ -29,5 +29,9 @@ describe('Sonarr coverage helpers', () => {
   it('labels candidates with year, seasons and TVDB id', () => {
     expect(candidateLabel(cand({ season_count: 2 }))).toBe('Overgeared (2025) · 2 seasons · TVDB 1');
     expect(candidateLabel(cand({ year: null, season_count: 1 }))).toBe('Overgeared · 1 season · TVDB 1');
+  });
+  it('lists ignored rows separately, sorted by title', () => {
+    const rows = [row(1, 'zeta', 'ignored'), row(2, 'Missing', 'missing'), row(3, 'Alpha', 'ignored')];
+    expect(ignoredRows(rows).map((r) => r.anime_id)).toEqual([3, 1]);
   });
 });

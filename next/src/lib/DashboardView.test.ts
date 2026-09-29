@@ -45,13 +45,14 @@ vi.mock('./api', () => ({
     ],
   })),
   ignoreSonarrCoverage: vi.fn(async () => {}),
+  unignoreSonarrCoverage: vi.fn(async () => {}),
   lookupSonarrCandidates: vi.fn(async () => []),
   addToSonarr: vi.fn(async () => 1),
   linkSonarrCoverage: vi.fn(async () => {}),
   confirmIdentification: vi.fn(async () => {}),
 }));
 
-import { getLibraryStats, getReadyToWatch, searchSonarrEpisode, getSonarrCoverage, ignoreSonarrCoverage } from './api';
+import { getLibraryStats, getReadyToWatch, searchSonarrEpisode, getSonarrCoverage, ignoreSonarrCoverage, unignoreSonarrCoverage } from './api';
 import { createClassComponent } from 'svelte/legacy';
 import DashboardView from './DashboardView.svelte';
 
@@ -85,6 +86,30 @@ describe('DashboardView home layout', () => {
     await settle();
     expect(ignoreSonarrCoverage).toHaveBeenCalledWith(21);
     expect(sectionText('not-in-sonarr')).not.toContain('Overgeared');
+    unmount(app);
+  });
+
+  it('lists ignored shows behind a toggle, and Show again brings one back', async () => {
+    vi.mocked(getSonarrCoverage).mockResolvedValueOnce({
+      reachable: true,
+      error: null,
+      rows: [{ anime_id: 31, title: 'Sudachi no Maoujou', image_url: null, list_status: 'plan_to_watch', state: 'ignored' }],
+    });
+    const app = mount(DashboardView, { target: document.getElementById('app')!, props: { events: [] } });
+    await settle();
+    // Nothing missing, but the panel stays so ignored shows can be reached.
+    expect(sectionText('not-in-sonarr')).toContain('Ignored (1)');
+    expect(sectionText('not-in-sonarr')).not.toContain('Sudachi no Maoujou');
+
+    document.querySelector<HTMLButtonElement>('[data-testid="ignored-toggle"]')!.click();
+    await settle();
+    expect(sectionText('not-in-sonarr')).toContain('Sudachi no Maoujou');
+
+    document.querySelector<HTMLButtonElement>('[data-testid="unignore-btn"]')!.click();
+    await settle();
+    expect(unignoreSonarrCoverage).toHaveBeenCalledWith(31);
+    expect(document.querySelector('[data-testid="ignored-toggle"]')).toBeNull();
+    expect(document.querySelector('[data-testid="ignore-btn"]')).not.toBeNull();
     unmount(app);
   });
 

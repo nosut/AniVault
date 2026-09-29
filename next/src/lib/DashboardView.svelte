@@ -4,7 +4,7 @@
   import {
     getLibraryStats, getContinueWatching, getReadyToWatch, getCalendar,
     getAniListConnectionStatus, getSyncStatus, getSonarrStatus, searchSonarrEpisode,
-    getSonarrCoverage, ignoreSonarrCoverage, type CoverageRow, type SonarrCoverageResponse,
+    getSonarrCoverage, ignoreSonarrCoverage, unignoreSonarrCoverage, type CoverageRow, type SonarrCoverageResponse,
     type LibraryStats, type ContinueWatchingEntry, type ReadyToWatchEntry,
     type CalendarEntry, type AniListSyncStatus, type EngineEvent,
   } from './api';
@@ -12,7 +12,7 @@
   import { airedAgoShort, isSameLocalDay, syncPill, todayRowLabel } from './homeUi';
   import RecognitionCard from './RecognitionCard.svelte';
   import SonarrAddDialog from './SonarrAddDialog.svelte';
-  import { missingRows } from './sonarrCoverageUi';
+  import { ignoredRows, missingRows } from './sonarrCoverageUi';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number }; navigate: { view: string } }>();
 
@@ -29,7 +29,9 @@
 
   let coverage: SonarrCoverageResponse | null = null;
   $: notInSonarr = coverage?.reachable ? missingRows(coverage.rows) : [];
+  $: ignoredShows = coverage?.reachable ? ignoredRows(coverage.rows) : [];
   let addingFor: CoverageRow | null = null;
+  let showIgnored = false;
 
   async function loadCoverage() {
     try {
@@ -39,14 +41,25 @@
     }
   }
 
-  async function ignoreShow(animeId: number) {
-    await ignoreSonarrCoverage(animeId);
+  function setRowState(animeId: number, state: 'missing' | 'ignored') {
     if (coverage) {
       coverage = {
         ...coverage,
-        rows: coverage.rows.map((r) => (r.anime_id === animeId ? { ...r, state: 'ignored' } as CoverageRow : r)),
+        rows: coverage.rows.map((r) => (r.anime_id === animeId ? { ...r, state } as CoverageRow : r)),
       };
     }
+  }
+
+  async function ignoreShow(animeId: number) {
+    await ignoreSonarrCoverage(animeId);
+    setRowState(animeId, 'ignored');
+  }
+
+  // An ignored show goes back to the missing list; if Sonarr has since gained
+  // it, the next coverage load marks it covered instead.
+  async function showAgain(animeId: number) {
+    await unignoreSonarrCoverage(animeId);
+    setRowState(animeId, 'missing');
   }
 
   // Per-row state for the Get (Sonarr search) buttons on missing rows.
@@ -283,7 +296,7 @@
       {/if}
     </section>
 
-    {#if sonarrConnected && coverage && (!coverage.reachable || notInSonarr.length > 0)}
+    {#if sonarrConnected && coverage && (!coverage.reachable || notInSonarr.length > 0 || ignoredShows.length > 0)}
       <section data-testid="not-in-sonarr">
         <h3>Not in Sonarr <span class="count">watching or planned, no Sonarr series</span></h3>
         {#if !coverage.reachable}
@@ -312,6 +325,29 @@
               {/if}
             {/each}
           </div>
+          {#if ignoredShows.length > 0}
+            <button
+              class="ignored-toggle"
+              data-testid="ignored-toggle"
+              aria-expanded={showIgnored}
+              on:click={() => (showIgnored = !showIgnored)}
+            >{showIgnored ? 'Hide ignored' : `Ignored (${ignoredShows.length})`}</button>
+            {#if showIgnored}
+              <div class="missing-list">
+                {#each ignoredShows as row (row.anime_id)}
+                  <div class="missing-row">
+                    <span class="missing-title muted">{row.title}</span>
+                    <button
+                      class="get-btn"
+                      data-testid="unignore-btn"
+                      title="Flag this show again if Sonarr doesn't have it"
+                      on:click={() => showAgain(row.anime_id)}
+                    >Show again</button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          {/if}
         {/if}
       </section>
     {/if}
@@ -331,6 +367,8 @@
   .pill-state.bad { color: var(--color-warning); }
 
   h3 { font-size: 0.95rem; margin: 0 0 0.6rem; }
+  .ignored-toggle { background: none; border: none; padding: 0.4rem 0 0; color: var(--color-muted); font-size: 0.8rem; cursor: pointer; }
+  .ignored-toggle:hover { color: inherit; text-decoration: underline; }
   .count { color: var(--color-muted); font-weight: 400; font-size: 0.85rem; margin-left: 0.4rem; }
   .muted { color: var(--color-muted); font-size: 0.85rem; }
 
