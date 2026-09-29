@@ -39,3 +39,12 @@ fn a_null_synonym_is_skipped_instead_of_failing_the_whole_response() {
     let null: Media = serde_json::from_str(r#"{"id":4,"synonyms":null}"#).unwrap();
     assert_eq!(null.synonyms, None);
 }
+
+#[test]
+fn media_reads_format() {
+    let m: anivault_core::engine::anilist::client::Media =
+        serde_json::from_str(r#"{"id":1,"format":"MOVIE"}"#).unwrap();
+    assert_eq!(m.format.as_deref(), Some("MOVIE"));
+    let m: anivault_core::engine::anilist::client::Media = serde_json::from_str(r#"{"id":2}"#).unwrap();
+    assert_eq!(m.format, None);
+}

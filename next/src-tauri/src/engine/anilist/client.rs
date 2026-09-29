@@ -103,6 +103,9 @@ pub struct Media {
     #[serde(rename = "type")]
     pub media_type: Option<String>,
     pub status: Option<String>,
+    /// AniList media format: TV, TV_SHORT, MOVIE, OVA, ONA, SPECIAL, MUSIC.
+    #[serde(default)]
+    pub format: Option<String>,
     #[serde(rename = "coverImage")]
     pub cover_image: Option<CoverImage>,
     pub description: Option<String>,
@@ -289,7 +292,7 @@ impl AniListClient {
         // Scores are requested in POINT_100 regardless of the account's score
         // format, so local storage always holds a 0-100 value (matches the
         // stats buckets and the detail editor).
-        const ENTRY_FIELDS: &str = "media { id title { romaji english native } synonyms episodes type status coverImage { large } description season seasonYear } \
+        const ENTRY_FIELDS: &str = "media { id title { romaji english native } synonyms episodes type format status coverImage { large } description season seasonYear } \
              status score(format: POINT_100) progress updatedAt notes \
              startedAt { year month day } \
              completedAt { year month day }";

@@ -216,6 +216,22 @@ pub struct SonarrSeriesDb {
     pub last_synced: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoverageLinkDb {
+    pub anime_id: i64,
+    pub sonarr_id: Option<i64>,
+    pub ignored: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct CoverageCandidateRow {
+    pub anime_id: i64,
+    pub titles_json: String,
+    pub format: Option<String>,
+    pub image_url: Option<String>,
+    pub list_status: String,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SonarrMappingDb {
     pub id: Option<i64>,
@@ -1455,6 +1471,17 @@ impl Storage {
         Ok(())
     }
 
+    /// Set an anime's AniList format (TV, MOVIE, ...). COALESCE: `None` keeps
+    /// the stored value.
+    pub async fn set_anime_format(&self, id: i64, format: Option<&str>) -> anyhow::Result<()> {
+        sqlx::query("UPDATE anime SET format = COALESCE(?2, format) WHERE id = ?1")
+            .bind(id)
+            .bind(format)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// Insert or refresh an anime from AniList. `titles_json` replaces the stored
     /// titles, except for the locally derived `english_derived` and its
     /// `english_derived_checked` marker, which AniList knows nothing about
@@ -2316,6 +2343,99 @@ impl Storage {
             season_count: r.get("season_count"),
             sonarr_status: r.get("sonarr_status"),
         }))
+    }
+
+    // ── Sonarr coverage ─────────────────────────────────────────────────────────
+
+    /// Watching and Planning entries: the shows that should be in Sonarr.
+    pub async fn coverage_candidates(&self) -> anyhow::Result<Vec<CoverageCandidateRow>> {
+        let rows = sqlx::query(
+            "SELECT a.id, a.titles_json, a.format, a.image_url, le.status
+             FROM list_entry le JOIN anime a ON a.id = le.anime_id
+             WHERE le.status IN ('watching', 'plan_to_watch')
+             ORDER BY a.id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| CoverageCandidateRow {
+                anime_id: r.get("id"),
+                titles_json: r.get("titles_json"),
+                format: r.get("format"),
+                image_url: r.get("image_url"),
+                list_status: r.get("status"),
+            })
+            .collect())
+    }
+
+    /// Link an entry to the Sonarr series that covers it (clears any ignore).
+    pub async fn coverage_link_set(&self, anime_id: i64, sonarr_id: i64, now: i64) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO sonarr_coverage_link (anime_id, sonarr_id, ignored, created_at)
+             VALUES (?1, ?2, 0, ?3)
+             ON CONFLICT(anime_id) DO UPDATE SET sonarr_id = excluded.sonarr_id, ignored = 0",
+        )
+        .bind(anime_id)
+        .bind(sonarr_id)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Leave an entry out of the coverage check.
+    pub async fn coverage_ignore(&self, anime_id: i64, now: i64) -> anyhow::Result<()> {
+        sqlx::query(
+            "INSERT INTO sonarr_coverage_link (anime_id, sonarr_id, ignored, created_at)
+             VALUES (?1, NULL, 1, ?2)
+             ON CONFLICT(anime_id) DO UPDATE SET sonarr_id = NULL, ignored = 1",
+        )
+        .bind(anime_id)
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn coverage_link_delete(&self, anime_id: i64) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM sonarr_coverage_link WHERE anime_id = ?1")
+            .bind(anime_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn coverage_links(&self) -> anyhow::Result<Vec<CoverageLinkDb>> {
+        let rows = sqlx::query("SELECT anime_id, sonarr_id, ignored FROM sonarr_coverage_link ORDER BY anime_id")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|r| CoverageLinkDb {
+                anime_id: r.get("anime_id"),
+                sonarr_id: r.get("sonarr_id"),
+                ignored: r.get("ignored"),
+            })
+            .collect())
+    }
+
+    pub async fn coverage_links_delete_all(&self) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM sonarr_coverage_link")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// `(anime_id, sonarr_id)` for every mapped Sonarr series.
+    pub async fn sonarr_mapped_pairs(&self) -> anyhow::Result<Vec<(i64, i64)>> {
+        let rows = sqlx::query("SELECT anime_id, sonarr_id FROM sonarr_mapping WHERE anime_id IS NOT NULL")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|r| (r.get::<i64, _>("anime_id"), r.get::<i64, _>("sonarr_id")))
+            .collect())
     }
 
     pub fn database_path(&self) -> String {

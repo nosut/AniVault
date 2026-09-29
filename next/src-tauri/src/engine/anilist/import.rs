@@ -227,6 +227,9 @@ pub async fn import_library(
             storage
                 .set_anime_season(media.id, media.season.as_deref(), media.season_year)
                 .await?;
+            storage
+                .set_anime_format(media.id, media.format.as_deref())
+                .await?;
 
             let status = entry.status.unwrap_or_else(|| "PLANNING".to_string());
             let mapped_status = match status.as_str() {
