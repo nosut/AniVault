@@ -172,6 +172,43 @@ pub fn lookup_candidates(results: Vec<SonarrLookupSeries>, limit: usize) -> Vec<
     out
 }
 
+/// Run `lookup` for each search term in order and collect dialog candidates.
+/// A term that fails is logged and skipped; the search fails only when every
+/// term failed. Stops as soon as `limit` unique candidates are found, so an
+/// entry with many synonyms doesn't make a Sonarr round trip for each one.
+pub async fn lookup_across_terms<F, Fut>(
+    terms: &[String],
+    limit: usize,
+    mut lookup: F,
+) -> anyhow::Result<Vec<SonarrCandidate>>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<Vec<SonarrLookupSeries>>>,
+{
+    let mut results = Vec::new();
+    let mut last_error = None;
+    let mut any_ok = false;
+    for term in terms {
+        match lookup(term.clone()).await {
+            Ok(found) => {
+                any_ok = true;
+                results.extend(found);
+                if lookup_candidates(results.clone(), limit).len() >= limit {
+                    break;
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Sonarr lookup for {term:?} failed: {e}");
+                last_error = Some(e);
+            }
+        }
+    }
+    match last_error {
+        Some(e) if !any_ok => Err(e),
+        _ => Ok(lookup_candidates(results, limit)),
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SonarrSeasonRaw {
     #[serde(default)]

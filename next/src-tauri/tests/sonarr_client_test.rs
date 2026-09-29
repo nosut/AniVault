@@ -153,3 +153,45 @@ fn lookup_candidates_dedupes_and_marks_in_sonarr() {
     assert_eq!(c[0].poster_url.as_deref(), Some("http://p/1.jpg"));
     assert_eq!((c[1].in_sonarr, c[1].sonarr_id, c[1].season_count), (true, Some(12), 4));
 }
+
+fn found(tvdb: i64) -> SonarrLookupSeries {
+    serde_json::from_value(serde_json::json!({ "title": format!("S{tvdb}"), "tvdbId": tvdb })).unwrap()
+}
+
+#[tokio::test]
+async fn lookup_across_terms_skips_a_failing_term() {
+    use anivault_core::engine::sonarr::client::lookup_across_terms;
+    let terms = vec!["bad".to_string(), "good".to_string()];
+    let got = lookup_across_terms(&terms, 5, |t| async move {
+        if t == "bad" { Err(anyhow::anyhow!("Skyhook 503")) } else { Ok(vec![found(1)]) }
+    })
+    .await
+    .unwrap();
+    assert_eq!(got.iter().map(|c| c.tvdb_id).collect::<Vec<_>>(), vec![1]);
+}
+
+#[tokio::test]
+async fn lookup_across_terms_fails_only_when_every_term_fails() {
+    use anivault_core::engine::sonarr::client::lookup_across_terms;
+    let terms = vec!["a".to_string(), "b".to_string()];
+    let err = lookup_across_terms(&terms, 5, |_| async { Err(anyhow::anyhow!("Skyhook 503")) })
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("Skyhook 503"), "{err}");
+}
+
+#[tokio::test]
+async fn lookup_across_terms_stops_once_it_has_enough() {
+    use anivault_core::engine::sonarr::client::lookup_across_terms;
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let terms: Vec<String> = (0..8).map(|i| format!("t{i}")).collect();
+    let c = calls.clone();
+    let got = lookup_across_terms(&terms, 2, move |_| {
+        let n = c.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        async move { Ok(vec![found(n * 10), found(n * 10 + 1)]) }
+    })
+    .await
+    .unwrap();
+    assert_eq!(got.len(), 2);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
