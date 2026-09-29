@@ -35,6 +35,10 @@ pub struct SonarrSeriesRaw {
     pub statistics: Option<SonarrStatisticsRaw>,
     #[serde(default)]
     pub tags: Vec<i64>,
+    #[serde(rename = "tvdbId", default)]
+    pub tvdb_id: Option<i64>,
+    #[serde(rename = "alternateTitles", default)]
+    pub alternate_titles: Vec<SonarrAlternateTitle>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -72,6 +76,100 @@ pub fn tag_options(details: Vec<SonarrTagDetail>) -> Vec<SonarrTagOption> {
         .collect();
     options.sort_by_key(|o| o.label.to_lowercase());
     options
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SonarrAlternateTitle {
+    pub title: String,
+}
+
+/// An import list from `/api/v3/importlist`; only the fields a new series copies.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SonarrImportList {
+    pub id: i64,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub implementation: String,
+    pub root_folder_path: Option<String>,
+    pub quality_profile_id: Option<i64>,
+    pub series_type: Option<String>,
+    pub season_folder: Option<bool>,
+    pub should_monitor: Option<String>,
+    pub monitor_new_items: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<i64>,
+}
+
+/// The AniList import list, whose settings new series copy.
+pub fn pick_anilist_import_list(lists: &[SonarrImportList]) -> Option<&SonarrImportList> {
+    lists
+        .iter()
+        .find(|l| l.implementation.to_lowercase().contains("anilist"))
+}
+
+/// A series from `/api/v3/series/lookup`. `id > 0` means Sonarr already has it.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SonarrLookupSeries {
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub title: String,
+    pub year: Option<i32>,
+    pub tvdb_id: Option<i64>,
+    pub season_count: Option<i32>,
+    pub overview: Option<String>,
+    #[serde(default)]
+    pub images: Vec<SonarrImageRaw>,
+    #[serde(default)]
+    pub seasons: Vec<serde_json::Value>,
+}
+
+/// A lookup result offered in the Add dialog.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct SonarrCandidate {
+    pub tvdb_id: i64,
+    pub title: String,
+    pub year: Option<i32>,
+    pub season_count: i32,
+    pub poster_url: Option<String>,
+    pub overview: Option<String>,
+    pub in_sonarr: bool,
+    pub sonarr_id: Option<i64>,
+}
+
+/// Lookup results as dialog candidates: TVDB-less results dropped, duplicates
+/// (same `tvdbId`) collapsed to the first, input order kept, capped at `limit`.
+pub fn lookup_candidates(results: Vec<SonarrLookupSeries>, limit: usize) -> Vec<SonarrCandidate> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for r in results {
+        let Some(tvdb_id) = r.tvdb_id else { continue };
+        if !seen.insert(tvdb_id) {
+            continue;
+        }
+        let sonarr_id = r.id.filter(|&id| id > 0);
+        let poster_url = r
+            .images
+            .iter()
+            .find(|i| i.cover_type.as_deref() == Some("poster"))
+            .and_then(|i| i.remote_url.clone());
+        out.push(SonarrCandidate {
+            tvdb_id,
+            title: r.title,
+            year: r.year,
+            season_count: r.season_count.unwrap_or(r.seasons.len() as i32),
+            poster_url,
+            overview: r.overview,
+            in_sonarr: sonarr_id.is_some(),
+            sonarr_id,
+        });
+        if out.len() == limit {
+            break;
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -255,6 +353,52 @@ impl SonarrClient {
             return Err(anyhow::anyhow!("Sonarr episode search HTTP {}: {}", status, body));
         }
         Ok(())
+    }
+
+    /// Import lists configured in Sonarr.
+    pub async fn fetch_import_lists(&self) -> anyhow::Result<Vec<SonarrImportList>> {
+        let url = format!("{}/api/v3/importlist", self.url);
+        let resp = self.http.get(&url).headers(self.headers()).send().await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr import lists HTTP {}: {}", status, body));
+        }
+        Ok(resp.json().await?)
+    }
+
+    /// Search Sonarr's metadata source for series matching `term`.
+    pub async fn lookup_series(&self, term: &str) -> anyhow::Result<Vec<SonarrLookupSeries>> {
+        let url = format!("{}/api/v3/series/lookup", self.url);
+        let resp = self
+            .http
+            .get(&url)
+            .headers(self.headers())
+            .query(&[("term", term)])
+            .send()
+            .await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr lookup HTTP {}: {}", status, body));
+        }
+        Ok(resp.json().await?)
+    }
+
+    /// Add a series; returns its new Sonarr id. Sonarr's error text (e.g.
+    /// "This series has already been added") is passed through.
+    pub async fn add_series(&self, body: &serde_json::Value) -> anyhow::Result<i64> {
+        let url = format!("{}/api/v3/series", self.url);
+        let resp = self.http.post(&url).headers(self.headers()).json(body).send().await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr add series HTTP {}: {}", status, body));
+        }
+        let created: serde_json::Value = resp.json().await?;
+        created["id"]
+            .as_i64()
+            .ok_or_else(|| anyhow::anyhow!("Sonarr did not return the new series id"))
     }
 }
 

@@ -90,3 +90,66 @@ async fn listing_sonarr_tags_requires_a_connection() {
         .expect_err("not connected");
     assert!(err.to_string().contains("not connected"), "{err}");
 }
+
+use anivault_core::engine::sonarr::client::{
+    lookup_candidates, pick_anilist_import_list, SonarrImportList, SonarrLookupSeries, SonarrSeriesRaw,
+};
+
+#[test]
+fn series_raw_reads_tvdb_id_and_alternate_titles() {
+    let json = r#"{"id":5,"title":"Overgeared","monitored":true,"tvdbId":448176,
+        "alternateTitles":[{"title":"テムパル","seasonNumber":-1}],"tags":[]}"#;
+    let s: SonarrSeriesRaw = serde_json::from_str(json).unwrap();
+    assert_eq!(s.tvdb_id, Some(448176));
+    assert_eq!(s.alternate_titles[0].title, "テムパル");
+}
+
+fn import_list(id: i64, implementation: &str) -> SonarrImportList {
+    SonarrImportList {
+        id,
+        name: format!("list {id}"),
+        implementation: implementation.to_string(),
+        root_folder_path: Some("/anime".into()),
+        quality_profile_id: Some(4),
+        series_type: Some("anime".into()),
+        season_folder: Some(true),
+        should_monitor: Some("all".into()),
+        monitor_new_items: Some("all".into()),
+        tags: vec![1],
+    }
+}
+
+#[test]
+fn pick_anilist_import_list_matches_case_insensitively() {
+    let lists = vec![import_list(1, "TraktListImport"), import_list(2, "AniListImport")];
+    assert_eq!(pick_anilist_import_list(&lists).map(|l| l.id), Some(2));
+    assert!(pick_anilist_import_list(&lists[..1]).is_none());
+}
+
+#[test]
+fn pick_anilist_import_list_tolerates_nulls_and_unknown_fields() {
+    let json = r#"[{"id":3,"name":"AniList","implementation":"AniListImport",
+        "rootFolderPath":null,"qualityProfileId":6,"seriesType":"anime","seasonFolder":true,
+        "shouldMonitor":"all","monitorNewItems":"all","tags":[2],"enableAutomaticAdd":true,
+        "fields":[{"name":"username","value":"nosut"}]}]"#;
+    let lists: Vec<SonarrImportList> = serde_json::from_str(json).unwrap();
+    let l = pick_anilist_import_list(&lists).unwrap();
+    assert_eq!((l.quality_profile_id, l.root_folder_path.as_deref()), (Some(6), None));
+}
+
+#[test]
+fn lookup_candidates_dedupes_and_marks_in_sonarr() {
+    let json = r#"[
+        {"title":"Overgeared","year":2025,"tvdbId":448176,"id":0,"seasons":[{"seasonNumber":1}],
+         "images":[{"coverType":"poster","remoteUrl":"http://p/1.jpg"}]},
+        {"title":"Overgeared","year":2025,"tvdbId":448176,"seasons":[]},
+        {"title":"No TVDB","year":2020,"seasons":[]},
+        {"title":"Overlord","year":2015,"tvdbId":294002,"id":12,"seasonCount":4,"seasons":[]}
+    ]"#;
+    let results: Vec<SonarrLookupSeries> = serde_json::from_str(json).unwrap();
+    let c = lookup_candidates(results, 5);
+    assert_eq!(c.len(), 2);
+    assert_eq!((c[0].tvdb_id, c[0].in_sonarr, c[0].season_count), (448176, false, 1));
+    assert_eq!(c[0].poster_url.as_deref(), Some("http://p/1.jpg"));
+    assert_eq!((c[1].in_sonarr, c[1].sonarr_id, c[1].season_count), (true, Some(12), 4));
+}
