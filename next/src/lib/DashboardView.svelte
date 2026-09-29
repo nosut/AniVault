@@ -4,12 +4,15 @@
   import {
     getLibraryStats, getContinueWatching, getReadyToWatch, getCalendar,
     getAniListConnectionStatus, getSyncStatus, getSonarrStatus, searchSonarrEpisode,
+    getSonarrCoverage, ignoreSonarrCoverage, type CoverageRow, type SonarrCoverageResponse,
     type LibraryStats, type ContinueWatchingEntry, type ReadyToWatchEntry,
     type CalendarEntry, type AniListSyncStatus, type EngineEvent,
   } from './api';
   import { episodeMarker } from './calendarUi';
   import { airedAgoShort, isSameLocalDay, syncPill, todayRowLabel } from './homeUi';
   import RecognitionCard from './RecognitionCard.svelte';
+  import SonarrAddDialog from './SonarrAddDialog.svelte';
+  import { missingRows } from './sonarrCoverageUi';
 
   const dispatch = createEventDispatcher<{ select: { anime_id: number }; navigate: { view: string } }>();
 
@@ -23,6 +26,28 @@
   let syncStatus: AniListSyncStatus | null = null;
   let sonarrConnected = false;
   let loading = true;
+
+  let coverage: SonarrCoverageResponse | null = null;
+  $: notInSonarr = coverage?.reachable ? missingRows(coverage.rows) : [];
+  let addingFor: CoverageRow | null = null;
+
+  async function loadCoverage() {
+    try {
+      coverage = await getSonarrCoverage();
+    } catch {
+      coverage = null;
+    }
+  }
+
+  async function ignoreShow(animeId: number) {
+    await ignoreSonarrCoverage(animeId);
+    if (coverage) {
+      coverage = {
+        ...coverage,
+        rows: coverage.rows.map((r) => (r.anime_id === animeId ? { ...r, state: 'ignored' } as CoverageRow : r)),
+      };
+    }
+  }
 
   // Per-row state for the Get (Sonarr search) buttons on missing rows.
   let fetchState: Record<string, 'searching' | 'sent' | 'error'> = {};
@@ -63,6 +88,7 @@
     if (connR.status === 'fulfilled') connected = connR.value;
     if (syncR.status === 'fulfilled') syncStatus = syncR.value;
     if (sonarrR.status === 'fulfilled') sonarrConnected = sonarrR.value.connected;
+    if (sonarrConnected && !quiet) loadCoverage();
     loading = false;
   }
 
@@ -256,6 +282,39 @@
         </div>
       {/if}
     </section>
+
+    {#if sonarrConnected && coverage && (!coverage.reachable || notInSonarr.length > 0)}
+      <section data-testid="not-in-sonarr">
+        <h3>Not in Sonarr <span class="count">watching or planned, no Sonarr series</span></h3>
+        {#if !coverage.reachable}
+          <p class="muted">Sonarr unreachable, so coverage can't be checked right now.</p>
+        {:else}
+          <div class="missing-list">
+            {#each notInSonarr as row (row.anime_id)}
+              <div class="missing-row">
+                <span class="dot missing"></span>
+                <span class="missing-title">{row.title}</span>
+                <button class="get-btn" on:click={() => (addingFor = row)}>Add</button>
+                <button
+                  class="get-btn"
+                  data-testid="ignore-btn"
+                  title="Don't flag this show again"
+                  on:click={() => ignoreShow(row.anime_id)}
+                >Ignore</button>
+              </div>
+              {#if addingFor?.anime_id === row.anime_id}
+                <SonarrAddDialog
+                  animeId={row.anime_id}
+                  title={row.title}
+                  on:close={() => (addingFor = null)}
+                  on:done={() => { addingFor = null; loadCoverage(); }}
+                />
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      </section>
+    {/if}
   </div>
 </div>
 

@@ -36,10 +36,22 @@ vi.mock('./api', () => ({
   getSyncStatus: vi.fn(async () => ({ pending: 0, failed: 0, blocked: 0, last_sync_at: 1000 })),
   getSonarrStatus: vi.fn(async () => ({ connected: true, series_count: 2, mapped_count: 2, last_sync_at: null })),
   searchSonarrEpisode: vi.fn(async () => 'Search started for episode 29'),
+  getSonarrCoverage: vi.fn(async () => ({
+    reachable: true,
+    error: null,
+    rows: [
+      { anime_id: 21, title: 'Overgeared', image_url: null, list_status: 'watching', state: 'missing' },
+      { anime_id: 22, title: 'Frieren S2', image_url: null, list_status: 'watching', state: 'covered', sonarr_id: 1, via: 'mapping' },
+    ],
+  })),
+  ignoreSonarrCoverage: vi.fn(async () => {}),
+  lookupSonarrCandidates: vi.fn(async () => []),
+  addToSonarr: vi.fn(async () => 1),
+  linkSonarrCoverage: vi.fn(async () => {}),
   confirmIdentification: vi.fn(async () => {}),
 }));
 
-import { getLibraryStats, getReadyToWatch, searchSonarrEpisode } from './api';
+import { getLibraryStats, getReadyToWatch, searchSonarrEpisode, getSonarrCoverage, ignoreSonarrCoverage } from './api';
 import { createClassComponent } from 'svelte/legacy';
 import DashboardView from './DashboardView.svelte';
 
@@ -60,6 +72,28 @@ describe('DashboardView home layout', () => {
   });
   afterEach(() => {
     document.body.innerHTML = '';
+  });
+
+  it('lists Watching/Planning shows that are not in Sonarr, and Ignore removes one', async () => {
+    const app = mount(DashboardView, { target: document.getElementById('app')!, props: { events: [] } });
+    await settle();
+    const panel = sectionText('not-in-sonarr');
+    expect(panel).toContain('Overgeared');
+    expect(panel).not.toContain('Frieren S2');
+
+    document.querySelector<HTMLButtonElement>('[data-testid="not-in-sonarr"] [data-testid="ignore-btn"]')!.click();
+    await settle();
+    expect(ignoreSonarrCoverage).toHaveBeenCalledWith(21);
+    expect(sectionText('not-in-sonarr')).not.toContain('Overgeared');
+    unmount(app);
+  });
+
+  it('says Sonarr is unreachable instead of listing everything as missing', async () => {
+    vi.mocked(getSonarrCoverage).mockResolvedValueOnce({ reachable: false, error: 'timeout', rows: [] });
+    const app = mount(DashboardView, { target: document.getElementById('app')!, props: { events: [] } });
+    await settle();
+    expect(sectionText('not-in-sonarr')).toContain('Sonarr unreachable');
+    unmount(app);
   });
 
   it('shows airing today, ready to watch, and missing downloads', async () => {

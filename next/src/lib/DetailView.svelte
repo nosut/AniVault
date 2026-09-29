@@ -1,10 +1,11 @@
 <script lang="ts">
   import { activateOnKey } from './a11y';
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, getSonarrCoverageFor, unignoreSonarrCoverage, type CoverageRow, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { formatBytes } from './fileSize';
   import { onDestroy } from 'svelte';
   import SonarrRemap from './SonarrRemap.svelte';
+  import SonarrAddDialog from './SonarrAddDialog.svelte';
   import { mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
   import { ArrowLeft, ExternalLink, FolderOpen, FolderInput, RotateCw, Play, Trash2 } from 'lucide-svelte';
 
@@ -233,6 +234,19 @@
     }
   }
 
+  let coverageRow: CoverageRow | null = null;
+  let addingToSonarr = false;
+
+  async function loadCoverage() {
+    const requestedId = animeId;
+    try {
+      const row = await getSonarrCoverageFor(requestedId);
+      if (requestedId === animeId) coverageRow = row;
+    } catch {
+      if (requestedId === animeId) coverageRow = null;
+    }
+  }
+
   async function loadSonarr() {
     const requestedId = animeId;
     sonarrLoading = true;
@@ -240,6 +254,7 @@
       const avail = await getSonarrAvailability(requestedId);
       if (requestedId !== animeId) return;
       sonarrAvail = avail;
+      if (!avail) loadCoverage(); else coverageRow = null;
     } catch {
       if (requestedId === animeId) sonarrAvail = null;
     } finally {
@@ -761,6 +776,33 @@
                 </div>
               {/if}
             </div>
+          </div>
+        {/if}
+
+        {#if !sonarrAvail && coverageRow && coverageRow.state !== 'covered'}
+          <div class="sonarr-section">
+            <div class="section-header-row">
+              <h2 class="section-heading">Sonarr</h2>
+            </div>
+            {#if coverageRow.state === 'missing'}
+              <p>
+                <span class="badge-missing">Not in Sonarr</span>
+                <button on:click={() => (addingToSonarr = true)}>Add to Sonarr</button>
+              </p>
+              {#if addingToSonarr}
+                <SonarrAddDialog
+                  {animeId}
+                  title={coverageRow.title}
+                  on:close={() => (addingToSonarr = false)}
+                  on:done={() => { addingToSonarr = false; loadSonarr(); }}
+                />
+              {/if}
+            {:else}
+              <p>
+                Ignored for the Sonarr check.
+                <button on:click={async () => { await unignoreSonarrCoverage(animeId); loadCoverage(); }}>Undo</button>
+              </p>
+            {/if}
           </div>
         {/if}
 
@@ -1343,6 +1385,7 @@
     100% { background-position: -200% 0; }
   }
 
+  .badge-missing { color: var(--color-warning); font-weight: 600; margin-right: 0.6rem; }
   .sonarr-section {
     border: 1px solid rgba(var(--color-accent-rgb), 0.15);
     border-radius: 14px;
