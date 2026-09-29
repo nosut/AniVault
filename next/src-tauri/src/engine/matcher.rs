@@ -32,7 +32,7 @@ pub fn score_titles_json(query: &str, titles_json: &str) -> u8 {
     best
 }
 
-fn normalize_title(title: &str) -> String {
+pub(crate) fn normalize_title(title: &str) -> String {
     title
         .to_lowercase()
         .chars()
