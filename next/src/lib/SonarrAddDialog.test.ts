@@ -11,7 +11,7 @@ vi.mock('./api', () => ({
   linkSonarrCoverage: vi.fn(async () => {}),
 }));
 
-import { addToSonarr, linkSonarrCoverage } from './api';
+import { addToSonarr, linkSonarrCoverage, lookupSonarrCandidates } from './api';
 import { createClassComponent } from 'svelte/legacy';
 import SonarrAddDialog from './SonarrAddDialog.svelte';
 
@@ -67,5 +67,28 @@ describe('SonarrAddDialog', () => {
     buttons()[0]!.click();
     await settle();
     expect(document.body.textContent).toContain('No AniList import list in Sonarr to copy settings from');
+  });
+
+  it('re-searches for the new show when animeId changes, so Add never uses the old show results', async () => {
+    vi.mocked(lookupSonarrCandidates)
+      .mockResolvedValueOnce([
+        { tvdb_id: 100, title: 'Show A', year: 2025, season_count: 1, poster_url: null, overview: null, in_sonarr: false, sonarr_id: null },
+      ])
+      .mockResolvedValueOnce([
+        { tvdb_id: 300, title: 'Show B', year: 2024, season_count: 1, poster_url: null, overview: null, in_sonarr: false, sonarr_id: null },
+      ]);
+    const c = createClassComponent({
+      component: SonarrAddDialog,
+      target: document.getElementById('app')!,
+      props: { animeId: 7, title: 'Show A' },
+    });
+    await settle();
+    c.$set({ animeId: 8, title: 'Show B' });
+    await settle();
+    expect(lookupSonarrCandidates).toHaveBeenLastCalledWith(8);
+    expect(document.body.textContent).not.toContain('Show A (2025)');
+    buttons()[0]!.click();
+    await settle();
+    expect(addToSonarr).toHaveBeenCalledWith(8, 300);
   });
 });

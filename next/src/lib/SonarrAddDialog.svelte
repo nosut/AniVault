@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
   import { addToSonarr, linkSonarrCoverage, lookupSonarrCandidates, type SonarrCandidate } from './api';
   import { candidateAction, candidateLabel } from './sonarrCoverageUi';
 
@@ -13,26 +13,39 @@
   let busyTvdb: number | null = null;
   let error: string | null = null;
 
-  onMount(async () => {
+  // The show the candidates were looked up for. The parent can reuse this
+  // component for another show, so re-search whenever animeId changes and
+  // never act on a previous show's results.
+  let candidatesFor: number | null = null;
+  $: if (animeId !== candidatesFor) search(animeId);
+
+  async function search(id: number) {
+    candidatesFor = id;
+    candidates = [];
+    loading = true;
+    error = null;
     try {
-      candidates = await lookupSonarrCandidates(animeId);
+      const found = await lookupSonarrCandidates(id);
+      if (id === candidatesFor) candidates = found;
     } catch (e) {
-      error = String(e);
+      if (id === candidatesFor) error = String(e);
     } finally {
-      loading = false;
+      if (id === candidatesFor) loading = false;
     }
-  });
+  }
 
   async function choose(c: SonarrCandidate) {
+    const id = candidatesFor;
+    if (id === null) return;
     busyTvdb = c.tvdb_id;
     error = null;
     try {
       if (candidateAction(c) === 'link' && c.sonarr_id != null) {
-        await linkSonarrCoverage(animeId, c.sonarr_id);
+        await linkSonarrCoverage(id, c.sonarr_id);
       } else {
-        await addToSonarr(animeId, c.tvdb_id);
+        await addToSonarr(id, c.tvdb_id);
       }
-      dispatch('done', { animeId });
+      dispatch('done', { animeId: id });
     } catch (e) {
       error = String(e);
     } finally {

@@ -218,6 +218,8 @@
     fileActionMessage = null;
     repairConfirming = false;
     diskSizeBytes = null;
+    coverageRow = null;
+    addingToSonarr = false;
     try {
       const d = await fetchAnimeDetail(requestedId);
       if (requestedId !== animeId) return; // a newer anime is now showing
