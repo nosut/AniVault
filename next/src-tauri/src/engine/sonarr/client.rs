@@ -172,15 +172,11 @@ pub fn lookup_candidates(results: Vec<SonarrLookupSeries>, limit: usize) -> Vec<
     out
 }
 
-/// Run `lookup` for each search term in order and collect dialog candidates.
-/// A term that fails is logged and skipped; the search fails only when every
-/// term failed. Stops as soon as `limit` unique candidates are found, so an
-/// entry with many synonyms doesn't make a Sonarr round trip for each one.
-pub async fn lookup_across_terms<F, Fut>(
-    terms: &[String],
-    limit: usize,
-    mut lookup: F,
-) -> anyhow::Result<Vec<SonarrCandidate>>
+/// Run `lookup` for each search term in order and collect the unique
+/// candidates, in the order found. A term that fails is logged and skipped;
+/// the search fails only when every term failed. Every term is tried: the
+/// right series often comes from a later term.
+pub async fn lookup_across_terms<F, Fut>(terms: &[String], mut lookup: F) -> anyhow::Result<Vec<SonarrCandidate>>
 where
     F: FnMut(String) -> Fut,
     Fut: std::future::Future<Output = anyhow::Result<Vec<SonarrLookupSeries>>>,
@@ -193,9 +189,6 @@ where
             Ok(found) => {
                 any_ok = true;
                 results.extend(found);
-                if lookup_candidates(results.clone(), limit).len() >= limit {
-                    break;
-                }
             }
             Err(e) => {
                 tracing::warn!("Sonarr lookup for {term:?} failed: {e}");
@@ -205,7 +198,7 @@ where
     }
     match last_error {
         Some(e) if !any_ok => Err(e),
-        _ => Ok(lookup_candidates(results, limit)),
+        _ => Ok(lookup_candidates(results, usize::MAX)),
     }
 }
 

@@ -99,10 +99,30 @@ pub fn display_title(titles_json: &str) -> String {
         .to_string()
 }
 
-/// Search terms for Sonarr's lookup: English, romaji, then synonyms; no blanks
-/// or duplicates.
+/// Most search terms tried per show. Each one is a Sonarr round trip.
+pub const MAX_LOOKUP_TERMS: usize = 6;
+
+/// Search terms for Sonarr's lookup, best first. Sonarr searches TVDB's
+/// English titles and misses long subtitled ones, so English titles (official,
+/// then derived) come first, then synonyms, then romaji. Each title is followed
+/// by its part before a colon or dash ("Magical Buffs"), which Sonarr often
+/// finds when the full title fails. No blanks or duplicates; at most
+/// `MAX_LOOKUP_TERMS`.
 pub fn lookup_terms(titles_json: &str) -> Vec<String> {
     let v: serde_json::Value = serde_json::from_str(titles_json).unwrap_or_default();
+    let mut sources: Vec<&str> = Vec::new();
+    for key in ["english", "english_derived"] {
+        if let Some(t) = v[key].as_str() {
+            sources.push(t);
+        }
+    }
+    if let Some(arr) = v["synonyms"].as_array() {
+        sources.extend(arr.iter().filter_map(|s| s.as_str()));
+    }
+    if let Some(t) = v["romaji"].as_str() {
+        sources.push(t);
+    }
+
     let mut terms: Vec<String> = Vec::new();
     let mut push = |t: &str| {
         let t = t.trim();
@@ -110,17 +130,38 @@ pub fn lookup_terms(titles_json: &str) -> Vec<String> {
             terms.push(t.to_string());
         }
     };
-    for key in ["english", "romaji"] {
-        if let Some(t) = v[key].as_str() {
-            push(t);
+    for t in sources {
+        push(t);
+        if let Some(head) = title_head(t) {
+            push(head);
         }
     }
-    if let Some(arr) = v["synonyms"].as_array() {
-        for s in arr.iter().filter_map(|s| s.as_str()) {
-            push(s);
-        }
-    }
+    terms.truncate(MAX_LOOKUP_TERMS);
     terms
+}
+
+/// The part of a title before its subtitle (":", " - ", "～"), when that part
+/// is at least two words.
+fn title_head(title: &str) -> Option<&str> {
+    let cut = [":", " - ", "～", "~"]
+        .iter()
+        .filter_map(|sep| title.find(sep))
+        .min()?;
+    let head = title[..cut].trim();
+    (head.split_whitespace().count() >= 2).then_some(head)
+}
+
+/// Candidates ordered by how closely their title matches the show's titles
+/// (Sonarr's own order breaks ties), capped at `limit`.
+pub fn rank_candidates(
+    titles_json: &str,
+    mut candidates: Vec<crate::engine::sonarr::client::SonarrCandidate>,
+    limit: usize,
+) -> Vec<crate::engine::sonarr::client::SonarrCandidate> {
+    // sort_by_key is stable, so equal scores keep Sonarr's order.
+    candidates.sort_by_key(|c| std::cmp::Reverse(crate::engine::matcher::score_titles_json(&c.title, titles_json)));
+    candidates.truncate(limit);
+    candidates
 }
 
 /// Coverage for every non-movie candidate. Rule order: ignored, existing
@@ -335,9 +376,76 @@ mod tests {
     }
 
     #[test]
-    fn lookup_terms_are_english_romaji_synonyms_deduped() {
+    fn lookup_terms_put_english_first_and_romaji_last_deduped() {
         let t = lookup_terms(r#"{"romaji":"Temppal","english":"Overgeared","synonyms":["템빨","Overgeared"," "]}"#);
-        assert_eq!(t, vec!["Overgeared", "Temppal", "템빨"]);
+        assert_eq!(t, vec!["Overgeared", "템빨", "Temppal"]);
+    }
+
+    // Sonarr's search misses long subtitled titles but finds the part before
+    // the colon ("Magical Buffs" -> TVDB 475721, checked against Skyhook).
+    #[test]
+    fn lookup_terms_add_the_title_before_a_colon() {
+        let t = lookup_terms(
+            r#"{"romaji":"Zatsuyou Fuyojutsu-shi ga Jibun no Saikyou ni Kizuku Made",
+                "english":"Magical Buffs: The Support Caster is Stronger Than He Realized!",
+                "synonyms":["Magical Buffs: The Support Caster is Stronger Than He Realized!","ZatsuyoFuyo"]}"#,
+        );
+        assert_eq!(
+            t,
+            vec![
+                "Magical Buffs: The Support Caster is Stronger Than He Realized!",
+                "Magical Buffs",
+                "ZatsuyoFuyo",
+                "Zatsuyou Fuyojutsu-shi ga Jibun no Saikyou ni Kizuku Made",
+            ]
+        );
+    }
+
+    // With no official English title, the derived one (Sonarr finds the elf
+    // show by it) must be searched before the romaji, which finds nothing.
+    #[test]
+    fn lookup_terms_use_the_derived_english_title_before_romaji() {
+        let t = lookup_terms(
+            r#"{"romaji":"Game Sekai Tensei <Dankatsu>: Gamer wa [Dungeon Shuukatsu no Susume] wo <Hajime kara> Play Suru",
+                "english":null,
+                "english_derived":"Reincarnation in the Game World Dan-Katsu: Game Addict Plays \"Encouragement for Job Hunting in Dungeons\" From a \"New Game\"",
+                "synonyms":[]}"#,
+        );
+        assert_eq!(t[1], "Reincarnation in the Game World Dan-Katsu");
+        assert!(t[0].starts_with("Reincarnation in the Game World Dan-Katsu:"));
+        assert!(t[2].starts_with("Game Sekai Tensei"));
+    }
+
+    #[test]
+    fn lookup_terms_are_capped() {
+        let t = lookup_terms(r#"{"romaji":"R","english":"E","synonyms":["a","b","c","d","e","f","g"]}"#);
+        assert_eq!(t.len(), MAX_LOOKUP_TERMS);
+    }
+
+    fn candidate(title: &str, tvdb_id: i64) -> crate::engine::sonarr::client::SonarrCandidate {
+        crate::engine::sonarr::client::SonarrCandidate {
+            tvdb_id,
+            title: title.into(),
+            year: None,
+            season_count: 1,
+            poster_url: None,
+            overview: None,
+            in_sonarr: false,
+            sonarr_id: None,
+        }
+    }
+
+    #[test]
+    fn rank_candidates_puts_the_closest_title_first() {
+        let titles = r#"{"romaji":"Game Sekai Tensei","english":null,
+            "english_derived":"Reincarnation in the Game World Dan-Katsu: Game Addict Plays","synonyms":[]}"#;
+        let ranked = rank_candidates(
+            titles,
+            vec![candidate("Game Shakers", 1), candidate("Shin Megami Tensei: Devil Children", 2), candidate("Reincarnation in the Game World Dan-Katsu", 3)],
+            2,
+        );
+        assert_eq!(ranked.iter().map(|c| c.tvdb_id).collect::<Vec<_>>()[0], 3);
+        assert_eq!(ranked.len(), 2);
     }
 
     #[test]

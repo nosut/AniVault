@@ -2013,11 +2013,12 @@ pub async fn lookup_sonarr_candidates_inner(
         .map(|c| c.titles_json)
         .ok_or_else(|| anyhow::anyhow!("This show is not Watching or Planning"))?;
     let terms = crate::engine::sonarr::coverage::lookup_terms(&titles_json);
-    crate::engine::sonarr::client::lookup_across_terms(&terms, 5, |term| {
+    let found = crate::engine::sonarr::client::lookup_across_terms(&terms, |term| {
         let client = client.clone();
         async move { client.lookup_series(&term).await }
     })
-    .await
+    .await?;
+    Ok(crate::engine::sonarr::coverage::rank_candidates(&titles_json, found, 5))
 }
 
 pub async fn add_to_sonarr_inner(state: &EngineState, anime_id: i64, tvdb_id: i64) -> anyhow::Result<i64> {

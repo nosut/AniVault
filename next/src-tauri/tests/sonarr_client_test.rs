@@ -162,7 +162,7 @@ fn found(tvdb: i64) -> SonarrLookupSeries {
 async fn lookup_across_terms_skips_a_failing_term() {
     use anivault_core::engine::sonarr::client::lookup_across_terms;
     let terms = vec!["bad".to_string(), "good".to_string()];
-    let got = lookup_across_terms(&terms, 5, |t| async move {
+    let got = lookup_across_terms(&terms, |t| async move {
         if t == "bad" { Err(anyhow::anyhow!("Skyhook 503")) } else { Ok(vec![found(1)]) }
     })
     .await
@@ -174,24 +174,23 @@ async fn lookup_across_terms_skips_a_failing_term() {
 async fn lookup_across_terms_fails_only_when_every_term_fails() {
     use anivault_core::engine::sonarr::client::lookup_across_terms;
     let terms = vec!["a".to_string(), "b".to_string()];
-    let err = lookup_across_terms(&terms, 5, |_| async { Err(anyhow::anyhow!("Skyhook 503")) })
+    let err = lookup_across_terms(&terms, |_| async { Err(anyhow::anyhow!("Skyhook 503")) })
         .await
         .unwrap_err();
     assert!(err.to_string().contains("Skyhook 503"), "{err}");
 }
 
 #[tokio::test]
-async fn lookup_across_terms_stops_once_it_has_enough() {
+async fn lookup_across_terms_searches_every_term_and_dedupes() {
     use anivault_core::engine::sonarr::client::lookup_across_terms;
-    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let terms: Vec<String> = (0..8).map(|i| format!("t{i}")).collect();
-    let c = calls.clone();
-    let got = lookup_across_terms(&terms, 2, move |_| {
-        let n = c.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
-        async move { Ok(vec![found(n * 10), found(n * 10 + 1)]) }
+    // The right series often comes from a later term (the English title after
+    // a romaji one that returns 20 unrelated shows), so no early stop.
+    let terms: Vec<String> = vec!["romaji".into(), "english".into()];
+    let got = lookup_across_terms(&terms, |t| async move {
+        if t == "romaji" { Ok((1..=6).map(found).collect()) } else { Ok(vec![found(3), found(99)]) }
     })
     .await
     .unwrap();
-    assert_eq!(got.len(), 2);
-    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let ids: Vec<i64> = got.iter().map(|c| c.tvdb_id).collect();
+    assert_eq!(ids, vec![1, 2, 3, 4, 5, 6, 99]);
 }
