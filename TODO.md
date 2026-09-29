@@ -55,3 +55,20 @@ The selection logic is unit-tested; the header layout is not.
 - [ ] Clicking a season checkbox does not collapse or expand the season; a partly checked
       season shows a dash.
 - [ ] Check a season, open a show, press Back: the checks and the batch bar are still there.
+
+## Manual testing for the Sonarr coverage check (Windows)
+
+Needs the real Sonarr. Run an AniList sync first so `anime.format` is filled.
+
+- [ ] Sonarr's `/api/v3/importlist` AniList entry has `implementation` containing
+      "AniList" plus `rootFolderPath`, `qualityProfileId`, `shouldMonitor` and
+      `monitorNewItems` (the add copies these; fix `SonarrImportList` if not).
+- [ ] A Watching/Planning show known to be in Sonarr is not in the dashboard's
+      "Not in Sonarr" panel.
+- [ ] A later season whose parent series is in Sonarr is not flagged, or resolves
+      with Link (the dialog marks the series "In Sonarr").
+- [ ] Adding a missing show (e.g. Overgeared) creates it in Sonarr with the import
+      list's root folder, quality profile and tags, and a search starts.
+- [ ] Ignore hides a show from the panel; the detail page's Undo brings it back.
+- [ ] With Sonarr stopped, the panel says "Sonarr unreachable".
+- [ ] Movies on the list are not flagged.
