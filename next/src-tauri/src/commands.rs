@@ -1048,6 +1048,7 @@ pub async fn disconnect_sonarr_inner(state: &EngineState) -> anyhow::Result<()> 
     state.storage.delete_setting("sonarr.api_key").await?;
     state.storage.delete_setting("sonarr.last_sync_at").await?;
     state.storage.sonarr_mapping_delete_all().await?;
+    state.storage.coverage_links_delete_all().await?;
     state.storage.sonarr_series_delete_all().await?;
     Ok(())
 }
@@ -1952,6 +1953,156 @@ pub async fn search_sonarr_episode(
     search_sonarr_episode_inner(&state, anime_id, episode)
         .await
         .map_err(command_error)
+}
+
+// ── Sonarr coverage ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SonarrCoverageResponse {
+    pub reachable: bool,
+    pub error: Option<String>,
+    pub rows: Vec<crate::engine::sonarr::coverage::CoverageRow>,
+}
+
+pub async fn get_sonarr_coverage_inner(state: &EngineState) -> anyhow::Result<SonarrCoverageResponse> {
+    let client = sonarr_client_from_settings(state)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
+    // Unreachable Sonarr must never read as "everything is missing".
+    let series = match client.fetch_series().await {
+        Ok(s) => s,
+        Err(e) => {
+            return Ok(SonarrCoverageResponse {
+                reachable: false,
+                error: Some(e.to_string()),
+                rows: vec![],
+            })
+        }
+    };
+    let candidates = state.storage.coverage_candidates().await?;
+    let mapped = state.storage.sonarr_mapped_pairs().await?;
+    let links = state.storage.coverage_links().await?;
+    Ok(SonarrCoverageResponse {
+        reachable: true,
+        error: None,
+        rows: crate::engine::sonarr::coverage::classify(&candidates, &series, &mapped, &links),
+    })
+}
+
+pub async fn get_sonarr_coverage_for_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<Option<crate::engine::sonarr::coverage::CoverageRow>> {
+    let resp = get_sonarr_coverage_inner(state).await?;
+    Ok(resp.rows.into_iter().find(|r| r.anime_id == anime_id))
+}
+
+pub async fn lookup_sonarr_candidates_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<Vec<crate::engine::sonarr::client::SonarrCandidate>> {
+    let client = sonarr_client_from_settings(state)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
+    let titles_json = state
+        .storage
+        .coverage_candidates()
+        .await?
+        .into_iter()
+        .find(|c| c.anime_id == anime_id)
+        .map(|c| c.titles_json)
+        .ok_or_else(|| anyhow::anyhow!("This show is not Watching or Planning"))?;
+    let mut results = Vec::new();
+    for term in crate::engine::sonarr::coverage::lookup_terms(&titles_json) {
+        results.extend(client.lookup_series(&term).await?);
+    }
+    Ok(crate::engine::sonarr::client::lookup_candidates(results, 5))
+}
+
+pub async fn add_to_sonarr_inner(state: &EngineState, anime_id: i64, tvdb_id: i64) -> anyhow::Result<i64> {
+    let client = sonarr_client_from_settings(state)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
+    let lists = client.fetch_import_lists().await?;
+    let list = crate::engine::sonarr::client::pick_anilist_import_list(&lists)
+        .ok_or_else(|| anyhow::anyhow!("No AniList import list in Sonarr to copy settings from"))?;
+    let title = client
+        .lookup_series(&format!("tvdb:{tvdb_id}"))
+        .await?
+        .into_iter()
+        .next()
+        .map(|s| s.title)
+        .ok_or_else(|| anyhow::anyhow!("Sonarr could not find TVDB id {tvdb_id}"))?;
+    let body = crate::engine::sonarr::coverage::add_series_body(tvdb_id, &title, list)?;
+    let sonarr_id = client.add_series(&body).await?;
+    state.storage.coverage_link_set(anime_id, sonarr_id, unix_now_inner()?).await?;
+    // Pull the new series into sonarr_series so availability and episode search
+    // see it. A failure here doesn't undo the add.
+    if let Err(e) = import_sonarr_series_inner(state).await {
+        tracing::warn!("Sonarr re-import after add failed: {e}");
+    }
+    Ok(sonarr_id)
+}
+
+#[tauri::command]
+pub async fn get_sonarr_coverage(state: tauri::State<'_, EngineState>) -> Result<SonarrCoverageResponse, String> {
+    get_sonarr_coverage_inner(&state).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn get_sonarr_coverage_for(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Option<crate::engine::sonarr::coverage::CoverageRow>, String> {
+    get_sonarr_coverage_for_inner(&state, anime_id).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn lookup_sonarr_candidates(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<crate::engine::sonarr::client::SonarrCandidate>, String> {
+    lookup_sonarr_candidates_inner(&state, anime_id).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn link_sonarr_coverage(
+    anime_id: i64,
+    sonarr_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    state
+        .storage
+        .coverage_link_set(anime_id, sonarr_id, unix_now()?)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn ignore_sonarr_coverage(anime_id: i64, state: tauri::State<'_, EngineState>) -> Result<(), String> {
+    state
+        .storage
+        .coverage_ignore(anime_id, unix_now()?)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn unignore_sonarr_coverage(anime_id: i64, state: tauri::State<'_, EngineState>) -> Result<(), String> {
+    state
+        .storage
+        .coverage_link_delete(anime_id)
+        .await
+        .map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn add_to_sonarr(
+    anime_id: i64,
+    tvdb_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<i64, String> {
+    add_to_sonarr_inner(&state, anime_id, tvdb_id).await.map_err(command_error)
 }
 
 // ── Update check ─────────────────────────────────────────────────────────────
