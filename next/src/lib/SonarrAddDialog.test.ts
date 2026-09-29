@@ -45,12 +45,12 @@ describe('SonarrAddDialog', () => {
     expect(buttons().map((b) => b.textContent?.trim())).toEqual(['Add', 'Link']);
     expect(document.body.textContent).toContain('In Sonarr');
 
-    buttons()[0].click();
+    buttons()[0]!.click();
     await settle();
     expect(addToSonarr).toHaveBeenCalledWith(7, 100);
     expect(done).toHaveBeenCalledTimes(1);
 
-    buttons()[1].click();
+    buttons()[1]!.click();
     await settle();
     expect(linkSonarrCoverage).toHaveBeenCalledWith(7, 12);
     expect(done).toHaveBeenCalledTimes(2);
@@ -64,7 +64,7 @@ describe('SonarrAddDialog', () => {
       props: { animeId: 7, title: 'Overgeared' },
     });
     await settle();
-    buttons()[0].click();
+    buttons()[0]!.click();
     await settle();
     expect(document.body.textContent).toContain('No AniList import list in Sonarr to copy settings from');
   });
