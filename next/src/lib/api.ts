@@ -612,6 +612,64 @@ export function searchSonarrEpisode(animeId: number, episode: number, invokeFn: 
   return invokeFn<string>('search_sonarr_episode', { animeId, episode });
 }
 
+export type CoverageRow = {
+  anime_id: number;
+  title: string;
+  image_url: string | null;
+  list_status: string;
+} & (
+  | { state: 'covered'; sonarr_id: number; via: 'mapping' | 'link' | 'title' }
+  | { state: 'missing' }
+  | { state: 'ignored' }
+);
+
+export interface SonarrCoverageResponse {
+  reachable: boolean;
+  error: string | null;
+  rows: CoverageRow[];
+}
+
+export interface SonarrCandidate {
+  tvdb_id: number;
+  title: string;
+  year: number | null;
+  season_count: number;
+  poster_url: string | null;
+  overview: string | null;
+  in_sonarr: boolean;
+  sonarr_id: number | null;
+}
+
+/** Coverage of every Watching/Planning show by a Sonarr series. */
+export function getSonarrCoverage(invokeFn: InvokeFn = tauriInvoke): Promise<SonarrCoverageResponse> {
+  return invokeFn<SonarrCoverageResponse>('get_sonarr_coverage');
+}
+
+export function getSonarrCoverageFor(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<CoverageRow | null> {
+  return invokeFn<CoverageRow | null>('get_sonarr_coverage_for', { animeId });
+}
+
+export function lookupSonarrCandidates(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<SonarrCandidate[]> {
+  return invokeFn<SonarrCandidate[]>('lookup_sonarr_candidates', { animeId });
+}
+
+export function linkSonarrCoverage(animeId: number, sonarrId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('link_sonarr_coverage', { animeId, sonarrId });
+}
+
+export function ignoreSonarrCoverage(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('ignore_sonarr_coverage', { animeId });
+}
+
+export function unignoreSonarrCoverage(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('unignore_sonarr_coverage', { animeId });
+}
+
+/** Add the series to Sonarr with the AniList import list's settings; returns its Sonarr id. */
+export function addToSonarr(animeId: number, tvdbId: number, invokeFn: InvokeFn = tauriInvoke): Promise<number> {
+  return invokeFn<number>('add_to_sonarr', { animeId, tvdbId });
+}
+
 export interface UpdateInfo {
   current: string;
   latest: string;
