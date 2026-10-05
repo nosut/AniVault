@@ -34,6 +34,36 @@ pub struct EngineState {
     pub library_folders_changed: Arc<tokio::sync::Notify>,
 }
 
+impl EngineState {
+    /// The list status of a show, if it has a list entry.
+    pub async fn list_status(&self, anime_id: i64) -> Option<String> {
+        self.storage.get_list_entry(anime_id).await.ok().flatten().map(|e| e.status)
+    }
+
+    /// Publish `StatusChanged` if the show's status is no longer `from`.
+    /// Call with the status read before the change.
+    pub async fn announce_status_change(&self, anime_id: i64, from: Option<String>) {
+        let Some(to) = self.list_status(anime_id).await else { return };
+        if from.as_deref() == Some(to.as_str()) {
+            return;
+        }
+        let title = self
+            .storage
+            .coverage_candidates_for(&[anime_id])
+            .await
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .map(|r| crate::engine::sonarr::coverage::display_title(&r.titles_json))
+            .unwrap_or_else(|| format!("Anime #{anime_id}"));
+        self.events.publish(crate::engine::events::EngineEvent::StatusChanged {
+            anime_id,
+            title,
+            from,
+            to,
+        });
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TrackingControl {
     pub active: bool,

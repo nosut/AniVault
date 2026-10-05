@@ -29,6 +29,10 @@
     loading = true;
     errors = [];
     finished = false;
+    // The next queued prompt reuses this component; start it from the defaults.
+    sonarrAction = 'unmonitor';
+    deleteSonarrFiles = false;
+    deleteLocalFiles = false;
     try {
       const [settings, previews] = await Promise.all([
         loadCleanupSettings(),

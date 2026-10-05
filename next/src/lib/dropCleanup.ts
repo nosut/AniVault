@@ -70,6 +70,9 @@ export type PromptKind = 'drop' | 'resume';
 export function promptFor(settings: CleanupSettings, from: string | null | undefined, to: string | null | undefined): PromptKind | null {
   if (!to || to === from) return null;
   if (settings.statuses.includes(to)) {
+    // Moving between two cleanup statuses (Dropped to On Hold) was already
+    // offered on the way in.
+    if (from && settings.statuses.includes(from)) return null;
     return settings.offerSonarr || settings.offerFiles ? 'drop' : null;
   }
   if (settings.offerResume && ACTIVE_STATUSES.includes(to) && from && settings.statuses.includes(from)) {
@@ -147,25 +150,60 @@ export interface CleanupRequest {
   shows: CleanupShow[];
 }
 
-/// Pending prompt; App.svelte renders the matching dialog while this is set.
-export const cleanupRequest = writable<CleanupRequest | null>(null);
+/// One status transition, as the engine's `StatusChanged` event reports it.
+export interface StatusChange {
+  animeId: number;
+  title: string;
+  from: string | null;
+  to: string;
+}
+
+/// The prompts a batch of transitions raises: one per kind and target status,
+/// each show once (its latest transition wins).
+export function requestsFor(settings: CleanupSettings, changes: StatusChange[]): CleanupRequest[] {
+  const latest = new Map<number, StatusChange>();
+  for (const c of changes) {
+    const prev = latest.get(c.animeId);
+    // Keep the earliest `from` so Watching → Dropped → On Hold reads as one move.
+    latest.set(c.animeId, prev ? { ...c, from: prev.from } : c);
+  }
+  const requests = new Map<string, CleanupRequest>();
+  for (const c of latest.values()) {
+    const kind = promptFor(settings, c.from, c.to);
+    if (!kind) continue;
+    const key = `${kind}:${c.to}`;
+    const req = requests.get(key) ?? { kind, status: c.to, shows: [] };
+    req.shows.push({ animeId: c.animeId, title: c.title });
+    requests.set(key, req);
+  }
+  return [...requests.values()];
+}
+
+/// Prompts waiting to be shown; App.svelte renders the first and shifts it
+/// off when it closes.
+export const cleanupQueue = writable<CleanupRequest[]>([]);
 
 /// Bumped with the affected show ids after a dialog applies, so open views
 /// can reload Sonarr and file state.
 export const cleanupApplied = writable<{ animeIds: number[] } | null>(null);
 
-/// Call after a status change succeeds. `shows` carry each show's previous
-/// status, which decides between the drop and resume prompts.
-export async function offerStatusChangePrompt(status: string, shows: (CleanupShow & { from?: string | null })[]): Promise<void> {
-  const settings = await loadCleanupSettings();
-  let kind: PromptKind | null = null;
-  const moved: CleanupShow[] = [];
-  for (const s of shows) {
-    const k = promptFor(settings, s.from, status);
-    if (!k) continue;
-    kind = k;
-    moved.push({ animeId: s.animeId, title: s.title });
-  }
-  if (!kind || moved.length === 0) return;
-  cleanupRequest.set({ kind, status, shows: moved });
+// Transitions arrive one event per show, a batch change over several polls.
+// Collect them briefly so a batch raises one prompt rather than one per show.
+const SETTLE_MS = 600;
+let pending: StatusChange[] = [];
+let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function noteStatusChanges(changes: StatusChange[]): void {
+  if (changes.length === 0) return;
+  pending.push(...changes);
+  if (settleTimer) clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => void flushStatusChanges(), SETTLE_MS);
+}
+
+async function flushStatusChanges(): Promise<void> {
+  settleTimer = null;
+  const changes = pending;
+  pending = [];
+  const requests = requestsFor(await loadCleanupSettings(), changes);
+  if (requests.length > 0) cleanupQueue.update((q) => [...q, ...requests]);
 }

@@ -487,6 +487,7 @@ pub async fn mark_episode_watched_inner(
     episode: i32,
     state: &EngineState,
 ) -> Result<(), String> {
+    let old_status = state.list_status(anime_id).await;
     state
         .storage
         .append_watch_history(
@@ -510,6 +511,7 @@ pub async fn mark_episode_watched_inner(
 
     // Auto-complete if the last episode is now watched.
     let _ = state.storage.auto_complete_if_capped(anime_id).await;
+    state.announce_status_change(anime_id, old_status).await;
 
     // Push status + progress back to AniList (best-effort, queued), mirroring
     // the auto-detect path. After the auto-complete above so the queued status
@@ -831,12 +833,9 @@ pub async fn update_list_entry_inner(
     score: Option<i32>,
     state: &EngineState,
 ) -> anyhow::Result<()> {
-    let old_progress = state
-        .storage
-        .get_list_entry(anime_id)
-        .await?
-        .map(|e| e.watched_episodes)
-        .unwrap_or(0);
+    let old_entry = state.storage.get_list_entry(anime_id).await?;
+    let old_progress = old_entry.as_ref().map(|e| e.watched_episodes).unwrap_or(0);
+    let old_status = old_entry.map(|e| e.status);
     state
         .storage
         .update_list_entry_partial(anime_id, status.as_deref(), watched_episodes, score)
@@ -854,6 +853,7 @@ pub async fn update_list_entry_inner(
     if status.is_none() && watched_episodes.is_some() {
         state.storage.auto_complete_if_capped(anime_id).await?;
     }
+    state.announce_status_change(anime_id, old_status).await;
     // Push the change (status + progress) back to AniList (best-effort, queued).
     crate::engine::sync_worker::enqueue_anilist_sync(state, anime_id).await;
     Ok(())

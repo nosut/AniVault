@@ -316,14 +316,9 @@ pub async fn record_progress(
         .unwrap_or_default()
         .as_secs() as i64;
 
-    let old_episode = state
-        .storage
-        .get_list_entry(anime_id)
-        .await
-        .ok()
-        .flatten()
-        .map(|e| e.watched_episodes)
-        .unwrap_or(0);
+    let old_entry = state.storage.get_list_entry(anime_id).await.ok().flatten();
+    let old_episode = old_entry.as_ref().map(|e| e.watched_episodes).unwrap_or(0);
+    let old_status = old_entry.map(|e| e.status);
 
     if episode <= old_episode {
         return false;
@@ -339,6 +334,8 @@ pub async fn record_progress(
         .await;
     // Auto-complete when playback reaches the episode cap.
     let _ = state.storage.auto_complete_if_capped(anime_id).await;
+    // Covers both auto-complete and a dropped show flipped back to watching.
+    state.announce_status_change(anime_id, old_status).await;
     // Push status + progress back to AniList.
     crate::engine::sync_worker::enqueue_anilist_sync(state, anime_id).await;
 

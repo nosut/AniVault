@@ -182,6 +182,15 @@ export interface SyncFailedEvent {
   };
 }
 
+export interface StatusChangedEvent {
+  StatusChanged: {
+    anime_id: number;
+    title: string;
+    from: string | null;
+    to: string;
+  };
+}
+
 export interface LibraryUpdatedEvent {
   LibraryUpdated: {
     indexed: number;
@@ -197,7 +206,8 @@ export type EngineEvent =
   | ProgressAdvancedEvent
   | SyncQueuedEvent
   | SyncFailedEvent
-  | LibraryUpdatedEvent;
+  | LibraryUpdatedEvent
+  | StatusChangedEvent;
 
 export interface LibraryEntry {
   anime_id: number;

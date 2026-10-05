@@ -17,7 +17,7 @@
   import SearchView from './lib/SearchView.svelte';
   import DropCleanupDialog from './lib/DropCleanupDialog.svelte';
   import ResumeSonarrDialog from './lib/ResumeSonarrDialog.svelte';
-  import { cleanupApplied, cleanupRequest } from './lib/dropCleanup';
+  import { cleanupApplied, cleanupQueue, noteStatusChanges } from './lib/dropCleanup';
   import { loadStartPage } from './lib/startPage';
   import { DEFAULT_NAV_ITEMS, clearNavOrder, loadNavOrder, moveNavItem, saveNavOrder, type NavId } from './lib/navOrder';
   import bannerUrl from './assets/banner.png';
@@ -248,6 +248,9 @@
       const events = await drainEngineEvents();
       latestEvents = events;
       void maybePromptUpNext(events);
+      noteStatusChanges(events.flatMap((e) => ('StatusChanged' in e
+        ? [{ animeId: e.StatusChanged.anime_id, title: e.StatusChanged.title, from: e.StatusChanged.from, to: e.StatusChanged.to }]
+        : [])));
     } catch {
       // Keep polling alive; individual errors are surfaced by consumers if needed.
     }
@@ -501,17 +504,17 @@
     </div>
   {/if}
 
-  {#if $cleanupRequest?.kind === 'drop'}
+  {#if $cleanupQueue[0]?.kind === 'drop'}
     <DropCleanupDialog
-      request={$cleanupRequest}
+      request={$cleanupQueue[0]}
       on:done={(e) => { cleanupApplied.set(e.detail); cleanupApplied.set(null); }}
-      on:close={() => cleanupRequest.set(null)}
+      on:close={() => cleanupQueue.update((q) => q.slice(1))}
     />
-  {:else if $cleanupRequest?.kind === 'resume'}
+  {:else if $cleanupQueue[0]?.kind === 'resume'}
     <ResumeSonarrDialog
-      request={$cleanupRequest}
+      request={$cleanupQueue[0]}
       on:done={(e) => { cleanupApplied.set(e.detail); cleanupApplied.set(null); }}
-      on:close={() => cleanupRequest.set(null)}
+      on:close={() => cleanupQueue.update((q) => q.slice(1))}
     />
   {/if}
 </main>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StatusChangePreview } from './api';
-import { cleanupItems, promptFor, resumeItems, sharedWarnings, DEFAULT_CLEANUP_SETTINGS, type CleanupSettings } from './dropCleanup';
+import { cleanupItems, promptFor, requestsFor, resumeItems, sharedWarnings, DEFAULT_CLEANUP_SETTINGS, type CleanupSettings } from './dropCleanup';
 
 const settings: CleanupSettings = { ...DEFAULT_CLEANUP_SETTINGS };
 
@@ -20,6 +20,12 @@ describe('promptFor', () => {
     expect(promptFor(settings, 'watching', 'completed')).toBeNull();
     expect(promptFor(settings, 'dropped', 'dropped')).toBeNull();
     expect(promptFor({ ...settings, offerSonarr: false, offerFiles: false }, 'watching', 'dropped')).toBeNull();
+  });
+
+  it('does not offer cleanup again when moving between two cleanup statuses', () => {
+    const both = { ...settings, statuses: ['dropped', 'on_hold'] };
+    expect(promptFor(both, 'dropped', 'on_hold')).toBeNull();
+    expect(promptFor(both, 'on_hold', 'watching')).toBe('resume');
   });
 
   it('honours extra statuses', () => {
@@ -88,5 +94,32 @@ describe('resumeItems', () => {
     const shows = [1, 2].map((id) => ({ animeId: id, title: `Show ${id}` }));
     const items = resumeItems(shows, [preview(1, { sonarr: series(10, false) }), preview(2, { sonarr: series(10, false) })]);
     expect(items.map((i) => i.animeId)).toEqual([1]);
+  });
+});
+
+describe('requestsFor', () => {
+  const change = (animeId: number, from: string | null, to: string) => ({ animeId, title: `Show ${animeId}`, from, to });
+  const withCompleted = { ...settings, statuses: ['dropped', 'completed'] };
+
+  it('groups a batch into one prompt per kind and target status', () => {
+    const reqs = requestsFor(withCompleted, [
+      change(1, 'watching', 'dropped'),
+      change(2, 'watching', 'dropped'),
+      change(3, 'watching', 'completed'),
+      change(4, 'dropped', 'watching'),
+      change(5, 'watching', 'on_hold'),
+    ]);
+    expect(reqs).toEqual([
+      { kind: 'drop', status: 'dropped', shows: [{ animeId: 1, title: 'Show 1' }, { animeId: 2, title: 'Show 2' }] },
+      { kind: 'drop', status: 'completed', shows: [{ animeId: 3, title: 'Show 3' }] },
+      { kind: 'resume', status: 'watching', shows: [{ animeId: 4, title: 'Show 4' }] },
+    ]);
+  });
+
+  it('reads several moves of one show as a single move from its first status', () => {
+    expect(requestsFor(settings, [change(1, 'dropped', 'watching'), change(1, 'watching', 'dropped')])).toEqual([]);
+    expect(requestsFor(settings, [change(1, 'watching', 'on_hold'), change(1, 'on_hold', 'dropped')])).toEqual([
+      { kind: 'drop', status: 'dropped', shows: [{ animeId: 1, title: 'Show 1' }] },
+    ]);
   });
 });

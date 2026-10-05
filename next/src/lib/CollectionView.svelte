@@ -1,7 +1,7 @@
 <script lang="ts">
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
-  import { cleanupApplied, offerStatusChangePrompt } from './dropCleanup';
+  import { cleanupApplied } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
   import {
     getCollection,
@@ -190,12 +190,11 @@
   }
   async function ctxSetStatus(status: string) {
     if (!ctxMenu) return;
-    const { anime_id: id, title, status: from } = ctxMenu.entry;
+    const id = ctxMenu.entry.anime_id;
     closeContextMenu();
     try {
       await updateListEntry(id, { status });
       await load();
-      void offerStatusChangePrompt(status, [{ animeId: id, title, from }]);
     } catch { /* ignore */ }
   }
   async function ctxRemove() {

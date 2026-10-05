@@ -61,6 +61,16 @@ pub enum EngineEvent {
         anime_id: AnimeId,
         message: String,
     },
+    /// A show's list status changed, by the user or by the engine itself
+    /// (auto-complete at the last episode, playback resuming a dropped show).
+    /// AniList imports and migrations do not publish this. The UI raises the
+    /// drop-cleanup and resume prompts from it.
+    StatusChanged {
+        anime_id: AnimeId,
+        title: String,
+        from: Option<String>,
+        to: String,
+    },
     /// An automatic scan (watcher or timer) changed the file index — the UI
     /// should refresh library/file views. Not emitted for manual scans, which
     /// already return their report to the caller.

@@ -32,6 +32,8 @@
     finished = false;
     added = new Set();
     addingFor = null;
+    monitor = true;
+    search = true;
     try {
       const previews = await getStatusChangePreview(req.shows.map((s) => s.animeId));
       if (req !== loadedFor) return;
