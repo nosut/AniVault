@@ -1001,101 +1001,170 @@ pub async fn get_series_disk_size(
     Ok(sum_file_sizes(&paths))
 }
 
-// ── Cleanup after dropping a show ───────────────────────────────────────────
+// ── Cleanup after dropping a show, and undoing it ───────────────────────────
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CleanupSonarrSeries {
     pub sonarr_id: i64,
     pub title: String,
     pub monitored: bool,
+    /// Other Watching/Planning shows this series also covers. Unmonitoring
+    /// or removing it affects them too.
+    pub shared_with: Vec<String>,
 }
 
-/// What can be cleaned up for a show: its Sonarr series and its local files.
+/// Sonarr's view of one show, as the status-change prompts need it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SonarrStanding {
+    Series(CleanupSonarrSeries),
+    /// Not in Sonarr, and not ignored by the coverage check.
+    Missing,
+    /// Ignored, or a movie: Sonarr has nothing to offer.
+    Untracked,
+}
+
+/// Resolve each target show to its Sonarr series the way the coverage check
+/// does (mapping, link, then title), noting the active shows that share it.
+pub fn sonarr_standings(
+    targets: &[crate::engine::storage::CoverageCandidateRow],
+    active: &[crate::engine::storage::CoverageCandidateRow],
+    series: &[crate::engine::sonarr::client::SonarrSeriesRaw],
+    mapped: &[(i64, i64)],
+    links: &[crate::engine::storage::CoverageLinkDb],
+) -> std::collections::HashMap<i64, SonarrStanding> {
+    use crate::engine::sonarr::coverage::{classify, CoverageState};
+    let active_rows = classify(active, series, mapped, links);
+    classify(targets, series, mapped, links)
+        .into_iter()
+        .map(|row| {
+            let standing = match row.state {
+                CoverageState::Covered { sonarr_id, .. } => {
+                    let s = series.iter().find(|s| s.id == sonarr_id);
+                    SonarrStanding::Series(CleanupSonarrSeries {
+                        sonarr_id,
+                        title: s.map(|s| s.title.clone()).unwrap_or_default(),
+                        monitored: s.is_some_and(|s| s.monitored),
+                        shared_with: active_rows
+                            .iter()
+                            .filter(|a| a.anime_id != row.anime_id)
+                            .filter(|a| matches!(a.state, CoverageState::Covered { sonarr_id: id, .. } if id == sonarr_id))
+                            .map(|a| a.title.clone())
+                            .collect(),
+                    })
+                }
+                CoverageState::Missing => SonarrStanding::Missing,
+                CoverageState::Ignored => SonarrStanding::Untracked,
+            };
+            (row.anime_id, standing)
+        })
+        .collect()
+}
+
+/// What can be cleaned up or restored for a show: its Sonarr series and its
+/// local files.
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct DropCleanupPreview {
+pub struct StatusChangePreview {
     pub anime_id: i64,
     pub sonarr: Option<CleanupSonarrSeries>,
+    pub sonarr_missing: bool,
+    /// Set when Sonarr is connected but could not be reached.
+    pub sonarr_error: Option<String>,
     pub file_count: usize,
     pub total_bytes: u64,
 }
 
-pub async fn get_drop_cleanup_preview_inner(
+pub async fn get_status_change_preview_inner(
     state: &EngineState,
     anime_ids: Vec<i64>,
-) -> anyhow::Result<Vec<DropCleanupPreview>> {
-    let mut files = state.storage.file_index_for_anime_ids(&anime_ids).await?;
-    let mut previews = Vec::with_capacity(anime_ids.len());
-    for anime_id in anime_ids {
-        let paths: Vec<String> = files
-            .remove(&anime_id)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|f| !f.ignored)
-            .map(|f| f.file_path)
-            .collect();
-        let sonarr = state
-            .storage
-            .sonarr_availability(anime_id)
-            .await?
-            .map(|s| CleanupSonarrSeries {
-                sonarr_id: s.sonarr_id,
-                title: s.sonarr_title,
-                monitored: s.monitored,
-            });
-        previews.push(DropCleanupPreview {
-            anime_id,
-            sonarr,
-            file_count: paths.len(),
-            total_bytes: sum_file_sizes(&paths),
-        });
+) -> anyhow::Result<Vec<StatusChangePreview>> {
+    let mut standings = std::collections::HashMap::new();
+    let mut sonarr_error = None;
+    if let Some(client) = sonarr_client_from_settings(state).await {
+        match client.fetch_series().await {
+            Ok(series) => {
+                let targets = state.storage.coverage_candidates_for(&anime_ids).await?;
+                let active = state.storage.coverage_candidates().await?;
+                let mapped = state.storage.sonarr_mapped_pairs().await?;
+                let links = state.storage.coverage_links().await?;
+                standings = sonarr_standings(&targets, &active, &series, &mapped, &links);
+            }
+            Err(e) => sonarr_error = Some(e.to_string()),
+        }
     }
-    Ok(previews)
+
+    let mut files = state.storage.file_index_for_anime_ids(&anime_ids).await?;
+    Ok(anime_ids
+        .into_iter()
+        .map(|anime_id| {
+            let paths: Vec<String> = files
+                .remove(&anime_id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|f| !f.ignored)
+                .map(|f| f.file_path)
+                .collect();
+            let standing = standings.remove(&anime_id).unwrap_or(SonarrStanding::Untracked);
+            StatusChangePreview {
+                anime_id,
+                sonarr_missing: standing == SonarrStanding::Missing,
+                sonarr: match standing {
+                    SonarrStanding::Series(s) => Some(s),
+                    _ => None,
+                },
+                sonarr_error: sonarr_error.clone(),
+                file_count: paths.len(),
+                total_bytes: sum_file_sizes(&paths),
+            }
+        })
+        .collect())
 }
 
 #[tauri::command]
-pub async fn get_drop_cleanup_preview(
+pub async fn get_status_change_preview(
     anime_ids: Vec<i64>,
     state: tauri::State<'_, EngineState>,
-) -> Result<Vec<DropCleanupPreview>, String> {
-    get_drop_cleanup_preview_inner(&state, anime_ids)
+) -> Result<Vec<StatusChangePreview>, String> {
+    get_status_change_preview_inner(&state, anime_ids)
         .await
         .map_err(command_error)
 }
 
-async fn mapped_sonarr_id(state: &EngineState, anime_id: i64) -> anyhow::Result<i64> {
-    state
-        .storage
-        .sonarr_availability(anime_id)
-        .await?
-        .map(|s| s.sonarr_id)
-        .ok_or_else(|| anyhow::anyhow!("This show is not linked to a Sonarr series"))
-}
-
-pub async fn unmonitor_sonarr_series_inner(state: &EngineState, anime_id: i64) -> anyhow::Result<()> {
-    let sonarr_id = mapped_sonarr_id(state, anime_id).await?;
+/// Turn monitoring of a Sonarr series on or off. Turning it on can also start
+/// a search for the episodes it is missing.
+pub async fn set_sonarr_monitored_inner(
+    state: &EngineState,
+    sonarr_id: i64,
+    monitored: bool,
+    search: bool,
+) -> anyhow::Result<()> {
     let client = sonarr_client_from_settings(state)
         .await
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
-    client.set_series_monitored(sonarr_id, false).await?;
-    state.storage.sonarr_series_set_monitored(sonarr_id, false).await
+    client.set_series_monitored(sonarr_id, monitored).await?;
+    state.storage.sonarr_series_set_monitored(sonarr_id, monitored).await?;
+    if monitored && search {
+        client.search_series(sonarr_id).await?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn unmonitor_sonarr_series(
-    anime_id: i64,
+pub async fn set_sonarr_monitored(
+    sonarr_id: i64,
+    monitored: bool,
+    search: bool,
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
-    unmonitor_sonarr_series_inner(&state, anime_id)
+    set_sonarr_monitored_inner(&state, sonarr_id, monitored, search)
         .await
         .map_err(command_error)
 }
 
 pub async fn remove_from_sonarr_inner(
     state: &EngineState,
-    anime_id: i64,
+    sonarr_id: i64,
     delete_files: bool,
 ) -> anyhow::Result<()> {
-    let sonarr_id = mapped_sonarr_id(state, anime_id).await?;
     let client = sonarr_client_from_settings(state)
         .await
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
@@ -1105,11 +1174,11 @@ pub async fn remove_from_sonarr_inner(
 
 #[tauri::command]
 pub async fn remove_from_sonarr(
-    anime_id: i64,
+    sonarr_id: i64,
     delete_files: bool,
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
-    remove_from_sonarr_inner(&state, anime_id, delete_files)
+    remove_from_sonarr_inner(&state, sonarr_id, delete_files)
         .await
         .map_err(command_error)
 }
@@ -3976,6 +4045,63 @@ mod tests {
         ];
         assert_eq!(sum_file_sizes(&paths), 3500);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn coverage_cand(id: i64, romaji: &str, status: &str) -> crate::engine::storage::CoverageCandidateRow {
+        crate::engine::storage::CoverageCandidateRow {
+            anime_id: id,
+            titles_json: format!(r#"{{"romaji":"{romaji}"}}"#),
+            format: None,
+            image_url: None,
+            list_status: status.into(),
+        }
+    }
+
+    fn sonarr_series(id: i64, title: &str, monitored: bool) -> crate::engine::sonarr::client::SonarrSeriesRaw {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "title": title, "monitored": monitored, "tags": []
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn sonarr_standings_resolve_links_and_name_shows_sharing_the_series() {
+        use crate::engine::storage::CoverageLinkDb;
+        let series = vec![sonarr_series(10, "Big Show", false)];
+        // 1 is the dropped sequel, linked to the shared series; 2 still watches it.
+        let targets = vec![
+            coverage_cand(1, "Big Show Part 2", "dropped"),
+            coverage_cand(3, "Not In Sonarr", "dropped"),
+            coverage_cand(4, "Ignored Show", "dropped"),
+        ];
+        let active = vec![coverage_cand(2, "Big Show", "watching")];
+        let links = vec![
+            CoverageLinkDb { anime_id: 1, sonarr_id: Some(10), ignored: false },
+            CoverageLinkDb { anime_id: 4, sonarr_id: None, ignored: true },
+        ];
+        let standings = sonarr_standings(&targets, &active, &series, &[], &links);
+        assert_eq!(
+            standings[&1],
+            SonarrStanding::Series(CleanupSonarrSeries {
+                sonarr_id: 10,
+                title: "Big Show".into(),
+                monitored: false,
+                shared_with: vec!["Big Show".into()],
+            })
+        );
+        assert_eq!(standings[&3], SonarrStanding::Missing);
+        assert_eq!(standings[&4], SonarrStanding::Untracked);
+    }
+
+    #[test]
+    fn sonarr_standings_do_not_list_the_show_itself_as_sharing() {
+        let series = vec![sonarr_series(10, "Big Show", true)];
+        let me = coverage_cand(2, "Big Show", "watching");
+        let standings = sonarr_standings(&[me.clone()], &[me], &series, &[(2, 10)], &[]);
+        match &standings[&2] {
+            SonarrStanding::Series(s) => assert!(s.shared_with.is_empty()),
+            other => panic!("expected a series, got {other:?}"),
+        }
     }
 
     #[test]

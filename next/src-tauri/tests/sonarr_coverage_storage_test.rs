@@ -69,3 +69,18 @@ async fn sonarr_mapped_pairs_skips_unmapped_rows() {
     }
     assert_eq!(s.sonarr_mapped_pairs().await.unwrap(), vec![(5, 10)]);
 }
+
+#[tokio::test]
+async fn coverage_candidates_for_returns_the_asked_shows_whatever_their_status() {
+    let s = Tests::new_in_memory().await;
+    for (id, status) in [(1, "dropped"), (2, "watching"), (3, "completed")] {
+        s.upsert_anime_full(id, r#"{"romaji":"X"}"#, 12, None, None, None, None, 1)
+            .await
+            .unwrap();
+        s.upsert_list_entry_full(id, status, 0, None, "", 1, 1).await.unwrap();
+    }
+    let rows = s.coverage_candidates_for(&[1, 3]).await.unwrap();
+    let got: Vec<_> = rows.iter().map(|r| (r.anime_id, r.list_status.as_str())).collect();
+    assert_eq!(got, vec![(1, "dropped"), (3, "completed")]);
+    assert!(s.coverage_candidates_for(&[]).await.unwrap().is_empty());
+}

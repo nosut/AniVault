@@ -16,6 +16,7 @@
   import SeasonView from './lib/SeasonView.svelte';
   import SearchView from './lib/SearchView.svelte';
   import DropCleanupDialog from './lib/DropCleanupDialog.svelte';
+  import ResumeSonarrDialog from './lib/ResumeSonarrDialog.svelte';
   import { cleanupApplied, cleanupRequest } from './lib/dropCleanup';
   import { loadStartPage } from './lib/startPage';
   import { DEFAULT_NAV_ITEMS, clearNavOrder, loadNavOrder, moveNavItem, saveNavOrder, type NavId } from './lib/navOrder';
@@ -500,8 +501,14 @@
     </div>
   {/if}
 
-  {#if $cleanupRequest}
+  {#if $cleanupRequest?.kind === 'drop'}
     <DropCleanupDialog
+      request={$cleanupRequest}
+      on:done={(e) => { cleanupApplied.set(e.detail); cleanupApplied.set(null); }}
+      on:close={() => cleanupRequest.set(null)}
+    />
+  {:else if $cleanupRequest?.kind === 'resume'}
+    <ResumeSonarrDialog
       request={$cleanupRequest}
       on:done={(e) => { cleanupApplied.set(e.detail); cleanupApplied.set(null); }}
       on:close={() => cleanupRequest.set(null)}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
-  import { cleanupApplied, offerDropCleanup } from './dropCleanup';
+  import { cleanupApplied, offerStatusChangePrompt } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
   import {
     getCollection,
@@ -195,7 +195,7 @@
     try {
       await updateListEntry(id, { status });
       await load();
-      void offerDropCleanup(status, [{ animeId: id, title, from }]);
+      void offerStatusChangePrompt(status, [{ animeId: id, title, from }]);
     } catch { /* ignore */ }
   }
   async function ctxRemove() {

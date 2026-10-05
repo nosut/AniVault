@@ -947,11 +947,22 @@ export function notifyUpNext(title: string, episode: number, invokeFn: InvokeFn 
   return invokeFn<void>('notify_up_next', { title, episode });
 }
 
-// ── Cleanup after dropping a show ───────────────────────────────────────────
+// ── Cleanup after dropping a show, and undoing it ───────────────────────────
 
-export interface DropCleanupPreview {
+export interface CleanupSonarrSeries {
+  sonarr_id: number;
+  title: string;
+  monitored: boolean;
+  /** Other Watching/Planning shows this series also covers. */
+  shared_with: string[];
+}
+
+export interface StatusChangePreview {
   anime_id: number;
-  sonarr: { sonarr_id: number; title: string; monitored: boolean } | null;
+  sonarr: CleanupSonarrSeries | null;
+  /** Not in Sonarr and not ignored by the coverage check. */
+  sonarr_missing: boolean;
+  sonarr_error: string | null;
   file_count: number;
   total_bytes: number;
 }
@@ -962,16 +973,16 @@ export interface DeleteFilesReport {
   failed: string[];
 }
 
-export function getDropCleanupPreview(animeIds: number[], invokeFn: InvokeFn = tauriInvoke): Promise<DropCleanupPreview[]> {
-  return invokeFn<DropCleanupPreview[]>('get_drop_cleanup_preview', { animeIds });
+export function getStatusChangePreview(animeIds: number[], invokeFn: InvokeFn = tauriInvoke): Promise<StatusChangePreview[]> {
+  return invokeFn<StatusChangePreview[]>('get_status_change_preview', { animeIds });
 }
 
-export function unmonitorSonarrSeries(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
-  return invokeFn<void>('unmonitor_sonarr_series', { animeId });
+export function setSonarrMonitored(sonarrId: number, monitored: boolean, search: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('set_sonarr_monitored', { sonarrId, monitored, search });
 }
 
-export function removeFromSonarr(animeId: number, deleteFiles: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
-  return invokeFn<void>('remove_from_sonarr', { animeId, deleteFiles });
+export function removeFromSonarr(sonarrId: number, deleteFiles: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('remove_from_sonarr', { sonarrId, deleteFiles });
 }
 
 export function deleteAnimeFiles(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<DeleteFilesReport> {

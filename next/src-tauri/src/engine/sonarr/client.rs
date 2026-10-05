@@ -385,6 +385,24 @@ impl SonarrClient {
         Ok(())
     }
 
+    /// Ask Sonarr to search its indexers for every missing episode of a series.
+    pub async fn search_series(&self, series_id: i64) -> anyhow::Result<()> {
+        let url = format!("{}/api/v3/command", self.url);
+        let resp = self
+            .http
+            .post(&url)
+            .headers(self.headers())
+            .json(&serde_json::json!({ "name": "SeriesSearch", "seriesId": series_id }))
+            .send()
+            .await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr series search HTTP {}: {}", status, body));
+        }
+        Ok(())
+    }
+
     /// Import lists configured in Sonarr.
     pub async fn fetch_import_lists(&self) -> anyhow::Result<Vec<SonarrImportList>> {
         let url = format!("{}/api/v3/importlist", self.url);

@@ -1,13 +1,16 @@
 // When a show moves to Dropped (or another chosen status), offer to stop or
-// remove it in Sonarr and to delete its episode files. The settings decide
-// whether each offer appears; the dialog in App.svelte does the asking.
+// remove it in Sonarr and to delete its episode files. When it moves back to
+// Watching or Planning, offer the reverse: monitor it again, or add it back.
+// The settings decide whether each offer appears; the dialogs in App.svelte
+// do the asking.
 
 import { writable } from 'svelte/store';
-import { getSetting, type DropCleanupPreview } from './api';
+import { getSetting, type CleanupSonarrSeries, type StatusChangePreview } from './api';
 
 export const CLEANUP_SONARR_KEY = 'cleanup.offer_sonarr';
 export const CLEANUP_FILES_KEY = 'cleanup.offer_files';
 export const CLEANUP_STATUSES_KEY = 'cleanup.statuses';
+export const CLEANUP_RESUME_KEY = 'cleanup.offer_resume';
 
 export const CLEANUP_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'dropped', label: 'Dropped' },
@@ -15,40 +18,64 @@ export const CLEANUP_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'on_hold', label: 'On Hold' },
 ];
 
+export const STATUS_LABELS: Record<string, string> = {
+  watching: 'Watching',
+  plan_to_watch: 'Planning',
+  dropped: 'Dropped',
+  completed: 'Completed',
+  on_hold: 'On Hold',
+};
+
+/// The statuses Sonarr should be fetching for.
+const ACTIVE_STATUSES = ['watching', 'plan_to_watch'];
+
 export interface CleanupSettings {
   offerSonarr: boolean;
   offerFiles: boolean;
+  /// Moving into one of these offers cleanup; moving out of one into an
+  /// active status offers the reverse.
   statuses: string[];
+  offerResume: boolean;
 }
 
 export const DEFAULT_CLEANUP_SETTINGS: CleanupSettings = {
   offerSonarr: true,
   offerFiles: true,
   statuses: ['dropped'],
+  offerResume: true,
 };
 
 export async function loadCleanupSettings(): Promise<CleanupSettings> {
   try {
-    const [offerSonarr, offerFiles, statuses] = await Promise.all([
+    const [offerSonarr, offerFiles, statuses, offerResume] = await Promise.all([
       getSetting<boolean>(CLEANUP_SONARR_KEY),
       getSetting<boolean>(CLEANUP_FILES_KEY),
       getSetting<string[]>(CLEANUP_STATUSES_KEY),
+      getSetting<boolean>(CLEANUP_RESUME_KEY),
     ]);
     return {
       offerSonarr: offerSonarr ?? DEFAULT_CLEANUP_SETTINGS.offerSonarr,
       offerFiles: offerFiles ?? DEFAULT_CLEANUP_SETTINGS.offerFiles,
       statuses: Array.isArray(statuses) ? statuses : DEFAULT_CLEANUP_SETTINGS.statuses,
+      offerResume: offerResume ?? DEFAULT_CLEANUP_SETTINGS.offerResume,
     };
   } catch {
     return DEFAULT_CLEANUP_SETTINGS;
   }
 }
 
-/// Whether moving a show from `from` to `to` should raise the cleanup prompt.
-export function triggersCleanup(settings: CleanupSettings, from: string | null | undefined, to: string | null | undefined): boolean {
-  if (!to || to === from) return false;
-  if (!settings.offerSonarr && !settings.offerFiles) return false;
-  return settings.statuses.includes(to);
+export type PromptKind = 'drop' | 'resume';
+
+/// Which prompt, if any, moving a show from `from` to `to` should raise.
+export function promptFor(settings: CleanupSettings, from: string | null | undefined, to: string | null | undefined): PromptKind | null {
+  if (!to || to === from) return null;
+  if (settings.statuses.includes(to)) {
+    return settings.offerSonarr || settings.offerFiles ? 'drop' : null;
+  }
+  if (settings.offerResume && ACTIVE_STATUSES.includes(to) && from && settings.statuses.includes(from)) {
+    return 'resume';
+  }
+  return null;
 }
 
 export type SonarrAction = 'keep' | 'unmonitor' | 'remove';
@@ -58,14 +85,15 @@ export interface CleanupShow {
   title: string;
 }
 
-/// One show in the prompt: only the parts the settings offer and the show has.
+/// One show in the drop prompt: only the parts the settings offer and the
+/// show has.
 export interface CleanupItem extends CleanupShow {
-  sonarr: DropCleanupPreview['sonarr'];
+  sonarr: CleanupSonarrSeries | null;
   fileCount: number;
   totalBytes: number;
 }
 
-export function cleanupItems(shows: CleanupShow[], previews: DropCleanupPreview[], settings: CleanupSettings): CleanupItem[] {
+export function cleanupItems(shows: CleanupShow[], previews: StatusChangePreview[], settings: CleanupSettings): CleanupItem[] {
   const byId = new Map(previews.map((p) => [p.anime_id, p]));
   return shows
     .map((s) => {
@@ -80,23 +108,64 @@ export function cleanupItems(shows: CleanupShow[], previews: DropCleanupPreview[
     .filter((i) => i.sonarr !== null || i.fileCount > 0);
 }
 
+/// One show in the resume prompt: either its series is unmonitored, or it is
+/// not in Sonarr at all.
+export type ResumeItem = CleanupShow & (
+  | { kind: 'unmonitored'; sonarr: CleanupSonarrSeries }
+  | { kind: 'missing' }
+);
+
+export function resumeItems(shows: CleanupShow[], previews: StatusChangePreview[]): ResumeItem[] {
+  const byId = new Map(previews.map((p) => [p.anime_id, p]));
+  const items: ResumeItem[] = [];
+  for (const s of shows) {
+    const p = byId.get(s.animeId);
+    if (p?.sonarr && !p.sonarr.monitored) items.push({ ...s, kind: 'unmonitored', sonarr: p.sonarr });
+    else if (p?.sonarr_missing) items.push({ ...s, kind: 'missing' });
+  }
+  // Two shows on one series need it monitored only once.
+  const seen = new Set<number>();
+  return items.filter((i) => {
+    if (i.kind !== 'unmonitored') return true;
+    if (seen.has(i.sonarr.sonarr_id)) return false;
+    seen.add(i.sonarr.sonarr_id);
+    return true;
+  });
+}
+
+/// The other active shows a set of drop items would affect, by series.
+export function sharedWarnings(items: CleanupItem[]): string[] {
+  const titles = new Set<string>();
+  const dropping = new Set(items.map((i) => i.title));
+  for (const i of items) for (const t of i.sonarr?.shared_with ?? []) if (!dropping.has(t)) titles.add(t);
+  return [...titles];
+}
+
 export interface CleanupRequest {
+  kind: PromptKind;
   status: string;
   shows: CleanupShow[];
 }
 
-/// Pending prompt; App.svelte renders the dialog while this is set.
+/// Pending prompt; App.svelte renders the matching dialog while this is set.
 export const cleanupRequest = writable<CleanupRequest | null>(null);
 
-/// Call after a status change succeeds. `shows` carry each show's previous
-/// status so a no-op move does not prompt.
-export async function offerDropCleanup(status: string, shows: (CleanupShow & { from?: string | null })[]): Promise<void> {
-  const settings = await loadCleanupSettings();
-  const moved = shows.filter((s) => triggersCleanup(settings, s.from, status));
-  if (moved.length === 0) return;
-  cleanupRequest.set({ status, shows: moved.map(({ animeId, title }) => ({ animeId, title })) });
-}
-
-/// Bumped with the cleaned-up show ids after the dialog applies, so open
-/// views can reload Sonarr and file state.
+/// Bumped with the affected show ids after a dialog applies, so open views
+/// can reload Sonarr and file state.
 export const cleanupApplied = writable<{ animeIds: number[] } | null>(null);
+
+/// Call after a status change succeeds. `shows` carry each show's previous
+/// status, which decides between the drop and resume prompts.
+export async function offerStatusChangePrompt(status: string, shows: (CleanupShow & { from?: string | null })[]): Promise<void> {
+  const settings = await loadCleanupSettings();
+  let kind: PromptKind | null = null;
+  const moved: CleanupShow[] = [];
+  for (const s of shows) {
+    const k = promptFor(settings, s.from, status);
+    if (!k) continue;
+    kind = k;
+    moved.push({ animeId: s.animeId, title: s.title });
+  }
+  if (!kind || moved.length === 0) return;
+  cleanupRequest.set({ kind, status, shows: moved });
+}

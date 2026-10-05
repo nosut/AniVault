@@ -2395,6 +2395,36 @@ impl Storage {
             .collect())
     }
 
+    /// Coverage candidates for specific entries, whatever their list status,
+    /// so a show just moved to Dropped can still be matched to its series.
+    pub async fn coverage_candidates_for(&self, anime_ids: &[i64]) -> anyhow::Result<Vec<CoverageCandidateRow>> {
+        if anime_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let placeholders = vec!["?"; anime_ids.len()].join(",");
+        let sql = format!(
+            "SELECT a.id, a.titles_json, a.format, a.image_url, COALESCE(le.status, '') AS status
+             FROM anime a LEFT JOIN list_entry le ON le.anime_id = a.id
+             WHERE a.id IN ({placeholders})
+             ORDER BY a.id"
+        );
+        let mut query = sqlx::query(&sql);
+        for id in anime_ids {
+            query = query.bind(id);
+        }
+        let rows = query.fetch_all(&self.pool).await?;
+        Ok(rows
+            .iter()
+            .map(|r| CoverageCandidateRow {
+                anime_id: r.get("id"),
+                titles_json: r.get("titles_json"),
+                format: r.get("format"),
+                image_url: r.get("image_url"),
+                list_status: r.get("status"),
+            })
+            .collect())
+    }
+
     /// Link an entry to the Sonarr series that covers it (clears any ignore).
     pub async fn coverage_link_set(&self, anime_id: i64, sonarr_id: i64, now: i64) -> anyhow::Result<()> {
         sqlx::query(

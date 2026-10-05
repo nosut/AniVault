@@ -4,7 +4,7 @@
   import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, getSonarrCoverageFor, unignoreSonarrCoverage, type CoverageRow, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { formatBytes } from './fileSize';
   import { onDestroy } from 'svelte';
-  import { cleanupApplied, offerDropCleanup } from './dropCleanup';
+  import { cleanupApplied, offerStatusChangePrompt } from './dropCleanup';
   import SonarrRemap from './SonarrRemap.svelte';
   import SonarrAddDialog from './SonarrAddDialog.svelte';
   import { mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
@@ -466,7 +466,7 @@
       saveOk = 'Status saved';
       await load();
       clearSaveOkSoon();
-      if (draftStatus) void offerDropCleanup(draftStatus, [{ animeId, title, from }]);
+      if (draftStatus) void offerStatusChangePrompt(draftStatus, [{ animeId, title, from }]);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {

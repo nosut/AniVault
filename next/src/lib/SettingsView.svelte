@@ -15,7 +15,7 @@
   import { listSonarrSeries, type SonarrSeriesListRow } from './api';
   import { loadStartPage, saveStartPage, START_PAGE_OPTIONS } from './startPage';
   import { selectedWantedTags, toggleWantedTag, wantedTagRows, type WantedTagRow } from './sonarrUi';
-  import { CLEANUP_FILES_KEY, CLEANUP_SONARR_KEY, CLEANUP_STATUSES_KEY, CLEANUP_STATUS_OPTIONS, DEFAULT_CLEANUP_SETTINGS, loadCleanupSettings, type CleanupSettings } from './dropCleanup';
+  import { CLEANUP_FILES_KEY, CLEANUP_RESUME_KEY, CLEANUP_SONARR_KEY, CLEANUP_STATUSES_KEY, CLEANUP_STATUS_OPTIONS, DEFAULT_CLEANUP_SETTINGS, loadCleanupSettings, type CleanupSettings } from './dropCleanup';
   import { listSonarrTags } from './api';
 
   export let events: EngineEvent[] = [];
@@ -271,6 +271,12 @@
     cleanup = { ...cleanup, offerFiles: !cleanup.offerFiles };
     try { await setSetting(CLEANUP_FILES_KEY, cleanup.offerFiles); }
     catch { cleanup = { ...cleanup, offerFiles: !cleanup.offerFiles }; }
+  }
+
+  async function toggleCleanupResume() {
+    cleanup = { ...cleanup, offerResume: !cleanup.offerResume };
+    try { await setSetting(CLEANUP_RESUME_KEY, cleanup.offerResume); }
+    catch { cleanup = { ...cleanup, offerResume: !cleanup.offerResume }; }
   }
 
   async function toggleCleanupStatus(status: string) {
@@ -710,8 +716,8 @@
         </section>
 
         <section class="card">
-          <div class="section-header"><h3>When You Drop a Show</h3></div>
-          <p class="hint">Moving a show to one of these statuses asks what to clean up. Nothing changes until you choose.</p>
+          <div class="section-header"><h3>Dropping and Resuming Shows</h3></div>
+          <p class="hint">Moving a show to one of the statuses below asks what to clean up, and moving it back to Watching or Planning asks what to restore. Nothing changes until you choose.</p>
           <div class="toggle-row">
             <span class="label">Offer to unmonitor or remove the show in Sonarr</span>
             <button type="button" role="switch" aria-checked={cleanup.offerSonarr} aria-label="Offer to unmonitor or remove the show in Sonarr" class="switch" on:click={toggleCleanupSonarr}>
@@ -737,6 +743,12 @@
               {/each}
             </ul>
           </fieldset>
+          <div class="toggle-row">
+            <span class="label">When a show moves from one of these back to Watching or Planning, offer to monitor it in Sonarr again or add it back</span>
+            <button type="button" role="switch" aria-checked={cleanup.offerResume} aria-label="Offer to monitor or re-add the show in Sonarr when you pick it back up" class="switch" on:click={toggleCleanupResume}>
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
         </section>
       </div>
     {/if}

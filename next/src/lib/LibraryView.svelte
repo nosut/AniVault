@@ -8,7 +8,7 @@
 <script lang="ts">
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
-  import { cleanupApplied, offerDropCleanup } from './dropCleanup';
+  import { cleanupApplied, offerStatusChangePrompt } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
   import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
   import {
@@ -348,7 +348,7 @@
       const from = entry.status;
       await updateListEntry(entry.anime_id, { status: newStatus });
       entry.status = newStatus;
-      void offerDropCleanup(newStatus, [{ animeId: entry.anime_id, title: entry.title, from }]);
+      void offerStatusChangePrompt(newStatus, [{ animeId: entry.anime_id, title: entry.title, from }]);
       // Reflect the change: drop the row if the active filter now excludes it,
       // otherwise reassign so the badge re-renders.
       if (statusFilter && statusFilter !== newStatus) {
@@ -440,7 +440,7 @@
           moved.push({ animeId: id, title: entry?.title ?? `Anime #${id}`, from });
         } catch { /* continue */ }
       }
-      void offerDropCleanup(status, moved);
+      void offerStatusChangePrompt(status, moved);
       selectedIds.clear();
       selectedIds = new Set(selectedIds);
       commitEntries();
