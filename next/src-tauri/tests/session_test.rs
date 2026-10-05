@@ -49,14 +49,19 @@ async fn process_scan_result_auto_confirms_high_confidence() {
 
     process_scan_result(&state, result).await.unwrap();
 
-    // Events: AnimeIdentified (auto-confirm) + ProgressAdvanced (history
-    // recording, since 7fc141c8) + PlaybackDetected
+    // Events: AnimeIdentified (auto-confirm) + StatusChanged (the new list
+    // entry starts as watching) + ProgressAdvanced (history recording, since
+    // 7fc141c8) + PlaybackDetected
     let events = state.events.drain();
     assert_eq!(
         events.len(),
-        3,
-        "should emit AnimeIdentified, ProgressAdvanced and PlaybackDetected"
+        4,
+        "should emit AnimeIdentified, StatusChanged, ProgressAdvanced and PlaybackDetected"
     );
+    assert!(events.iter().any(|e| matches!(
+        e,
+        EngineEvent::StatusChanged { anime_id: 1, from: None, to, .. } if to == "watching"
+    )));
 
     let has_progress = events.iter().any(|e| {
         matches!(
