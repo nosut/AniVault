@@ -4,6 +4,7 @@
   import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, getSonarrCoverageFor, unignoreSonarrCoverage, type CoverageRow, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { formatBytes } from './fileSize';
   import { onDestroy } from 'svelte';
+  import { cleanupApplied, offerDropCleanup } from './dropCleanup';
   import SonarrRemap from './SonarrRemap.svelte';
   import SonarrAddDialog from './SonarrAddDialog.svelte';
   import { mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
@@ -93,7 +94,12 @@
   let nextAiring: NextAiring | null = null;
   let nowTs = Math.floor(Date.now() / 1000);
   const airTicker = setInterval(() => { nowTs = Math.floor(Date.now() / 1000); }, 1000);
+  // Reload Sonarr and file state once the drop-cleanup prompt acts on this show.
+  const unsubCleanup = cleanupApplied.subscribe((c) => {
+    if (c?.animeIds.includes(animeId) && detail) void load();
+  });
   onDestroy(() => {
+    unsubCleanup();
     clearInterval(airTicker);
     if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
   });
@@ -454,10 +460,13 @@
     savingField = 'status';
     saveOk = null;
     try {
+      const from = detail.list_status;
+      const title = pickTitle(detail);
       await updateListEntry(animeId, { status: draftStatus || null });
       saveOk = 'Status saved';
       await load();
       clearSaveOkSoon();
+      if (draftStatus) void offerDropCleanup(draftStatus, [{ animeId, title, from }]);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     } finally {

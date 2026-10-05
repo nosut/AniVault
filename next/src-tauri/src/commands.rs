@@ -1001,6 +1001,205 @@ pub async fn get_series_disk_size(
     Ok(sum_file_sizes(&paths))
 }
 
+// ── Cleanup after dropping a show ───────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CleanupSonarrSeries {
+    pub sonarr_id: i64,
+    pub title: String,
+    pub monitored: bool,
+}
+
+/// What can be cleaned up for a show: its Sonarr series and its local files.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DropCleanupPreview {
+    pub anime_id: i64,
+    pub sonarr: Option<CleanupSonarrSeries>,
+    pub file_count: usize,
+    pub total_bytes: u64,
+}
+
+pub async fn get_drop_cleanup_preview_inner(
+    state: &EngineState,
+    anime_ids: Vec<i64>,
+) -> anyhow::Result<Vec<DropCleanupPreview>> {
+    let mut files = state.storage.file_index_for_anime_ids(&anime_ids).await?;
+    let mut previews = Vec::with_capacity(anime_ids.len());
+    for anime_id in anime_ids {
+        let paths: Vec<String> = files
+            .remove(&anime_id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|f| !f.ignored)
+            .map(|f| f.file_path)
+            .collect();
+        let sonarr = state
+            .storage
+            .sonarr_availability(anime_id)
+            .await?
+            .map(|s| CleanupSonarrSeries {
+                sonarr_id: s.sonarr_id,
+                title: s.sonarr_title,
+                monitored: s.monitored,
+            });
+        previews.push(DropCleanupPreview {
+            anime_id,
+            sonarr,
+            file_count: paths.len(),
+            total_bytes: sum_file_sizes(&paths),
+        });
+    }
+    Ok(previews)
+}
+
+#[tauri::command]
+pub async fn get_drop_cleanup_preview(
+    anime_ids: Vec<i64>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<DropCleanupPreview>, String> {
+    get_drop_cleanup_preview_inner(&state, anime_ids)
+        .await
+        .map_err(command_error)
+}
+
+async fn mapped_sonarr_id(state: &EngineState, anime_id: i64) -> anyhow::Result<i64> {
+    state
+        .storage
+        .sonarr_availability(anime_id)
+        .await?
+        .map(|s| s.sonarr_id)
+        .ok_or_else(|| anyhow::anyhow!("This show is not linked to a Sonarr series"))
+}
+
+pub async fn unmonitor_sonarr_series_inner(state: &EngineState, anime_id: i64) -> anyhow::Result<()> {
+    let sonarr_id = mapped_sonarr_id(state, anime_id).await?;
+    let client = sonarr_client_from_settings(state)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
+    client.set_series_monitored(sonarr_id, false).await?;
+    state.storage.sonarr_series_set_monitored(sonarr_id, false).await
+}
+
+#[tauri::command]
+pub async fn unmonitor_sonarr_series(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    unmonitor_sonarr_series_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
+}
+
+pub async fn remove_from_sonarr_inner(
+    state: &EngineState,
+    anime_id: i64,
+    delete_files: bool,
+) -> anyhow::Result<()> {
+    let sonarr_id = mapped_sonarr_id(state, anime_id).await?;
+    let client = sonarr_client_from_settings(state)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
+    client.delete_series(sonarr_id, delete_files).await?;
+    state.storage.sonarr_series_delete(sonarr_id).await
+}
+
+#[tauri::command]
+pub async fn remove_from_sonarr(
+    anime_id: i64,
+    delete_files: bool,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    remove_from_sonarr_inner(&state, anime_id, delete_files)
+        .await
+        .map_err(command_error)
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct DeleteFilesReport {
+    /// Paths that are gone from disk, whether we removed them or they were
+    /// already missing.
+    pub deleted: Vec<String>,
+    pub freed_bytes: u64,
+    /// One "path: reason" line per file that could not be removed.
+    pub failed: Vec<String>,
+}
+
+/// Remove each path with `remove`, measuring sizes first. A file already
+/// missing counts as deleted, so its stale index row is cleared too.
+pub fn remove_files_with<F>(paths: &[String], mut remove: F) -> DeleteFilesReport
+where
+    F: FnMut(&str) -> Result<(), String>,
+{
+    let mut report = DeleteFilesReport::default();
+    for path in paths {
+        let size = match std::fs::metadata(path) {
+            Ok(m) => m.len(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                report.deleted.push(path.clone());
+                continue;
+            }
+            Err(_) => 0,
+        };
+        match remove(path) {
+            Ok(()) => {
+                report.freed_bytes += size;
+                report.deleted.push(path.clone());
+            }
+            Err(e) => report.failed.push(format!("{path}: {e}")),
+        }
+    }
+    report
+}
+
+/// Parent folders of `deleted` that are now empty, excluding the library
+/// roots themselves.
+pub fn empty_parent_dirs(deleted: &[String], roots: &[String]) -> Vec<std::path::PathBuf> {
+    let roots: Vec<std::path::PathBuf> = roots.iter().map(std::path::PathBuf::from).collect();
+    let mut dirs: Vec<std::path::PathBuf> = deleted
+        .iter()
+        .filter_map(|p| std::path::Path::new(p).parent().map(|d| d.to_path_buf()))
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    dirs.into_iter()
+        .filter(|d| !roots.iter().any(|r| r == d))
+        .filter(|d| std::fs::read_dir(d).map(|mut it| it.next().is_none()).unwrap_or(false))
+        .collect()
+}
+
+/// Send a show's indexed episode files to the Recycle Bin and drop them from
+/// the index. Folders left empty go too, except the library folders.
+pub async fn delete_anime_files_inner(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<DeleteFilesReport> {
+    let paths: Vec<String> = state
+        .storage
+        .file_index_by_anime(anime_id)
+        .await?
+        .into_iter()
+        .filter(|f| !f.ignored)
+        .map(|f| f.file_path)
+        .collect();
+    let report = remove_files_with(&paths, |p| trash::delete(p).map_err(|e| e.to_string()));
+    state.storage.delete_file_indexes(&report.deleted).await?;
+    let roots = library_scanner::get_library_folders(&state.storage).await.unwrap_or_default();
+    for dir in empty_parent_dirs(&report.deleted, &roots) {
+        let _ = std::fs::remove_dir(&dir);
+    }
+    Ok(report)
+}
+
+#[tauri::command]
+pub async fn delete_anime_files(
+    anime_id: i64,
+    state: tauri::State<'_, EngineState>,
+) -> Result<DeleteFilesReport, String> {
+    delete_anime_files_inner(&state, anime_id)
+        .await
+        .map_err(command_error)
+}
+
 // ── Sonarr command inner functions ──────────────────────────────────────────
 
 async fn load_sonarr_connection(state: &EngineState) -> Option<(String, String)> {
@@ -3777,6 +3976,47 @@ mod tests {
         ];
         assert_eq!(sum_file_sizes(&paths), 3500);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn remove_files_with_counts_missing_as_deleted_and_reports_failures() {
+        let dir = std::env::temp_dir().join(format!("av_rm_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ok = dir.join("ok.mkv");
+        let locked = dir.join("locked.mkv");
+        std::fs::write(&ok, vec![0u8; 700]).unwrap();
+        std::fs::write(&locked, vec![0u8; 50]).unwrap();
+        let ok = ok.to_string_lossy().to_string();
+        let locked = locked.to_string_lossy().to_string();
+        let missing = dir.join("gone.mkv").to_string_lossy().to_string();
+
+        let report = remove_files_with(&[ok.clone(), locked.clone(), missing.clone()], |p| {
+            if p == locked { Err("in use".into()) } else { std::fs::remove_file(p).map_err(|e| e.to_string()) }
+        });
+        assert_eq!(report.deleted, vec![ok.clone(), missing]);
+        assert_eq!(report.freed_bytes, 700);
+        assert_eq!(report.failed, vec![format!("{locked}: in use")]);
+        assert!(!std::path::Path::new(&ok).exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn empty_parent_dirs_skips_library_roots_and_non_empty_folders() {
+        let root = std::env::temp_dir().join(format!("av_empty_{}", std::process::id()));
+        let empty = root.join("Show A");
+        let full = root.join("Show B");
+        std::fs::create_dir_all(&empty).unwrap();
+        std::fs::create_dir_all(&full).unwrap();
+        std::fs::write(full.join("ep2.mkv"), b"x").unwrap();
+        let s = |p: std::path::PathBuf| p.to_string_lossy().to_string();
+        let deleted = vec![
+            s(empty.join("ep1.mkv")),
+            s(full.join("ep1.mkv")),
+            s(root.join("loose.mkv")),
+        ];
+        let dirs = empty_parent_dirs(&deleted, &[s(root.clone())]);
+        assert_eq!(dirs, vec![empty]);
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]

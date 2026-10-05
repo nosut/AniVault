@@ -8,6 +8,7 @@
 <script lang="ts">
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
+  import { cleanupApplied, offerDropCleanup } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
   import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
   import {
@@ -344,8 +345,10 @@
     const entry = dragEntry;
     dragEntry = null;
     try {
+      const from = entry.status;
       await updateListEntry(entry.anime_id, { status: newStatus });
       entry.status = newStatus;
+      void offerDropCleanup(newStatus, [{ animeId: entry.anime_id, title: entry.title, from }]);
       // Reflect the change: drop the row if the active filter now excludes it,
       // otherwise reassign so the badge re-renders.
       if (statusFilter && statusFilter !== newStatus) {
@@ -427,13 +430,17 @@
     return async () => {
       if (batchUpdating) return;
       batchUpdating = true;
+      const moved: { animeId: number; title: string; from: string | null }[] = [];
       for (const id of selectedIds) {
         try {
-          await updateListEntry(id, { status });
           const entry = entries.find(e => e.anime_id === id);
+          const from = entry?.status ?? null;
+          await updateListEntry(id, { status });
           if (entry) entry.status = status;
+          moved.push({ animeId: id, title: entry?.title ?? `Anime #${id}`, from });
         } catch { /* continue */ }
       }
+      void offerDropCleanup(status, moved);
       selectedIds.clear();
       selectedIds = new Set(selectedIds);
       commitEntries();
@@ -670,7 +677,16 @@
     calendarTimer = setInterval(() => { void loadCalendar(); }, CALENDAR_REFRESH_MS);
   });
 
+  // Deleted files leave stale file badges; refetch them for the cleaned shows.
+  const unsubCleanup = cleanupApplied.subscribe((c) => {
+    if (!c) return;
+    for (const id of c.animeIds) episodeFilesMap.delete(id);
+    const cleaned = entries.filter((e) => c.animeIds.includes(e.anime_id));
+    if (cleaned.length > 0) void loadEpisodeFiles(cleaned);
+  });
+
   onDestroy(() => {
+    unsubCleanup();
     if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
     if (clockTimer) clearInterval(clockTimer);
     if (calendarTimer) clearInterval(calendarTimer);

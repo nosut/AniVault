@@ -946,3 +946,34 @@ export function getUpNext(animeId: number, after?: number, invokeFn: InvokeFn = 
 export function notifyUpNext(title: string, episode: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('notify_up_next', { title, episode });
 }
+
+// ── Cleanup after dropping a show ───────────────────────────────────────────
+
+export interface DropCleanupPreview {
+  anime_id: number;
+  sonarr: { sonarr_id: number; title: string; monitored: boolean } | null;
+  file_count: number;
+  total_bytes: number;
+}
+
+export interface DeleteFilesReport {
+  deleted: string[];
+  freed_bytes: number;
+  failed: string[];
+}
+
+export function getDropCleanupPreview(animeIds: number[], invokeFn: InvokeFn = tauriInvoke): Promise<DropCleanupPreview[]> {
+  return invokeFn<DropCleanupPreview[]>('get_drop_cleanup_preview', { animeIds });
+}
+
+export function unmonitorSonarrSeries(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('unmonitor_sonarr_series', { animeId });
+}
+
+export function removeFromSonarr(animeId: number, deleteFiles: boolean, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
+  return invokeFn<void>('remove_from_sonarr', { animeId, deleteFiles });
+}
+
+export function deleteAnimeFiles(animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<DeleteFilesReport> {
+  return invokeFn<DeleteFilesReport>('delete_anime_files', { animeId });
+}

@@ -15,6 +15,8 @@
   import HistoryView from './lib/HistoryView.svelte';
   import SeasonView from './lib/SeasonView.svelte';
   import SearchView from './lib/SearchView.svelte';
+  import DropCleanupDialog from './lib/DropCleanupDialog.svelte';
+  import { cleanupApplied, cleanupRequest } from './lib/dropCleanup';
   import { loadStartPage } from './lib/startPage';
   import { DEFAULT_NAV_ITEMS, clearNavOrder, loadNavOrder, moveNavItem, saveNavOrder, type NavId } from './lib/navOrder';
   import bannerUrl from './assets/banner.png';
@@ -496,6 +498,14 @@
         <button class="un-dismiss" aria-label="Dismiss" on:click={dismissUpNext}>×</button>
       </div>
     </div>
+  {/if}
+
+  {#if $cleanupRequest}
+    <DropCleanupDialog
+      request={$cleanupRequest}
+      on:done={(e) => { cleanupApplied.set(e.detail); cleanupApplied.set(null); }}
+      on:close={() => cleanupRequest.set(null)}
+    />
   {/if}
 </main>
 

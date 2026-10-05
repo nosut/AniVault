@@ -2078,6 +2078,32 @@ impl Storage {
 
     // ── Sonarr series ───────────────────────────────────────────────────────────
 
+    /// Mirror a monitoring change made in Sonarr, so the UI shows it before
+    /// the next import.
+    pub async fn sonarr_series_set_monitored(&self, sonarr_id: i64, monitored: bool) -> anyhow::Result<()> {
+        sqlx::query("UPDATE sonarr_series SET monitored = ?2 WHERE sonarr_id = ?1")
+            .bind(sonarr_id)
+            .bind(monitored)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Forget a series removed from Sonarr, along with its anime mapping.
+    pub async fn sonarr_series_delete(&self, sonarr_id: i64) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM sonarr_mapping WHERE sonarr_id = ?1")
+            .bind(sonarr_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM sonarr_series WHERE sonarr_id = ?1")
+            .bind(sonarr_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn sonarr_series_upsert(&self, series: &SonarrSeriesDb) -> anyhow::Result<()> {
         sqlx::query(
             "INSERT INTO sonarr_series (sonarr_id, title, season_count, episode_count, episode_file_count, monitored, next_airing, path, poster_url, overview, network, status, added, last_synced)

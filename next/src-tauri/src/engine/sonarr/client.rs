@@ -430,6 +430,55 @@ impl SonarrClient {
             .as_i64()
             .ok_or_else(|| anyhow::anyhow!("Sonarr did not return the new series id"))
     }
+
+    /// Turn monitoring of a series on or off. Sonarr's PUT takes the whole
+    /// series resource, so fetch it, flip the flag, and send it back.
+    pub async fn set_series_monitored(&self, series_id: i64, monitored: bool) -> anyhow::Result<()> {
+        let url = format!("{}/api/v3/series/{}", self.url, series_id);
+        let resp = self.http.get(&url).headers(self.headers()).send().await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr series HTTP {}: {}", status, body));
+        }
+        let mut series: serde_json::Value = resp.json().await?;
+        series["monitored"] = serde_json::Value::Bool(monitored);
+        let resp = self
+            .http
+            .put(&url)
+            .headers(self.headers())
+            .json(&series)
+            .send()
+            .await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr update series HTTP {}: {}", status, body));
+        }
+        Ok(())
+    }
+
+    /// Remove a series from Sonarr, optionally deleting its files on the
+    /// Sonarr host too. A series Sonarr no longer has counts as removed.
+    pub async fn delete_series(&self, series_id: i64, delete_files: bool) -> anyhow::Result<()> {
+        let url = format!("{}/api/v3/series/{}", self.url, series_id);
+        let resp = self
+            .http
+            .delete(&url)
+            .headers(self.headers())
+            .query(&[("deleteFiles", delete_files.to_string())])
+            .send()
+            .await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(());
+        }
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Sonarr delete series HTTP {}: {}", status, body));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

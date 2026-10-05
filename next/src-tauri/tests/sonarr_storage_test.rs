@@ -150,3 +150,45 @@ async fn sonarr_mapping_unmapped_returns_nulls() {
     assert_eq!(unmapped[0].sonarr_id, 1);
     assert!(unmapped[0].anime_id.is_none());
 }
+
+#[tokio::test]
+async fn sonarr_series_unmonitor_and_delete_clear_availability() {
+    let storage = Tests::new_in_memory().await;
+    storage.insert_minimal_anime(7, "Dropped Show").await.unwrap();
+    let series = SonarrSeriesDb {
+        sonarr_id: 9,
+        title: "Dropped Show".into(),
+        season_count: 1,
+        episode_count: 12,
+        episode_file_count: 3,
+        monitored: true,
+        next_airing: None,
+        path: None,
+        poster_url: None,
+        overview: None,
+        network: None,
+        status: None,
+        added: 1,
+        last_synced: 1,
+    };
+    storage.sonarr_series_upsert(&series).await.unwrap();
+    storage
+        .sonarr_mapping_upsert(&SonarrMappingDb {
+            id: None,
+            sonarr_id: 9,
+            anime_id: Some(7),
+            title_match: "Dropped Show".into(),
+            confidence: 90,
+            mapped_at: 1,
+            user_confirmed: true,
+        })
+        .await
+        .unwrap();
+
+    storage.sonarr_series_set_monitored(9, false).await.unwrap();
+    assert!(!storage.sonarr_availability(7).await.unwrap().unwrap().monitored);
+
+    storage.sonarr_series_delete(9).await.unwrap();
+    assert!(storage.sonarr_availability(7).await.unwrap().is_none());
+    assert_eq!(storage.sonarr_mapping_count().await.unwrap(), 0);
+}

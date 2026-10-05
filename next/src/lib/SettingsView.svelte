@@ -15,6 +15,7 @@
   import { listSonarrSeries, type SonarrSeriesListRow } from './api';
   import { loadStartPage, saveStartPage, START_PAGE_OPTIONS } from './startPage';
   import { selectedWantedTags, toggleWantedTag, wantedTagRows, type WantedTagRow } from './sonarrUi';
+  import { CLEANUP_FILES_KEY, CLEANUP_SONARR_KEY, CLEANUP_STATUSES_KEY, CLEANUP_STATUS_OPTIONS, DEFAULT_CLEANUP_SETTINGS, loadCleanupSettings, type CleanupSettings } from './dropCleanup';
   import { listSonarrTags } from './api';
 
   export let events: EngineEvent[] = [];
@@ -254,6 +255,32 @@
     catch { upNextMinMinutes = previous; input.value = String(previous); }
   }
 
+  let cleanup: CleanupSettings = { ...DEFAULT_CLEANUP_SETTINGS };
+
+  async function loadCleanup() {
+    cleanup = await loadCleanupSettings();
+  }
+
+  async function toggleCleanupSonarr() {
+    cleanup = { ...cleanup, offerSonarr: !cleanup.offerSonarr };
+    try { await setSetting(CLEANUP_SONARR_KEY, cleanup.offerSonarr); }
+    catch { cleanup = { ...cleanup, offerSonarr: !cleanup.offerSonarr }; }
+  }
+
+  async function toggleCleanupFiles() {
+    cleanup = { ...cleanup, offerFiles: !cleanup.offerFiles };
+    try { await setSetting(CLEANUP_FILES_KEY, cleanup.offerFiles); }
+    catch { cleanup = { ...cleanup, offerFiles: !cleanup.offerFiles }; }
+  }
+
+  async function toggleCleanupStatus(status: string) {
+    const previous = cleanup.statuses;
+    const statuses = previous.includes(status) ? previous.filter((s) => s !== status) : [...previous, status];
+    cleanup = { ...cleanup, statuses };
+    try { await setSetting(CLEANUP_STATUSES_KEY, statuses); }
+    catch { cleanup = { ...cleanup, statuses: previous }; }
+  }
+
   async function loadEngineStatus() {
     engineLoading = true;
     engineError = null;
@@ -460,6 +487,7 @@
     loadStartup();
     loadTracking();
     loadUpNext();
+    loadCleanup();
     loadLibraryFolders();
     loadEngineStatus();
     loadSonarrStatus();
@@ -679,6 +707,36 @@
               </div>
             {/if}
           {/if}
+        </section>
+
+        <section class="card">
+          <div class="section-header"><h3>When You Drop a Show</h3></div>
+          <p class="hint">Moving a show to one of these statuses asks what to clean up. Nothing changes until you choose.</p>
+          <div class="toggle-row">
+            <span class="label">Offer to unmonitor or remove the show in Sonarr</span>
+            <button type="button" role="switch" aria-checked={cleanup.offerSonarr} aria-label="Offer to unmonitor or remove the show in Sonarr" class="switch" on:click={toggleCleanupSonarr}>
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+          <div class="toggle-row">
+            <span class="label">Offer to delete the show's episode files</span>
+            <button type="button" role="switch" aria-checked={cleanup.offerFiles} aria-label="Offer to delete the show's episode files" class="switch" on:click={toggleCleanupFiles}>
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+          <fieldset class="form-group">
+            <legend class="form-label">Ask when a show moves to</legend>
+            <ul class="tag-list">
+              {#each CLEANUP_STATUS_OPTIONS as opt (opt.value)}
+                <li>
+                  <label class="tag-option">
+                    <input type="checkbox" checked={cleanup.statuses.includes(opt.value)} on:change={() => toggleCleanupStatus(opt.value)} />
+                    <span class="tag-label">{opt.label}</span>
+                  </label>
+                </li>
+              {/each}
+            </ul>
+          </fieldset>
         </section>
       </div>
     {/if}

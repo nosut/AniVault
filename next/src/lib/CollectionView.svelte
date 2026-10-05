@@ -1,6 +1,7 @@
 <script lang="ts">
   import { activateOnKey } from './a11y';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { cleanupApplied, offerDropCleanup } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
   import {
     getCollection,
@@ -76,6 +77,11 @@
     { value: 'dropped', label: 'Dropped' },
     { value: 'plan_to_watch', label: 'Plan to Watch' },
   ];
+
+  const unsubCleanup = cleanupApplied.subscribe((c) => {
+    if (c?.animeIds.some((id) => entries.some((e) => e.anime_id === id))) void load();
+  });
+  onDestroy(unsubCleanup);
 
   async function load() {
     loading = true; error = '';
@@ -184,11 +190,12 @@
   }
   async function ctxSetStatus(status: string) {
     if (!ctxMenu) return;
-    const id = ctxMenu.entry.anime_id;
+    const { anime_id: id, title, status: from } = ctxMenu.entry;
     closeContextMenu();
     try {
       await updateListEntry(id, { status });
       await load();
+      void offerDropCleanup(status, [{ animeId: id, title, from }]);
     } catch { /* ignore */ }
   }
   async function ctxRemove() {
