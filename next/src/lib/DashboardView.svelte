@@ -355,7 +355,7 @@
 </div>
 
 <style>
-  .home { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.25rem; }
+  .home { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.25rem; container-type: inline-size; }
 
   .home-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
   .home-head h1 { margin: 0; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
@@ -372,7 +372,7 @@
   .count { color: var(--color-muted); font-weight: 400; font-size: 0.85rem; margin-left: 0.4rem; }
   .muted { color: var(--color-muted); font-size: 0.85rem; }
 
-  .cw-grid, .ready-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.7rem; }
+  .cw-grid, .ready-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr)); gap: 0.7rem; }
   .cw-card, .ready-card { display: flex; gap: 0.7rem; padding: 0.55rem; border: 1px solid rgba(var(--color-accent-rgb),0.12); border-radius: 10px; background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s; }
   .cw-card:hover, .ready-card:hover { border-color: rgba(var(--color-accent-rgb),0.3); }
   .ready-card { border-color: rgba(var(--color-success-rgb),0.25); background: rgba(var(--color-success-rgb),0.05); }
@@ -389,7 +389,7 @@
   .ep-chip { align-self: center; flex-shrink: 0; font-size: 0.72rem; font-weight: 700; color: var(--color-success); background: rgba(var(--color-success-rgb),0.15); border-radius: 999px; padding: 0.2rem 0.55rem; }
 
   .today-list, .missing-list { display: flex; flex-direction: column; gap: 0.45rem; }
-  .today-row, .missing-row { display: flex; align-items: center; gap: 0.7rem; width: 100%; text-align: left; padding: 0.5rem 0.65rem; border: 1px solid rgba(var(--color-accent-rgb),0.1); border-radius: 10px; background: rgba(var(--color-accent-rgb),0.03); color: var(--color-text); font-size: 0.85rem; cursor: pointer; }
+  .today-row, .missing-row { display: flex; align-items: center; gap: 0.7rem; width: 100%; box-sizing: border-box; text-align: left; padding: 0.5rem 0.65rem; border: 1px solid rgba(var(--color-accent-rgb),0.1); border-radius: 10px; background: rgba(var(--color-accent-rgb),0.03); color: var(--color-text); font-size: 0.85rem; cursor: pointer; }
   .today-row:hover, .missing-row:hover { border-color: rgba(var(--color-accent-rgb),0.3); }
   .dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; flex-shrink: 0; box-sizing: border-box; }
   .dot.have { background: var(--color-success); }
@@ -415,11 +415,19 @@
   .get-btn.failed { color: var(--color-error); border-color: rgba(var(--color-error-rgb),0.4); }
 
   .cols { display: grid; grid-template-columns: 3fr 2fr; gap: 1.2rem; align-items: start; }
+  /* Grid items default to min-width: auto, which lets nowrap titles widen a
+     column past its track and push the row's buttons out of the clipped
+     content pane. Let the sections shrink so the titles ellipsize instead. */
+  .cols > section { min-width: 0; }
 
   .skeleton-row { height: 4.75rem; border-radius: 10px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-  @media (max-width: 800px) {
+  /* Measured against the home pane, not the viewport: the sidebar takes a
+     fixed slice of the window, so a viewport breakpoint kept two columns long
+     after they stopped fitting. Below ~44rem the Missing downloads column is
+     too narrow for a title plus its episode, age, and Get button. */
+  @container (max-width: 44rem) {
     .cols { grid-template-columns: 1fr; }
   }
   @media (max-width: 480px) {
