@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { getPref, setPref, prefsError } from './lib/prefs';
+  import { getPref, setPref, prefsError, retryFailedSaves, describePrefsProblem } from './lib/prefs';
+  import ErrorNotice from './lib/ErrorNotice.svelte';
   import { onMount, onDestroy, tick } from 'svelte';
   import { drainEngineEvents, onEngineEventsReady, checkForUpdate, openEpisodeFile, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
   import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -219,6 +220,14 @@
   let eventIntervalId: ReturnType<typeof setInterval> | null = null;
   let unlistenEvents: UnlistenFn | null = null;
 
+  // A failed save is retried in place. A failed load or import means the
+  // views were built from defaults, so reloading reruns initPrefs (main.ts)
+  // and rebuilds them from the saved values.
+  function retryPrefs() {
+    if ($prefsError?.kind === 'save') retryFailedSaves();
+    else location.reload();
+  }
+
   const RAIL_COLLAPSED_KEY = 'anivault-rail-collapsed';
 
   function loadCollapsed(): boolean {
@@ -428,10 +437,14 @@
       </div>
     {/if}
     {#if $prefsError}
-      <div class="prefs-banner" role="alert">
-        <span>{$prefsError}</span>
-        <button class="update-dismiss" aria-label="Dismiss settings warning" on:click={() => prefsError.set(null)}>×</button>
-      </div>
+      {@const text = describePrefsProblem($prefsError)}
+      <ErrorNotice
+        message={text.message}
+        actionLabel={text.action}
+        details={$prefsError.detail}
+        on:action={retryPrefs}
+        on:dismiss={() => prefsError.set(null)}
+      />
     {/if}
     <!--
       Once opened, the Seasons view is kept mounted at all times (instead of
@@ -726,7 +739,10 @@
     max-width: 100%;
   }
 
+  /* Above the Library and Collection sticky headers; see ErrorNotice. */
   .update-banner {
+    position: relative;
+    z-index: 7;
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -735,19 +751,6 @@
     border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 10px;
     background: rgba(var(--color-accent-rgb), 0.1);
-    font-size: 0.85rem;
-    color: var(--color-text);
-  }
-
-  .prefs-banner {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    padding: 0.5rem 0.9rem;
-    border: 1px solid rgba(var(--color-warning-rgb), 0.45);
-    border-radius: 10px;
-    background: rgba(var(--color-warning-rgb), 0.12);
     font-size: 0.85rem;
     color: var(--color-text);
   }

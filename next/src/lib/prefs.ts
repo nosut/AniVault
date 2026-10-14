@@ -2,7 +2,8 @@
 // SQLite settings table. They used to live in WebView2 localStorage, whose
 // LevelDB can corrupt and then silently drop every later write on each launch.
 // SQLite reports a failed write, so a failure here raises `prefsError` and the
-// App shows it instead of losing the change unnoticed.
+// App shows it instead of losing the change unnoticed: a plain message from
+// describePrefsProblem, with the technical detail behind "Show details".
 //
 // Everything is loaded once before the App mounts, so reads stay synchronous
 // like the localStorage calls they replace. Writes update memory at once and
@@ -15,14 +16,43 @@ import type { InvokeFn } from './api';
 /// Prefix shared by every key the app ever wrote to localStorage.
 const LEGACY_PREFIX = 'anivault-';
 
-export const prefsError = writable<string | null>(null);
+/// What went wrong, and the raw error text for the details panel.
+export type PrefsProblem = { kind: 'load' | 'import' | 'save'; detail: string };
+
+export const prefsError = writable<PrefsProblem | null>(null);
+
+/// The words a user sees for each problem: what happened and what it means
+/// for them, never the error itself. Every kind is fixed by trying again.
+export function describePrefsProblem(problem: PrefsProblem): { message: string; action: string } {
+  switch (problem.kind) {
+    case 'load':
+      return {
+        message: "Your saved view settings couldn't be loaded, so AniVault is showing its default views for now. Nothing has been lost.",
+        action: 'Try again',
+      };
+    case 'import':
+      return {
+        message: "AniVault couldn't move your view settings over from the previous version. They still apply for now, and AniVault will try again the next time it starts.",
+        action: 'Try again',
+      };
+    case 'save':
+      return {
+        message: "A change to your view settings couldn't be saved, so it may be undone the next time AniVault starts.",
+        action: 'Try again',
+      };
+  }
+}
 
 let values = new Map<string, string>();
 let writer: InvokeFn | null = null;
 const pending = new Map<string, string | null>();
+/// Keys whose last save failed, retried by retryFailedSaves.
+const failed = new Set<string>();
 let flushing: Promise<void> | null = null;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const report = (kind: PrefsProblem['kind'], step: string, e: unknown) =>
+  prefsError.set({ kind, detail: `${step} failed at ${new Date().toISOString()}: ${message(e)}` });
 
 function readLegacy(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -44,7 +74,7 @@ export async function initPrefs(invokeFn: InvokeFn = tauriInvoke): Promise<void>
   try {
     loaded = await invokeFn<UiPrefs>('get_ui_prefs');
   } catch (e) {
-    prefsError.set(`Couldn't load your saved settings (${message(e)}). Using defaults for now.`);
+    report('load', 'get_ui_prefs', e);
     return;
   }
   if (!loaded.imported) {
@@ -53,7 +83,7 @@ export async function initPrefs(invokeFn: InvokeFn = tauriInvoke): Promise<void>
       await invokeFn('import_ui_prefs', { prefs: legacy });
       loaded = await invokeFn<UiPrefs>('get_ui_prefs');
     } catch (e) {
-      prefsError.set(`Couldn't move your settings into the database (${message(e)}). They'll be retried next launch.`);
+      report('import', 'import_ui_prefs', e);
       loaded = { prefs: { ...legacy, ...loaded.prefs }, imported: false };
     }
   }
@@ -89,13 +119,21 @@ async function drain() {
       pending.delete(key);
       try {
         await writer!('set_ui_pref', { key, value });
+        failed.delete(key);
+        if (failed.size === 0) prefsError.update((p) => (p?.kind === 'save' ? null : p));
       } catch (e) {
-        prefsError.set(`Couldn't save a setting (${message(e)}). The change may not survive a restart.`);
+        failed.add(key);
+        report('save', `set_ui_pref "${key}"`, e);
       }
     }
   } finally {
     flushing = null;
   }
+}
+
+/** Queue every setting whose last save failed, with its current value. */
+export function retryFailedSaves() {
+  for (const key of failed) queue(key, values.get(key) ?? null);
 }
 
 /** Resolves once every queued write has been attempted. */
@@ -108,6 +146,7 @@ export function resetPrefs(initial: Record<string, string> = {}) {
   values = new Map(Object.entries(initial));
   writer = null;
   pending.clear();
+  failed.clear();
   flushing = null;
   prefsError.set(null);
 }

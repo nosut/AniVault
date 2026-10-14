@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { initPrefs, getPref, setPref, removePref, resetPrefs, flushPrefs, prefsError } from './prefs';
+import {
+  initPrefs, getPref, setPref, removePref, resetPrefs, flushPrefs, prefsError,
+  retryFailedSaves, describePrefsProblem,
+} from './prefs';
 
 type Call = { command: string; args?: Record<string, unknown> };
 
@@ -103,13 +106,45 @@ describe('prefs', () => {
     await flushPrefs();
 
     expect(getPref('anivault-library-filter')).toBe('dropped');
-    expect(get(prefsError)).toMatch(/couldn't save.*database is locked/i);
+    expect(get(prefsError)).toEqual({ kind: 'save', detail: expect.stringContaining('database is locked') });
+  });
+
+  it('retries a failed save and clears the warning once it goes through', async () => {
+    const backend = fakeBackend({}, true);
+    await initPrefs(backend.invoke);
+    const working = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation(async () => { throw new Error('database is locked'); });
+    setPref('anivault-library-filter', 'dropped');
+    await flushPrefs();
+    expect(get(prefsError)?.kind).toBe('save');
+
+    backend.invoke.mockImplementation(working);
+    retryFailedSaves();
+    await flushPrefs();
+
+    expect(backend.stored['anivault-library-filter']).toBe('dropped');
+    expect(get(prefsError)).toBeNull();
+  });
+
+  it('clears a save warning on its own when a later save of that setting works', async () => {
+    const backend = fakeBackend({}, true);
+    await initPrefs(backend.invoke);
+    const working = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementationOnce(async () => { throw new Error('busy'); });
+    setPref('anivault-library-filter', 'dropped');
+    await flushPrefs();
+    expect(get(prefsError)?.kind).toBe('save');
+
+    backend.invoke.mockImplementation(working);
+    setPref('anivault-library-filter', 'watching');
+    await flushPrefs();
+    expect(get(prefsError)).toBeNull();
   });
 
   it('warns when the saved preferences cannot be loaded', async () => {
     const invoke = vi.fn(async () => { throw new Error('no database'); });
     await initPrefs(invoke);
-    expect(get(prefsError)).toMatch(/couldn't load.*no database/i);
+    expect(get(prefsError)).toEqual({ kind: 'load', detail: expect.stringContaining('no database') });
     expect(getPref('anivault-library-filter')).toBeNull();
   });
 
@@ -124,6 +159,17 @@ describe('prefs', () => {
     await initPrefs(backend.invoke);
 
     expect(getPref('anivault-library-filter')).toBe('on_hold');
-    expect(get(prefsError)).toMatch(/disk full/);
+    expect(get(prefsError)).toEqual({ kind: 'import', detail: expect.stringContaining('disk full') });
+  });
+});
+
+describe('describePrefsProblem', () => {
+  const kinds = ['load', 'import', 'save'] as const;
+
+  it.each(kinds)('gives a plain %s message with no technical text in it', (kind) => {
+    const text = describePrefsProblem({ kind, detail: 'SqliteError: database is locked (code 5)' });
+    expect(text.message).not.toMatch(/sqlite|locked|code|error/i);
+    expect(text.message.length).toBeGreaterThan(20);
+    expect(text.action).toBe('Try again');
   });
 });
