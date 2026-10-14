@@ -2709,6 +2709,35 @@ impl Storage {
             .collect())
     }
 
+    /// Library anime with no English title (AniList's or derived) but at least
+    /// one synonym, as `(id, romaji, synonyms)`. Unlike
+    /// [`Self::anime_missing_english_title`] this ignores the checked marker:
+    /// reading synonyms needs no network, so every cycle can afford it.
+    pub async fn anime_missing_english_with_synonyms(&self) -> anyhow::Result<Vec<(i64, String, Vec<String>)>> {
+        let rows = sqlx::query(
+            "SELECT a.id, COALESCE(json_extract(a.titles_json, '$.romaji'), '') AS romaji, \
+                    json_extract(a.titles_json, '$.synonyms') AS synonyms \
+             FROM anime a \
+             JOIN list_entry le ON le.anime_id = a.id \
+             WHERE COALESCE(NULLIF(json_extract(a.titles_json, '$.english'), ''), '') = '' \
+               AND COALESCE(NULLIF(json_extract(a.titles_json, '$.english_derived'), ''), '') = '' \
+               AND json_array_length(a.titles_json, '$.synonyms') > 0 \
+             ORDER BY a.id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let synonyms = r
+                    .get::<Option<String>, _>("synonyms")
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default();
+                (r.get::<i64, _>("id"), r.get::<String, _>("romaji"), synonyms)
+            })
+            .collect())
+    }
+
     /// Record that the derived-title pass looked at these rows at `checked_at`
     /// and found nothing, so they sit out the candidate window for a while.
     pub async fn mark_derived_title_checked(&self, ids: &[i64], checked_at: i64) -> anyhow::Result<()> {

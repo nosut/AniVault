@@ -9,8 +9,9 @@ pub struct ImportReport {
     pub skipped: u64,
 }
 
-/// Give anime that AniList has no English title for a readable display title,
-/// inherited from the English title of their prequel or parent entry.
+/// Give anime that AniList has no English title for a readable display title:
+/// an English synonym AniList already lists, else the English title of their
+/// prequel or parent entry, else AniDB's.
 ///
 /// AniList routinely leaves `title.english` null on sequel seasons whose
 /// franchise has a perfectly good English name recorded on season one. This
@@ -37,6 +38,18 @@ pub async fn backfill_derived_titles(
         .unwrap_or_default()
         .as_secs() as i64;
 
+    // Pass zero: AniList often files the English title under `synonyms` while
+    // leaving `title.english` empty. That is AniList's own data, so it runs
+    // ahead of the romaji gate and every other source.
+    let mut derived = 0usize;
+    for (id, romaji, synonyms) in storage.anime_missing_english_with_synonyms().await? {
+        if let Some(title) = tr::english_synonym(&romaji, &synonyms) {
+            storage.set_anime_derived_english(id, &title).await?;
+            tracing::debug!(anime_id = id, romaji = %romaji, derived = %title, source = "synonym");
+            derived += 1;
+        }
+    }
+
     let candidates = storage.anime_missing_english_title(limit).await?;
     // The gate: only entries that still read as romaji are worth deriving for.
     // The rest never will be (the romaji is the English name), so mark them.
@@ -46,7 +59,7 @@ pub async fn backfill_derived_titles(
     let settled_ids: Vec<i64> = settled.iter().map(|(id, _)| *id).collect();
     storage.mark_derived_title_checked(&settled_ids, now).await?;
     if targets.is_empty() {
-        return Ok(0);
+        return Ok(derived);
     }
 
     // Pass one: inherit from a prequel. Preferred over any external source
@@ -65,7 +78,6 @@ pub async fn backfill_derived_titles(
         None => Default::default(),
     };
 
-    let mut derived = 0usize;
     let mut unresolved: Vec<(i64, String)> = Vec::new();
     for (id, romaji) in targets {
         let title = by_id.get(&id).and_then(|rels| {

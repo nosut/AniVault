@@ -84,20 +84,19 @@ static ROMAN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+(II|III|IV|V
 /// How strongly a title reads as romanised Japanese. Counts a word-list hit or a
 /// romaji morphology hit once per word.
 fn romaji_score(title: &str) -> usize {
-    WORD_RE
-        .find_iter(title)
-        .filter(|m| {
-            let w = m.as_str().to_lowercase();
-            let base = w.trim_matches(|c| c == '-' || c == '\'');
-            if base.is_empty() {
-                return false;
-            }
-            if ROMAJI_WORDS.contains(&base) {
-                return true;
-            }
-            base.len() >= 5 && ROMAJI_MORPH.is_match(base)
-        })
-        .count()
+    WORD_RE.find_iter(title).filter(|m| is_romaji_word(m.as_str())).count()
+}
+
+fn is_romaji_word(word: &str) -> bool {
+    let w = word.to_lowercase();
+    let base = w.trim_matches(|c| c == '-' || c == '\'');
+    if base.is_empty() {
+        return false;
+    }
+    if ROMAJI_WORDS.contains(&base) {
+        return true;
+    }
+    base.len() >= 5 && ROMAJI_MORPH.is_match(base)
 }
 
 /// Does this title still read as untranslated Japanese?
@@ -145,6 +144,58 @@ pub fn derive_from_relation(romaji: &str, relation_english: &str) -> Option<Stri
         return None;
     }
     Some(format!("{base} Season {season}"))
+}
+
+/// English function words. Their presence is what separates a translated title
+/// ("Now That We Draw") from an abbreviation ("BTR2") or a romanised
+/// alternative ("Otasukebu"), all of which AniList files under `synonyms`.
+/// "to" is also a Japanese particle; in a synonym, already known not to be the
+/// romaji, it counts as English.
+const ENGLISH_WORDS: &[&str] = &[
+    "the", "to", "a", "an", "of", "and", "or", "in", "on", "at", "for", "with", "without", "from",
+    "into", "about", "after", "is", "am", "are", "was", "were", "be", "been", "i", "i'm", "me",
+    "my", "we", "our", "you", "your", "he's", "his", "she", "her", "they", "their", "it", "its",
+    "this", "that", "who", "what", "when", "how", "why", "not", "can't", "don't", "will", "so",
+    "but", "if", "as", "by", "every", "all",
+];
+
+fn is_english_word(word: &str) -> bool {
+    ENGLISH_WORDS.contains(&word.to_lowercase().trim_matches('-'))
+}
+
+fn english_score(title: &str) -> usize {
+    WORD_RE.find_iter(title).filter(|m| is_english_word(m.as_str())).count()
+}
+
+/// Pick the English title AniList filed under `synonyms` when it left
+/// `title.english` empty — "Kakunaru Ue wa" lists "Now That We Draw" there.
+///
+/// A synonym qualifies only when it reads unmistakably as English: at least two
+/// English function words, more of them than romaji signals, and more than the
+/// romaji title itself carries (so "Bocchi the Rock!" is never swapped for a
+/// rewording of itself). Abbreviations, romanised alternatives and Japanese
+/// script all fail that test, and so does a synonym that merely extends the
+/// romaji with a subtitle ("Lamune ~ The Glass Jar that Reflects the Sea"),
+/// whose romaji is already the English name. The first qualifying synonym wins,
+/// which is the order AniList lists them in.
+pub fn english_synonym(romaji: &str, synonyms: &[String]) -> Option<String> {
+    let romaji_english = english_score(romaji);
+    let romaji_lower = romaji.trim().to_lowercase();
+    synonyms
+        .iter()
+        .map(|s| s.trim())
+        .find(|s| {
+            if !romaji_lower.is_empty() && s.to_lowercase().starts_with(&romaji_lower) {
+                return false;
+            }
+            let english = english_score(s);
+            let romaji = WORD_RE
+                .find_iter(s)
+                .filter(|m| is_romaji_word(m.as_str()) && !is_english_word(m.as_str()))
+                .count();
+            english >= 2 && english > romaji && english > romaji_english
+        })
+        .map(String::from)
 }
 
 /// Relation types whose English title a sequel may inherit. `SEQUEL` is
@@ -369,6 +420,83 @@ mod tests {
     fn refuses_to_derive_from_an_empty_relation_title() {
         assert_eq!(derive_from_relation("Sousou no Frieren 3rd Season", ""), None);
         assert_eq!(derive_from_relation("Sousou no Frieren 3rd Season", "Season 2"), None);
+    }
+
+    fn syn(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn picks_the_english_title_anilist_filed_as_a_synonym() {
+        // Real Plan to Watch rows whose `title.english` is null.
+        let cases = [
+            ("Kakunaru Ue wa", syn(&["Now That We Draw"]), "Now That We Draw"),
+            (
+                "Isshiki-san wa Koi wo Shiritai.",
+                syn(&["Isshiki-san Wants to Know About Love."]),
+                "Isshiki-san Wants to Know About Love.",
+            ),
+            (
+                "Mayonaka Heart Tune 2nd Season",
+                syn(&["Tune In to the Midnight Heart Season 2", "Mayochu 2"]),
+                "Tune In to the Midnight Heart Season 2",
+            ),
+            (
+                "Megane, Tokidoki, Yankee-kun",
+                syn(&["Otasukebu", "Glasses With a Chance of Delinquent"]),
+                "Glasses With a Chance of Delinquent",
+            ),
+            (
+                "Kaketa Tsuki no Mercedes",
+                syn(&[
+                    "Mercedes and the Waning Moon: The Dungeoneering Feats of a Discarded Vampire Aristocrat",
+                    "欠けた月のメルセデス",
+                    "Kaketa Tsuki no Mercedes: Kyuuketsuki no Kizoku ni Tensei Shitakedo Sute Rare Sounanode Dungeon wo Seiha Suru",
+                ]),
+                "Mercedes and the Waning Moon: The Dungeoneering Feats of a Discarded Vampire Aristocrat",
+            ),
+            (
+                "Doukyo Shiteiru Kensei no Onna Shishou ga Kawaisugite Mainichi Shiawase desu",
+                syn(&["My Female Sword Master, Who I Live with, Is So Cute That I’m Happy Every Day"]),
+                "My Female Sword Master, Who I Live with, Is So Cute That I’m Happy Every Day",
+            ),
+            (
+                "Futsutsuka na Akujo de wa Gozaimasu ga: Suuguu Chouso Torikae Den Part 2",
+                syn(&["Though I Am an Inept Villainess Part 2"]),
+                "Though I Am an Inept Villainess Part 2",
+            ),
+        ];
+        for (romaji, synonyms, want) in cases {
+            assert_eq!(english_synonym(romaji, &synonyms).as_deref(), Some(want), "{romaji}");
+        }
+    }
+
+    #[test]
+    fn ignores_abbreviations_and_romanised_synonyms() {
+        assert_eq!(english_synonym("Bocchi the Rock! 2nd Season", &syn(&["BTR2"])), None);
+        assert_eq!(english_synonym("Mayonaka Heart Tune", &syn(&["Mayochu"])), None);
+        assert_eq!(
+            english_synonym(
+                "Kaketa Tsuki no Mercedes",
+                &syn(&["Kaketa Tsuki no Mercedes: Kyuuketsuki no Kizoku ni Tensei Shitakedo Sute Rare Sounanode Dungeon wo Seiha Suru"])
+            ),
+            None
+        );
+        assert_eq!(english_synonym("Re:Monster 2nd Season", &[]), None);
+    }
+
+    #[test]
+    fn never_swaps_an_english_romaji_for_a_rewording() {
+        assert_eq!(
+            english_synonym("The Girl Who Leapt Through Time", &syn(&["The Girl Who Leaped Through Time"])),
+            None
+        );
+        // Real row: the romaji is the English name and the synonym only adds a
+        // subtitle to it.
+        assert_eq!(
+            english_synonym("Lamune", &syn(&["Lamune ~ The Glass Jar that Reflects the Sea Lemonade"])),
+            None
+        );
     }
 
     #[test]

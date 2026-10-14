@@ -248,6 +248,37 @@ async fn backfill_marks_rows_it_could_not_decide_so_the_window_advances() {
 }
 
 #[tokio::test]
+async fn backfill_uses_an_english_synonym_even_on_rows_already_checked() {
+    use anivault_core::engine::anilist::import::backfill_derived_titles;
+    let storage = new_storage().await;
+    let with_synonyms = |romaji: &str, synonyms: &[&str]| {
+        serde_json::json!({ "romaji": romaji, "english": null, "japanese": null, "synonyms": synonyms })
+            .to_string()
+    };
+    // The romaji gate settles this one (too few romaji signals), and an earlier
+    // cycle marked it checked; neither may keep the synonym from being used.
+    storage
+        .upsert_anime(1, &with_synonyms("Kakunaru Ue wa", &["Now That We Draw"]), 12, None, 1000)
+        .await
+        .unwrap();
+    storage
+        .upsert_anime(2, &with_synonyms("Bocchi the Rock! 2nd Season", &["BTR2"]), 12, None, 1000)
+        .await
+        .unwrap();
+    in_library(&storage, 1).await;
+    in_library(&storage, 2).await;
+    storage.mark_derived_title_checked(&[1, 2], now()).await.unwrap();
+
+    let derived = backfill_derived_titles(&storage, None, None, 100).await.unwrap();
+
+    assert_eq!(derived, 1);
+    let row = storage.fetch_anime(1).await.unwrap().unwrap();
+    assert_eq!(derived_of(&row.titles_json).as_deref(), Some("Now That We Draw"));
+    let row = storage.fetch_anime(2).await.unwrap().unwrap();
+    assert_eq!(derived_of(&row.titles_json), None);
+}
+
+#[tokio::test]
 async fn anilist_upserts_keep_the_derived_title_and_check_marker() {
     let storage = new_storage().await;
     storage
