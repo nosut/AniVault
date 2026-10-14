@@ -33,6 +33,7 @@ export type ErrorCause =
   | 'sonarr-already-has'
   | 'folder-offline'
   | 'browser-not-opened'
+  | 'notifications-off'
   | 'unknown';
 
 export interface ExplainedError {
@@ -84,6 +85,7 @@ export function errorCause(raw: string): ErrorCause {
   if (/rejected the saved login|not connected to AniList|invalid (?:AniList )?token|token (?:has )?expired/i.test(raw)) return 'anilist-login';
   if (/OAuth timed out/i.test(raw)) return 'oauth-timeout';
   if (/web browser couldn't be opened/i.test(raw)) return 'browser-not-opened';
+  if (/couldn't show the notification/i.test(raw)) return 'notifications-off';
   if (/Port \d+ is in use/i.test(raw)) return 'port-in-use';
   if (/Sonarr (?:is )?not connected|^not connected$/i.test(raw)) return 'sonarr-not-connected';
   if (/AniList import list in Sonarr/i.test(raw)) return 'sonarr-import-list';
@@ -142,6 +144,7 @@ const ADVICE: Record<ErrorCause, string> = {
   'sonarr-already-has': 'Sonarr already has this series. Link it instead of adding it.',
   'folder-offline': "A library folder couldn't be reached. Check that its drive or network share is connected, or remove it in Settings.",
   'browser-not-opened': "Your web browser couldn't be opened to sign in. Check that Windows has a default browser set, then try again.",
+  'notifications-off': 'Check that notifications are turned on for AniVault in Windows Settings, under System and then Notifications.',
   'unknown': 'Try again. If it keeps happening, Show details has the technical information to report.',
 };
 

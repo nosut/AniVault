@@ -2,7 +2,7 @@
   import { getPref, setPref, prefsError, retryFailedSaves, describePrefsProblem } from './lib/prefs';
   import ErrorNotice from './lib/ErrorNotice.svelte';
   import { explainError, type ExplainedError } from './lib/errors';
-  import { appProblem, playFile, openLink } from './lib/notify';
+  import { appProblem, playFile, openLink, reportProblem } from './lib/notify';
   import { backgroundProblems, dismissedProblems, dismissProblem, refreshBackgroundProblems, visibleNotices } from './lib/backgroundProblems';
   import { onMount, onDestroy, tick } from 'svelte';
   import { drainEngineEvents, onEngineEventsReady, checkForUpdate, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
@@ -309,7 +309,10 @@
       if (samePrompt(key, lastPromptKey)) return; // already surfaced this one
       lastPromptKey = key;
       if (toastOn) upNextPrompt = next;
-      if (notifyOn) void notifyUpNext(next.title, next.episode);
+      if (notifyOn) {
+        notifyUpNext(next.title, next.episode)
+          .catch((e) => reportProblem("The Up Next notification couldn't be shown in Windows.", e));
+      }
     } catch {
       // Best-effort; a failed lookup just means no prompt this cycle.
     }

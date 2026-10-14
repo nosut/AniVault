@@ -523,6 +523,14 @@ pub struct TrackingStatus {
 }
 
 pub async fn start_tracking_inner(state: &EngineState) -> Result<TrackingStatus, String> {
+    let result = start_tracking_unreported(state).await;
+    if result.is_ok() {
+        state.problems.resolve(crate::engine::problems::area::TRACKING);
+    }
+    result
+}
+
+async fn start_tracking_unreported(state: &EngineState) -> Result<TrackingStatus, String> {
     let mut ctrl = state.tracking.lock().map_err(|e| e.to_string())?;
     if ctrl.active {
         return Ok(TrackingStatus {
@@ -611,8 +619,14 @@ pub async fn mark_episode_watched_inner(
         .await
         .map_err(command_error)?;
 
-    // Auto-complete if the last episode is now watched.
-    let _ = state.storage.auto_complete_if_capped(anime_id).await;
+    // Auto-complete if the last episode is now watched. Progress is already
+    // saved, so a failure here is reported, not hidden: the show would sit at
+    // 12/12 as Watching.
+    state
+        .storage
+        .auto_complete_if_capped(anime_id)
+        .await
+        .map_err(|e| format!("Your progress was saved, but the show couldn't be marked Completed: {e}"))?;
     state.announce_status_change(anime_id, old_status).await;
 
     // Push status + progress back to AniList (best-effort, queued), mirroring
@@ -3192,11 +3206,20 @@ pub async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String
 /// Map every video file inside `folder` (recursively) to `anime_id` at full
 /// confidence, with the episode number parsed from each filename. Used by the
 /// detail page's "Map folder" so a series/season folder tracks to that anime.
+/// What Map folder did: the files mapped, and the subfolders it couldn't
+/// read (whose files were not mapped), so a partial result isn't reported
+/// as complete.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MapFolderReport {
+    pub mapped: usize,
+    pub unreadable: Vec<String>,
+}
+
 pub async fn map_folder_to_anime_inner(
     folder: &str,
     anime_id: i64,
     state: &EngineState,
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<MapFolderReport> {
     let path = std::path::Path::new(folder);
     if !path.is_dir() {
         anyhow::bail!("Folder does not exist: {folder}");
@@ -3226,7 +3249,7 @@ pub async fn map_folder_to_anime_inner(
         .storage
         .upsert_file_mappings(&mappings, MappingSource::Manual, now)
         .await?;
-    Ok(mappings.len())
+    Ok(MapFolderReport { mapped: mappings.len(), unreadable: errs })
 }
 
 #[tauri::command]
@@ -3234,7 +3257,7 @@ pub async fn map_folder_to_anime(
     folder: String,
     anime_id: i64,
     state: tauri::State<'_, EngineState>,
-) -> Result<usize, String> {
+) -> Result<MapFolderReport, String> {
     map_folder_to_anime_inner(&folder, anime_id, &state)
         .await
         .map_err(command_error)
@@ -3920,12 +3943,13 @@ pub async fn notify_up_next(
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
     if let Some(ref handle) = state.app_handle {
-        let _ = handle
+        handle
             .notification()
             .builder()
             .title("Up Next")
             .body(format!("{title} — Episode {episode} is ready to play"))
-            .show();
+            .show()
+            .map_err(|e| format!("Windows couldn't show the notification: {e}"))?;
     }
     Ok(())
 }

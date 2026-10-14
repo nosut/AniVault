@@ -416,7 +416,7 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: In
             entries.extend(
                 media_list
                     .into_iter()
-                    .filter_map(|m| serde_json::from_value::<Media>(m).ok()),
+                    .filter_map(|m| parse_or_log::<Media>(m)),
             );
         }
 
@@ -512,7 +512,11 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: In
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 // Cap pages defensively so a huge library can't loop unbounded.
-                if !has_next || page >= 10 {
+                if !has_next {
+                    break;
+                }
+                if page >= 10 {
+                    tracing::warn!("airing schedule cut off after {page} pages; later episodes are left out");
                     break;
                 }
                 page += 1;
@@ -603,7 +607,7 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: In
             }
             let raw: serde_json::Value = self.query(query_str, variables).await?;
             let (media_list, has_next) = page_media_and_has_next(&raw);
-            out.extend(media_list.into_iter().filter_map(|m| serde_json::from_value::<SeasonAnime>(m).ok()));
+            out.extend(media_list.into_iter().filter_map(|m| parse_or_log::<SeasonAnime>(m)));
             if !has_next {
                 break;
             }
@@ -634,7 +638,7 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: In
             out.extend(
                 media_list
                     .into_iter()
-                    .filter_map(|m| serde_json::from_value::<FutureAnime>(m).ok()),
+                    .filter_map(|m| parse_or_log::<FutureAnime>(m)),
             );
             if !has_next {
                 break;
@@ -653,7 +657,7 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: In
             .query(query_str, serde_json::json!({ "search": query }))
             .await?;
         let media_list = raw.get("data").and_then(|d| d.get("Page")).and_then(|p| p.get("media")).and_then(|m| m.as_array()).cloned().unwrap_or_default();
-        Ok(media_list.into_iter().filter_map(|m| serde_json::from_value::<SearchAnimeResult>(m).ok()).collect())
+        Ok(media_list.into_iter().filter_map(|m| parse_or_log::<SearchAnimeResult>(m)).collect())
     }
 
     /// Search several titles in a single request using GraphQL field aliases
@@ -696,7 +700,7 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: In
             out.push(
                 media
                     .into_iter()
-                    .filter_map(|m| serde_json::from_value::<SearchAnimeResult>(m).ok())
+                    .filter_map(|m| parse_or_log::<SearchAnimeResult>(m))
                     .collect(),
             );
         }
@@ -769,7 +773,7 @@ mutation ($mediaId: Int, $status: MediaListStatus, $progress: Int, $scoreRaw: In
             .and_then(|m| m.get("relations"))
             .and_then(|r| r.get("edges"))
             .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|e| serde_json::from_value::<RelationEdge>(e.clone()).ok()).collect())
+            .map(|arr| arr.iter().filter_map(|e| parse_or_log::<RelationEdge>(e.clone())).collect())
             .unwrap_or_default();
         Ok(edges)
     }
@@ -952,5 +956,17 @@ mod tests {
             SEASON_FETCH_MAX_PAGES >= 20,
             "cap should comfortably exceed a real season's page count"
         );
+    }
+}
+
+/// One item of a list response. An item in an unexpected shape is skipped so
+/// it doesn't hide the rest, but logged, so the gap can be traced.
+fn parse_or_log<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Option<T> {
+    match serde_json::from_value::<T>(value) {
+        Ok(item) => Some(item),
+        Err(e) => {
+            tracing::warn!("skipped an AniList {} that didn't parse: {e}", std::any::type_name::<T>());
+            None
+        }
     }
 }

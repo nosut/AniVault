@@ -206,10 +206,13 @@ pub async fn import_library(
         skipped: 0,
     };
 
-    let collection = match raw.data.and_then(|d| d.media_list_collection) {
-        Some(c) => c,
-        None => return Ok(report),
-    };
+    // An empty list still arrives as a collection with no entries; no
+    // collection at all means the response wasn't what we asked for, and
+    // reporting "imported 0" would hide that.
+    let collection = raw
+        .data
+        .and_then(|d| d.media_list_collection)
+        .ok_or_else(|| anyhow::anyhow!("AniList didn't return your anime list"))?;
 
     for list in collection.lists.unwrap_or_default() {
         for entry in list.entries.unwrap_or_default() {

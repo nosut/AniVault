@@ -112,16 +112,28 @@ pub fn run() {
                     // stale path from a reinstall / identifier change).
                     commands::reconcile_startup_registry(&s).await;
 
-                    let enabled = s
-                        .storage
-                        .get_setting("tracking.enabled")
-                        .await
-                        .ok()
-                        .flatten()
-                        .map(|v| v != "false")
-                        .unwrap_or(true);
+                    use crate::engine::problems::area;
+                    // Tracking is the app's main job, so an unreadable setting
+                    // still starts it, but says the setting wasn't read.
+                    let enabled = match s.storage.get_setting("tracking.enabled").await {
+                        Ok(v) => v.map(|v| v != "false").unwrap_or(true),
+                        Err(e) => {
+                            s.problems.report(
+                                area::TRACKING,
+                                "Your tracking setting couldn't be read, so tracking was started as usual.",
+                                e,
+                            );
+                            true
+                        }
+                    };
                     if enabled {
-                        let _ = commands::start_tracking_inner(&s).await;
+                        if let Err(e) = commands::start_tracking_inner(&s).await {
+                            s.problems.report(
+                                area::TRACKING,
+                                "Automatic tracking couldn't be started. Use Start tracking in the sidebar to try again.",
+                                e,
+                            );
+                        }
                     }
                 });
             }

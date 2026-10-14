@@ -211,6 +211,8 @@ async fn download(url: &str) -> anyhow::Result<String> {
     // AniDB blocks generic clients; identify the app explicitly.
     let client = reqwest::Client::builder()
         .user_agent(concat!("AniVault/", env!("CARGO_PKG_VERSION")))
+        // A stalled download would otherwise hold this backfill forever.
+        .timeout(std::time::Duration::from_secs(120))
         .build()?;
     let bytes = client.get(url).send().await?.error_for_status()?.bytes().await?;
     tokio::task::spawn_blocking(move || {
@@ -266,18 +268,23 @@ pub async fn load_or_refresh(storage: &Storage, data_dir: &Path) -> Option<Arc<A
 
     // Record the attempt before making it: AniDB counts requests, not successes,
     // and a retry loop here gets the user's IP banned.
-    let last_attempt = storage
-        .get_setting(LAST_ATTEMPT_KEY)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|v| v.trim_matches('"').parse::<i64>().ok())
-        .unwrap_or(0);
+    // Any doubt about when we last asked means not asking: an unreadable or
+    // unwritable timestamp would otherwise download on every 10-minute pass.
+    let last_attempt = match storage.get_setting(LAST_ATTEMPT_KEY).await {
+        Ok(v) => v.and_then(|v| v.trim_matches('"').parse::<i64>().ok()).unwrap_or(0),
+        Err(e) => {
+            tracing::warn!("AniDB refresh skipped, last attempt unreadable: {e}");
+            return read_cached(&path).await;
+        }
+    };
     let now = now_secs();
     if now - last_attempt < MIN_REFRESH_SECS {
         return read_cached(&path).await;
     }
-    let _ = storage.set_setting(LAST_ATTEMPT_KEY, &now.to_string(), now).await;
+    if let Err(e) = storage.set_setting(LAST_ATTEMPT_KEY, &now.to_string(), now).await {
+        tracing::warn!("AniDB refresh skipped, attempt could not be recorded: {e}");
+        return read_cached(&path).await;
+    }
 
     match download(DUMP_URL).await {
         Ok(dat) => {

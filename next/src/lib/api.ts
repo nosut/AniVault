@@ -951,8 +951,14 @@ export function pickFolder(invokeFn: InvokeFn = tauriInvoke): Promise<string | n
   return invokeFn<string | null>('pick_folder');
 }
 
-export function mapFolderToAnime(folder: string, animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<number> {
-  return invokeFn<number>('map_folder_to_anime', { folder, animeId });
+/** Files mapped, and subfolders that couldn't be read (their files weren't mapped). */
+export interface MapFolderReport {
+  mapped: number;
+  unreadable: string[];
+}
+
+export function mapFolderToAnime(folder: string, animeId: number, invokeFn: InvokeFn = tauriInvoke): Promise<MapFolderReport> {
+  return invokeFn<MapFolderReport>('map_folder_to_anime', { folder, animeId });
 }
 
 export interface UpNext {

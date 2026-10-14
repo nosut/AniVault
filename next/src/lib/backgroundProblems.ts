@@ -2,7 +2,7 @@
 // offline, ...). App polls them and shows each as an ErrorNotice. The engine
 // keeps them as current state, so a problem stays until the work recovers.
 import { writable } from 'svelte/store';
-import { getBackgroundProblems, scanLibraryFolders, triggerSync, type BackgroundProblem } from './api';
+import { getBackgroundProblems, getCalendar, scanLibraryFolders, setTrackingEnabled, triggerSync, type BackgroundProblem } from './api';
 import { explainError, type ExplainedError } from './errors';
 
 export const backgroundProblems = writable<BackgroundProblem[]>([]);
@@ -20,6 +20,8 @@ const RETRY: Record<string, () => Promise<unknown>> = {
   sync: () => triggerSync(),
   library_scan: () => scanLibraryFolders(),
   library_folders: () => scanLibraryFolders(),
+  tracking: () => setTrackingEnabled(true),
+  calendar: () => getCalendar(),
 };
 
 export type BackgroundNotice = ExplainedError & { problem: BackgroundProblem; retry?: () => void };

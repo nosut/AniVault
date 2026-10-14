@@ -163,8 +163,9 @@ pub async fn import_sonarr_series(
         storage.sonarr_series_upsert(&series_db).await?;
         imported += 1;
 
-        // Never clobber a mapping the user set by hand.
-        if let Ok(Some(existing)) = storage.sonarr_mapping_by_sonarr_id(raw.id).await {
+        // Never clobber a mapping the user set by hand. A failed read stops
+        // the import rather than counting as "no mapping" and overwriting it.
+        if let Some(existing) = storage.sonarr_mapping_by_sonarr_id(raw.id).await? {
             if existing.user_confirmed {
                 if existing.anime_id.is_some() {
                     auto_mapped += 1;

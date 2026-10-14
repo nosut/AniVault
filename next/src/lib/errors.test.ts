@@ -48,6 +48,7 @@ describe('errorCause', () => {
     [`Sonarr add series HTTP 400 Bad Request: [{"errorMessage":"'Path' is already configured for an existing series"}]`, 'sonarr-already-has'],
     ['Could not write the startup entry: Access is denied. (os error 5)', 'startup-setting'],
     ["Your web browser couldn't be opened to sign in to AniList (x; y)", 'browser-not-opened'],
+    ["Windows couldn't show the notification: x", 'notifications-off'],
     ['(os error 5)', 'no-permission'],
     ['(os error 32)', 'file-locked'],
     ['(os error 2)', 'file-missing'],
@@ -88,7 +89,7 @@ describe('explainError', () => {
       'sonarr-not-linked', 'anilist-login', 'anilist-busy', 'oauth-timeout', 'port-in-use', 'service-down',
       'file-missing', 'file-locked', 'no-permission', 'disk-full', 'database-busy', 'not-a-backup',
       'no-old-data', 'drive-root', 'startup-setting', 'damaged-setting', 'saved-login-unreadable', 'database-unavailable',
-      'not-active', 'sonarr-episode-missing', 'sonarr-show-unknown', 'sonarr-already-has', 'folder-offline', 'browser-not-opened', 'unknown',
+      'not-active', 'sonarr-episode-missing', 'sonarr-show-unknown', 'sonarr-already-has', 'folder-offline', 'browser-not-opened', 'notifications-off', 'unknown',
     ];
     for (const cause of causes) {
       expect(causeAdvice(cause)).not.toMatch(/os error|HTTP|\d{3}|sqlite|oauth|registry|exception|null/i);

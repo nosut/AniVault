@@ -1,6 +1,6 @@
 <script lang="ts">
   import ErrorNotice from './ErrorNotice.svelte';
-  import { explainError, type ExplainedError } from './errors';
+  import { explainError, explainScanErrors, type ExplainedError } from './errors';
   import { playFile, showInFolder, openLink } from './notify';
   import { activateOnKey } from './a11y';
   import { createEventDispatcher } from 'svelte';
@@ -21,7 +21,7 @@
   let detail: AnimeDetail | null = null;
   let loading = false;
   // Problems carry their own retry, since one slot serves several actions.
-  type ActionError = ExplainedError & { retry?: () => void };
+  type ActionError = ExplainedError & { items?: string[]; retry?: () => void };
   let error: ActionError | null = null;
   let savingField: 'progress' | 'status' | 'score' | null = null;
   let saveOk: string | null = null;
@@ -376,9 +376,13 @@
     mapFolderError = null;
     mappingFolder = true;
     try {
-      const n = await mapFolderToAnime(folder, animeId);
+      const report = await mapFolderToAnime(folder, animeId);
       await loadEpisodeFiles();
+      const n = report.mapped;
       mapFolderMsg = `Mapped ${n} file${n === 1 ? '' : 's'} from this folder`;
+      if (report.unreadable.length > 0) {
+        mapFolderError = { ...explainScanErrors(report.unreadable), retry: () => mapPickedFolder(folder) };
+      }
     } catch (e) {
       mapFolderError = {
         ...explainError("The files in that folder couldn't be mapped to this show.", e),
@@ -863,7 +867,7 @@
               <p class="success-msg">{mapFolderMsg}</p>
             {/if}
             {#if mapFolderError}
-              <ErrorNotice compact message={mapFolderError.message} details={mapFolderError.details} actionLabel="Try again" on:action={() => mapFolderError?.retry?.()} on:dismiss={() => (mapFolderError = null)} />
+              <ErrorNotice compact message={mapFolderError.message} items={mapFolderError.items ?? []} details={mapFolderError.details} actionLabel="Try again" on:action={() => mapFolderError?.retry?.()} on:dismiss={() => (mapFolderError = null)} />
             {/if}
 
             {#if fileScanReport && fileScanReport.mapping_conflicts.length > 0}

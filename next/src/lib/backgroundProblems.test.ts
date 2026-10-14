@@ -4,6 +4,8 @@ vi.mock('./api', () => ({
   getBackgroundProblems: vi.fn(async () => []),
   scanLibraryFolders: vi.fn(async () => ({})),
   triggerSync: vi.fn(async () => ({})),
+  setTrackingEnabled: vi.fn(async () => ({})),
+  getCalendar: vi.fn(async () => []),
 }));
 
 import { triggerSync } from './api';
