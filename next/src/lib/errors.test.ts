@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { errorCause, errorDetail, explainError, explainFailures, causeAdvice, type ErrorCause } from './errors';
+import { errorCause, errorDetail, explainError, explainFailures, explainScanErrors, causeAdvice, type ErrorCause } from './errors';
 
 describe('errorCause', () => {
   const cases: [string, ErrorCause][] = [
@@ -86,5 +86,24 @@ describe('explainFailures', () => {
     ]);
     expect(out.details).toContain('os error 5');
     expect(out.message).not.toContain('os error');
+  });
+});
+
+describe('explainScanErrors', () => {
+  it('turns raw scan errors into plain items', () => {
+    const out = explainScanErrors([
+      'Folder not found: Y:\Anime',
+      'Cannot read Y:\Anime\Locked: Access is denied. (os error 5)',
+      'Max scan depth (12) exceeded at Y:\Deep',
+      'something else',
+    ]);
+    expect(out.items).toEqual([
+      'The folder "Y:\Anime" couldn\'t be found.',
+      '"Y:\Anime\Locked" couldn\'t be read.',
+      '"Y:\Deep" is nested too deeply, so it was skipped.',
+      'Part of a folder couldn\'t be scanned.',
+    ]);
+    expect(out.message).toMatch(/^Some folders couldn't be scanned\. /);
+    expect(out.details).toContain('os error 5');
   });
 });

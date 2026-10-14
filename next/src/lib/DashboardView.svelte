@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, explainFailures, type ExplainedError, type StepFailure } from './errors';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import {
@@ -28,6 +30,12 @@
   let loading = true;
 
   let coverage: SonarrCoverageResponse | null = null;
+
+  // Sources that failed on the last load (sections would otherwise just look
+  // empty), and failures of buttons on this page.
+  type ActionError = ExplainedError & { items?: string[]; retry?: () => void };
+  let loadError: ActionError | null = null;
+  let actionError: ActionError | null = null;
   $: notInSonarr = coverage?.reachable ? missingRows(coverage.rows) : [];
   $: ignoredShows = coverage?.reachable ? ignoredRows(coverage.rows) : [];
   let addingFor: CoverageRow | null = null;
@@ -36,8 +44,9 @@
   async function loadCoverage() {
     try {
       coverage = await getSonarrCoverage();
-    } catch {
+    } catch (e) {
       coverage = null;
+      actionError = { ...explainError("AniVault couldn't check which shows are missing from Sonarr.", e), retry: loadCoverage };
     }
   }
 
@@ -50,16 +59,28 @@
     }
   }
 
+  const coverageTitle = (animeId: number) => coverage?.rows.find((r) => r.anime_id === animeId)?.title ?? 'That show';
+
   async function ignoreShow(animeId: number) {
-    await ignoreSonarrCoverage(animeId);
-    setRowState(animeId, 'ignored');
+    actionError = null;
+    try {
+      await ignoreSonarrCoverage(animeId);
+      setRowState(animeId, 'ignored');
+    } catch (e) {
+      actionError = { ...explainError(`"${coverageTitle(animeId)}" couldn't be ignored.`, e), retry: () => ignoreShow(animeId) };
+    }
   }
 
   // An ignored show goes back to the missing list; if Sonarr has since gained
   // it, the next coverage load marks it covered instead.
   async function showAgain(animeId: number) {
-    await unignoreSonarrCoverage(animeId);
-    setRowState(animeId, 'missing');
+    actionError = null;
+    try {
+      await unignoreSonarrCoverage(animeId);
+      setRowState(animeId, 'missing');
+    } catch (e) {
+      actionError = { ...explainError(`"${coverageTitle(animeId)}" couldn't be shown again.`, e), retry: () => showAgain(animeId) };
+    }
   }
 
   // Per-row state for the Get (Sonarr search) buttons on missing rows.
@@ -68,11 +89,17 @@
   async function requestEpisode(animeId: number, episode: number) {
     const key = `${animeId}:${episode}`;
     fetchState = { ...fetchState, [key]: 'searching' };
+    actionError = null;
     try {
       await searchSonarrEpisode(animeId, episode);
       fetchState = { ...fetchState, [key]: 'sent' };
-    } catch {
+    } catch (e) {
       fetchState = { ...fetchState, [key]: 'error' };
+      const title = calendarEntries.find((c) => c.anime_id === animeId)?.title ?? 'that show';
+      actionError = {
+        ...explainError(`Sonarr couldn't search for episode ${episode} of "${title}".`, e),
+        retry: () => requestEpisode(animeId, episode),
+      };
     }
   }
 
@@ -101,6 +128,18 @@
     if (connR.status === 'fulfilled') connected = connR.value;
     if (syncR.status === 'fulfilled') syncStatus = syncR.value;
     if (sonarrR.status === 'fulfilled') sonarrConnected = sonarrR.value.connected;
+    const failed: StepFailure[] = [];
+    const parts: [PromiseSettledResult<unknown>, string][] = [
+      [statsR, 'Your library totals'], [contR, 'Jump back in'], [readyR, 'Ready to watch'],
+      [calR, "Today's episodes"], [connR, 'Your AniList connection'], [syncR, 'Your AniList sync status'],
+      [sonarrR, 'Your Sonarr connection'],
+    ];
+    for (const [result, label] of parts) {
+      if (result.status === 'rejected') failed.push({ what: `${label} couldn't be loaded.`, error: result.reason });
+    }
+    loadError = failed.length > 0
+      ? { ...explainFailures("Part of your dashboard couldn't be loaded, so some sections may be empty or out of date.", failed), retry: () => load() }
+      : null;
     if (sonarrConnected && !quiet) loadCoverage();
     loading = false;
   }
@@ -170,6 +209,13 @@
       {/if}
     </div>
   </header>
+
+  {#if loadError}
+    <ErrorNotice {...loadError} on:dismiss={() => (loadError = null)} />
+  {/if}
+  {#if actionError}
+    <ErrorNotice {...actionError} on:dismiss={() => (actionError = null)} />
+  {/if}
 
   <RecognitionCard {events} />
 

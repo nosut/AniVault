@@ -81,7 +81,7 @@ export function errorCause(raw: string): ErrorCause {
   if (/os error 5\b|access is denied|permission denied/i.test(raw)) return 'no-permission';
   if (/os error 112\b|not enough space|disk (?:is )?full|database or disk is full/i.test(raw)) return 'disk-full';
   if (/database is locked|database is busy/i.test(raw)) return 'database-busy';
-  if (/os error [23]\b|cannot find the (?:file|path)|Folder does not exist|Backup file not found|No such file or directory/i.test(raw)) return 'file-missing';
+  if (/os error [23]\b|cannot find the (?:file|path)|Folder does not exist|Folder not found|Backup file not found|No such file or directory/i.test(raw)) return 'file-missing';
 
   return 'unknown';
 }
@@ -149,4 +149,16 @@ export function explainFailures(summary: string, failures: StepFailure[]): Expla
     items: failures.map((f) => f.what),
     details: failures.map((f, i) => `${f.what}\n  ${raws[i]}`).join('\n'),
   };
+}
+
+/** A library scan's per-folder problems, which arrive as raw strings. */
+export function explainScanErrors(errors: string[]): ExplainedError & { items: string[] } {
+  const failures: StepFailure[] = errors.map((raw) => {
+    let m: RegExpMatchArray | null;
+    if ((m = raw.match(/^Folder not found: (.+)$/))) return { what: `The folder "${m[1]}" couldn't be found.`, error: raw };
+    if ((m = raw.match(/^Cannot read (.+?): /))) return { what: `"${m[1]}" couldn't be read.`, error: raw };
+    if ((m = raw.match(/exceeded at (.+)$/))) return { what: `"${m[1]}" is nested too deeply, so it was skipped.`, error: raw };
+    return { what: 'Part of a folder couldn\'t be scanned.', error: raw };
+  });
+  return explainFailures("Some folders couldn't be scanned.", failures);
 }

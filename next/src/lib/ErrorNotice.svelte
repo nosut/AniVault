@@ -7,12 +7,21 @@
   export let message: string;
   export let details: string;
   export let actionLabel: string | null = null;
+  /** Shorthand for the common case: a "Try again" button that calls this. */
+  export let retry: (() => void) | null | undefined = null;
   /** Plain one-line descriptions of the separate things that failed. */
   export let items: string[] = [];
   /** Smaller, for errors shown inside a card, form row or dialog. */
   export let compact = false;
 
   const dispatch = createEventDispatcher<{ action: null; dismiss: null }>();
+
+  $: label = actionLabel ?? (retry ? 'Try again' : null);
+
+  function act() {
+    dispatch('action');
+    retry?.();
+  }
 
   let showDetails = false;
   let copied = false;
@@ -31,8 +40,8 @@
     <div class="body">
       <span class="message">{message}</span>
       <div class="buttons">
-        {#if actionLabel}
-          <button type="button" class="action" on:click={() => dispatch('action')}>{actionLabel}</button>
+        {#if label}
+          <button type="button" class="action" on:click={act}>{label}</button>
         {/if}
         <button type="button" class="toggle" aria-expanded={showDetails} on:click={() => (showDetails = !showDetails)}>
           {showDetails ? 'Hide details' : 'Show details'}

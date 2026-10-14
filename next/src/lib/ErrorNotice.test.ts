@@ -48,6 +48,13 @@ describe('ErrorNotice', () => {
     expect(writeText).toHaveBeenCalledWith('SqliteError: database is locked');
   });
 
+  it('turns a retry function into a Try again button', () => {
+    const retry = vi.fn();
+    mount({ message: 'm', details: 'd', retry } as never);
+    button('Try again')!.click();
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
   it('omits the action button when there is nothing to do', () => {
     mount({ message: 'm', details: 'd' });
     expect(button('Try again')).toBeUndefined();

@@ -52,7 +52,7 @@ vi.mock('./api', () => ({
   confirmIdentification: vi.fn(async () => {}),
 }));
 
-import { getLibraryStats, getReadyToWatch, searchSonarrEpisode, getSonarrCoverage, ignoreSonarrCoverage, unignoreSonarrCoverage } from './api';
+import { getLibraryStats, getReadyToWatch, getContinueWatching, searchSonarrEpisode, getSonarrCoverage, ignoreSonarrCoverage, unignoreSonarrCoverage } from './api';
 import { createClassComponent } from 'svelte/legacy';
 import DashboardView from './DashboardView.svelte';
 
@@ -200,5 +200,15 @@ describe('DashboardView home layout', () => {
     expect(getLibraryStats).toHaveBeenCalledTimes(2);
 
     app.$destroy();
+  });
+  it('says when part of the page failed to load instead of showing empty sections', async () => {
+    vi.mocked(getContinueWatching).mockRejectedValueOnce('error sending request: connection refused');
+    createClassComponent({ component: DashboardView, target: document.getElementById('app')! });
+    await settle();
+
+    const notice = document.querySelector('.error-notice')!;
+    expect(notice.textContent).toContain("Part of your dashboard couldn't be loaded");
+    expect(notice.textContent).toContain("Jump back in couldn't be loaded.");
+    expect(notice.textContent).not.toContain('connection refused');
   });
 });

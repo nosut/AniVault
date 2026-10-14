@@ -17,6 +17,14 @@
   import { selectedWantedTags, toggleWantedTag, wantedTagRows, type WantedTagRow } from './sonarrUi';
   import { CLEANUP_FILES_KEY, CLEANUP_RESUME_KEY, CLEANUP_SONARR_KEY, CLEANUP_STATUSES_KEY, CLEANUP_STATUS_OPTIONS, DEFAULT_CLEANUP_SETTINGS, loadCleanupSettings, type CleanupSettings } from './dropCleanup';
   import { listSonarrTags } from './api';
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, explainScanErrors, type ExplainedError } from './errors';
+
+  // Every error slot on this page: plain words, raw details, and the retry
+  // for whatever failed.
+  type ActionError = ExplainedError & { retry?: () => void };
+  const fail = (summary: string, e: unknown, retry?: () => void): ActionError =>
+    ({ ...explainError(summary, e), retry });
 
   export let events: EngineEvent[] = [];
 
@@ -31,59 +39,67 @@
 
   let startupEnabled = false;
   let startupLoading = false;
-  let startupError: string | null = null;
+  let startupError: ActionError | null = null;
+  let startupSaveError: ActionError | null = null;
   let startupSaveState: 'idle' | 'saving' | 'saved' = 'idle';
   let startupSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let startInTray = false;
 
   let trackingEnabled = true;
   let trackingLoading = false;
-  let trackingError: string | null = null;
+  let trackingError: ActionError | null = null;
+  let trackingSaveError: ActionError | null = null;
   let trackingSaveState: 'idle' | 'saving' | 'saved' = 'idle';
   let trackingSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   let upNextToast = true;
   let upNextNotify = true;
   let upNextMinMinutes = 5;
+  let upNextError: ActionError | null = null;
 
   let engineStatus: EngineStatus | null = null;
   let engineLoading = false;
-  let engineError: string | null = null;
+  let engineError: ActionError | null = null;
 
   // Sonarr state
   let sonarrStatus: SonarrStatus | null = null;
   let sonarrStatusLoading = false;
-  let sonarrStatusError: string | null = null;
+  let sonarrStatusError: ActionError | null = null;
 
   let sonarrUrl = '';
   // Comma-separated Sonarr tag labels that filter which series are imported.
   let sonarrTagRows: WantedTagRow[] = [];
   let sonarrTagsLoading = false;
   let sonarrWantedTagsState: 'idle' | 'saved' = 'idle';
-  let sonarrWantedTagsError: string | null = null;
+  let sonarrWantedTagsError: ActionError | null = null;
   let sonarrWantedTagsTimer: ReturnType<typeof setTimeout> | null = null;
   let sonarrApiKey = '';
 
   let sonarrConnecting = false;
-  let sonarrConnectionError: string | null = null;
+  let sonarrConnectionError: ActionError | null = null;
 
   let sonarrTesting = false;
   let sonarrTestResult: 'success' | 'failure' | null = null;
 
   let sonarrImporting = false;
   let sonarrImportReport: SonarrImportReport | null = null;
-  let sonarrImportError: string | null = null;
+  let sonarrImportError: ActionError | null = null;
 
   // Sonarr series mapping list
   let sonarrSeries: SonarrSeriesListRow[] = [];
   let sonarrSeriesLoading = false;
+  let sonarrSeriesError: ActionError | null = null;
   let sonarrSeriesFilter: 'all' | 'unmapped' = 'all';
   let sonarrSeriesSearch = '';
 
   async function loadSonarrSeries() {
     sonarrSeriesLoading = true;
+    sonarrSeriesError = null;
     try { sonarrSeries = await listSonarrSeries(); }
-    catch { sonarrSeries = []; }
+    catch (e) {
+      sonarrSeries = [];
+      sonarrSeriesError = fail("Your Sonarr series list couldn't be loaded.", e, loadSonarrSeries);
+    }
     finally { sonarrSeriesLoading = false; }
   }
 
@@ -110,41 +126,41 @@
   let libraryFolders: string[] = [];
   let libraryFoldersInput = '';
   let libraryFoldersLoading = false;
-  let libraryFoldersError: string | null = null;
+  let libraryFoldersError: ActionError | null = null;
   let libraryScanning = false;
   let libraryScanReport: LibraryScanReport | null = null;
-  let libraryScanError: string | null = null;
+  let libraryScanError: ActionError | null = null;
 
   // Migration state
   let migrationDiscovering = false;
   let migrationDataPaths: V1DataPaths | null = null;
-  let migrationDiscoverError: string | null = null;
+  let migrationDiscoverError: ActionError | null = null;
 
   let migrationPreviewing = false;
   let migrationPreviewReport: MigrationReport | null = null;
-  let migrationPreviewError: string | null = null;
+  let migrationPreviewError: ActionError | null = null;
 
   let migrationRunning = false;
   let migrationStrategy: 'Skip' | 'Merge' = 'Skip';
   let migrationRunReport: MigrationReport | null = null;
-  let migrationRunError: string | null = null;
+  let migrationRunError: ActionError | null = null;
 
   let migrationBackingUp = false;
   let migrationBackupPath: string | null = null;
-  let migrationBackupError: string | null = null;
+  let migrationBackupError: ActionError | null = null;
 
   let migrationRestorePath: string = '';
   let migrationRestoring = false;
   let migrationRestoreResult: string | null = null;
-  let migrationRestoreError: string | null = null;
+  let migrationRestoreError: ActionError | null = null;
 
   let migrationExporting = false;
   let migrationExportedPath: string | null = null;
-  let migrationExportError: string | null = null;
+  let migrationExportError: ActionError | null = null;
 
   let migrationImporting = false;
   let migrationImportReport: MigrationReport | null = null;
-  let migrationImportError: string | null = null;
+  let migrationImportError: ActionError | null = null;
 
   async function loadStartup() {
     startupLoading = true;
@@ -153,13 +169,14 @@
       startupEnabled = await getLaunchOnStartup();
       startInTray = await getStartInTray();
     } catch (e) {
-      startupError = e instanceof Error ? e.message : String(e);
+      startupError = fail("Your startup settings couldn't be loaded.", e, loadStartup);
     } finally {
       startupLoading = false;
     }
   }
 
   async function handleStartupToggle() {
+    startupSaveError = null;
     const next = !startupEnabled;
     startupEnabled = next;
     startupSaveState = 'saving';
@@ -170,12 +187,13 @@
       startupSaveTimer = setTimeout(() => (startupSaveState = 'idle'), 1500);
     } catch (e) {
       startupSaveState = 'idle';
-      startupError = e instanceof Error ? e.message : String(e);
+      startupSaveError = fail(next ? "AniVault couldn't be set to start with Windows." : "AniVault couldn't be removed from Windows startup.", e, handleStartupToggle);
       startupEnabled = !next;
     }
   }
 
   async function handleStartInTrayToggle() {
+    startupSaveError = null;
     const next = !startInTray;
     startInTray = next;
     startupSaveState = 'saving';
@@ -186,7 +204,7 @@
       startupSaveTimer = setTimeout(() => (startupSaveState = 'idle'), 1500);
     } catch (e) {
       startupSaveState = 'idle';
-      startupError = e instanceof Error ? e.message : String(e);
+      startupSaveError = fail("The start-in-tray setting couldn't be saved.", e, handleStartInTrayToggle);
       startInTray = !next;
     }
   }
@@ -198,13 +216,14 @@
       const val = await getSetting<boolean>('tracking.enabled');
       trackingEnabled = val ?? true;
     } catch (e) {
-      trackingError = e instanceof Error ? e.message : String(e);
+      trackingError = fail("Your tracking setting couldn't be loaded.", e, loadTracking);
     } finally {
       trackingLoading = false;
     }
   }
 
   async function handleToggle() {
+    trackingSaveError = null;
     const next = !trackingEnabled;
     trackingEnabled = next;
     trackingSaveState = 'saving';
@@ -215,29 +234,38 @@
       trackingSaveTimer = setTimeout(() => (trackingSaveState = 'idle'), 1500);
     } catch (e) {
       trackingSaveState = 'idle';
-      trackingError = e instanceof Error ? e.message : String(e);
+      trackingSaveError = fail(next ? "Tracking couldn't be turned on." : "Tracking couldn't be turned off.", e, handleToggle);
       trackingEnabled = !next;
     }
   }
 
   async function loadUpNext() {
+    upNextError = null;
     try {
       upNextToast = (await getSetting<boolean>('up_next_toast_enabled')) ?? true;
       upNextNotify = (await getSetting<boolean>('up_next_notification_enabled')) ?? true;
       upNextMinMinutes = (await getSetting<number>('up_next_min_watch_minutes')) ?? 5;
-    } catch { /* defaults stand */ }
+    } catch (e) {
+      upNextError = fail("Your Up next settings couldn't be loaded, so the defaults are shown.", e, loadUpNext);
+    }
   }
 
   async function toggleUpNextToast() {
     upNextToast = !upNextToast;
-    try { await setSetting('up_next_toast_enabled', upNextToast); }
-    catch { upNextToast = !upNextToast; }
+    try { await setSetting('up_next_toast_enabled', upNextToast); upNextError = null; }
+    catch (e) {
+      upNextToast = !upNextToast;
+      upNextError = fail("That Up next setting couldn't be saved, so it was switched back.", e, toggleUpNextToast);
+    }
   }
 
   async function toggleUpNextNotify() {
     upNextNotify = !upNextNotify;
-    try { await setSetting('up_next_notification_enabled', upNextNotify); }
-    catch { upNextNotify = !upNextNotify; }
+    try { await setSetting('up_next_notification_enabled', upNextNotify); upNextError = null; }
+    catch (e) {
+      upNextNotify = !upNextNotify;
+      upNextError = fail("That Up next setting couldn't be saved, so it was switched back.", e, toggleUpNextNotify);
+    }
   }
 
   // Clamped here as well as in the input so a typed-in value can't disable the
@@ -251,40 +279,50 @@
     const clamped = Math.min(60, Math.max(0, Math.round(Number.isFinite(value) ? value : 5)));
     upNextMinMinutes = clamped;
     input.value = String(clamped);
-    try { await setSetting('up_next_min_watch_minutes', clamped); }
-    catch { upNextMinMinutes = previous; input.value = String(previous); }
+    try { await setSetting('up_next_min_watch_minutes', clamped); upNextError = null; }
+    catch (e) {
+      upNextMinMinutes = previous;
+      input.value = String(previous);
+      upNextError = fail(`The minimum watch time couldn't be saved, so it's back to ${previous} minutes. Enter it again to retry.`, e);
+    }
   }
 
   let cleanup: CleanupSettings = { ...DEFAULT_CLEANUP_SETTINGS };
+  let cleanupError: ActionError | null = null;
 
   async function loadCleanup() {
-    cleanup = await loadCleanupSettings();
+    cleanupError = null;
+    try { cleanup = await loadCleanupSettings(); }
+    catch (e) { cleanupError = fail("Your clean-up settings couldn't be loaded, so the defaults are shown.", e, loadCleanup); }
   }
+
+  const cleanupSaveFailed = (e: unknown, retry: () => void) =>
+    (cleanupError = fail("That clean-up setting couldn't be saved, so it was switched back.", e, retry));
 
   async function toggleCleanupSonarr() {
     cleanup = { ...cleanup, offerSonarr: !cleanup.offerSonarr };
-    try { await setSetting(CLEANUP_SONARR_KEY, cleanup.offerSonarr); }
-    catch { cleanup = { ...cleanup, offerSonarr: !cleanup.offerSonarr }; }
+    try { await setSetting(CLEANUP_SONARR_KEY, cleanup.offerSonarr); cleanupError = null; }
+    catch (e) { cleanup = { ...cleanup, offerSonarr: !cleanup.offerSonarr }; cleanupSaveFailed(e, toggleCleanupSonarr); }
   }
 
   async function toggleCleanupFiles() {
     cleanup = { ...cleanup, offerFiles: !cleanup.offerFiles };
-    try { await setSetting(CLEANUP_FILES_KEY, cleanup.offerFiles); }
-    catch { cleanup = { ...cleanup, offerFiles: !cleanup.offerFiles }; }
+    try { await setSetting(CLEANUP_FILES_KEY, cleanup.offerFiles); cleanupError = null; }
+    catch (e) { cleanup = { ...cleanup, offerFiles: !cleanup.offerFiles }; cleanupSaveFailed(e, toggleCleanupFiles); }
   }
 
   async function toggleCleanupResume() {
     cleanup = { ...cleanup, offerResume: !cleanup.offerResume };
-    try { await setSetting(CLEANUP_RESUME_KEY, cleanup.offerResume); }
-    catch { cleanup = { ...cleanup, offerResume: !cleanup.offerResume }; }
+    try { await setSetting(CLEANUP_RESUME_KEY, cleanup.offerResume); cleanupError = null; }
+    catch (e) { cleanup = { ...cleanup, offerResume: !cleanup.offerResume }; cleanupSaveFailed(e, toggleCleanupResume); }
   }
 
   async function toggleCleanupStatus(status: string) {
     const previous = cleanup.statuses;
     const statuses = previous.includes(status) ? previous.filter((s) => s !== status) : [...previous, status];
     cleanup = { ...cleanup, statuses };
-    try { await setSetting(CLEANUP_STATUSES_KEY, statuses); }
-    catch { cleanup = { ...cleanup, statuses: previous }; }
+    try { await setSetting(CLEANUP_STATUSES_KEY, statuses); cleanupError = null; }
+    catch (e) { cleanup = { ...cleanup, statuses: previous }; cleanupSaveFailed(e, () => toggleCleanupStatus(status)); }
   }
 
   async function loadEngineStatus() {
@@ -293,7 +331,7 @@
     try {
       engineStatus = await getEngineStatus();
     } catch (e) {
-      engineError = e instanceof Error ? e.message : String(e);
+      engineError = fail("AniVault's database status couldn't be checked.", e, loadEngineStatus);
     } finally {
       engineLoading = false;
     }
@@ -309,7 +347,7 @@
       ]);
       sonarrTagRows = wantedTagRows(tags, saved);
     } catch (e) {
-      sonarrWantedTagsError = e instanceof Error ? e.message : String(e);
+      sonarrWantedTagsError = fail("Your Sonarr tags couldn't be loaded.", e, loadSonarrWantedTags);
     } finally {
       sonarrTagsLoading = false;
     }
@@ -327,7 +365,7 @@
       sonarrWantedTagsTimer = setTimeout(() => (sonarrWantedTagsState = 'idle'), 1500);
     } catch (e) {
       sonarrTagRows = previous;
-      sonarrWantedTagsError = e instanceof Error ? e.message : String(e);
+      sonarrWantedTagsError = fail("That tag choice couldn't be saved, so it was switched back.", e, () => toggleSonarrTag(label));
     }
   }
 
@@ -338,7 +376,7 @@
       sonarrStatus = await getSonarrStatus();
       if (sonarrStatus.connected) void loadSonarrWantedTags();
     } catch (e) {
-      sonarrStatusError = e instanceof Error ? e.message : String(e);
+      sonarrStatusError = fail("AniVault couldn't check the Sonarr connection.", e, loadSonarrStatus);
     } finally {
       sonarrStatusLoading = false;
     }
@@ -352,7 +390,7 @@
       sonarrApiKey = '';
       await loadSonarrStatus();
     } catch (e) {
-      sonarrConnectionError = e instanceof Error ? e.message : String(e);
+      sonarrConnectionError = fail("AniVault couldn't connect to Sonarr.", e, handleConnectSonarr);
     } finally {
       sonarrConnecting = false;
     }
@@ -364,7 +402,7 @@
       await disconnectSonarr();
       sonarrStatus = null;
     } catch (e) {
-      sonarrConnectionError = e instanceof Error ? e.message : String(e);
+      sonarrConnectionError = fail("Sonarr couldn't be disconnected.", e, handleDisconnectSonarr);
     } finally {
       sonarrConnecting = false;
     }
@@ -379,7 +417,7 @@
       sonarrTestResult = 'success';
     } catch (e) {
       sonarrTestResult = 'failure';
-      sonarrConnectionError = e instanceof Error ? e.message : String(e);
+      sonarrConnectionError = fail("The connection test didn't succeed.", e, handleTestConnection);
     } finally {
       sonarrTesting = false;
     }
@@ -394,7 +432,7 @@
       await loadSonarrStatus();
       await loadSonarrSeries();
     } catch (e) {
-      sonarrImportError = e instanceof Error ? e.message : String(e);
+      sonarrImportError = fail("Your Sonarr series couldn't be imported.", e, handleImportSonarr);
     } finally {
       sonarrImporting = false;
     }
@@ -404,29 +442,31 @@
     libraryFoldersLoading = true;
     libraryFoldersError = null;
     try { libraryFolders = await getLibraryFolders(); }
-    catch(e) { libraryFoldersError = e instanceof Error ? e.message : String(e); }
+    catch(e) { libraryFoldersError = fail("Your library folders couldn't be loaded.", e, loadLibraryFolders); }
     finally { libraryFoldersLoading = false; }
   }
 
   async function handleAddFolder() {
     if (!libraryFoldersInput.trim()) return;
+    libraryFoldersError = null;
     const newFolders = [...libraryFolders, libraryFoldersInput.trim()];
     try {
       await setLibraryFolders(newFolders);
       libraryFolders = newFolders;
       libraryFoldersInput = '';
     } catch(e) {
-      libraryFoldersError = e instanceof Error ? e.message : String(e);
+      libraryFoldersError = fail("That folder couldn't be added.", e, handleAddFolder);
     }
   }
 
   async function handleRemoveFolder(index: number) {
     const newFolders = libraryFolders.filter((_, i) => i !== index);
+    libraryFoldersError = null;
     try {
       await setLibraryFolders(newFolders);
       libraryFolders = newFolders;
     } catch(e) {
-      libraryFoldersError = e instanceof Error ? e.message : String(e);
+      libraryFoldersError = fail("That folder couldn't be removed.", e, () => handleRemoveFolder(index));
     }
   }
 
@@ -435,35 +475,35 @@
     libraryScanReport = null;
     libraryScanError = null;
     try { libraryScanReport = await scanLibraryFolders(); }
-    catch(e) { libraryScanError = e instanceof Error ? e.message : String(e); }
+    catch(e) { libraryScanError = fail("The library scan didn't finish.", e, handleScanFolders); }
     finally { libraryScanning = false; }
   }
 
   async function handleDiscover() {
     migrationDiscovering = true; migrationDiscoverError = null;
     try { migrationDataPaths = await discoverV1Data(); }
-    catch (e) { migrationDiscoverError = e instanceof Error ? e.message : String(e); }
+    catch (e) { migrationDiscoverError = fail("AniVault couldn't look for data from the old version.", e, handleDiscover); }
     finally { migrationDiscovering = false; }
   }
 
   async function handlePreview() {
     migrationPreviewing = true; migrationPreviewError = null; migrationPreviewReport = null;
     try { migrationPreviewReport = await previewMigration(); }
-    catch (e) { migrationPreviewError = e instanceof Error ? e.message : String(e); }
+    catch (e) { migrationPreviewError = fail("The import preview couldn't be made.", e, handlePreview); }
     finally { migrationPreviewing = false; }
   }
 
   async function handleRunMigration() {
     migrationRunning = true; migrationRunError = null; migrationRunReport = null;
     try { migrationRunReport = await runMigration(migrationStrategy); }
-    catch (e) { migrationRunError = e instanceof Error ? e.message : String(e); }
+    catch (e) { migrationRunError = fail("The import from the old version didn't finish.", e, handleRunMigration); }
     finally { migrationRunning = false; }
   }
 
   async function handleBackup() {
     migrationBackingUp = true; migrationBackupError = null;
     try { migrationBackupPath = await backupDatabase(); }
-    catch (e) { migrationBackupError = e instanceof Error ? e.message : String(e); }
+    catch (e) { migrationBackupError = fail("The backup couldn't be made.", e, handleBackup); }
     finally { migrationBackingUp = false; }
   }
 
@@ -471,21 +511,21 @@
     if (!migrationRestorePath.trim()) return;
     migrationRestoring = true; migrationRestoreError = null; migrationRestoreResult = null;
     try { migrationRestoreResult = await restoreDatabase(migrationRestorePath); }
-    catch (e) { migrationRestoreError = e instanceof Error ? e.message : String(e); }
+    catch (e) { migrationRestoreError = fail("The backup couldn't be restored.", e, handleRestore); }
     finally { migrationRestoring = false; }
   }
 
   async function handleExport() {
     migrationExporting = true; migrationExportError = null; migrationExportedPath = null;
     try { migrationExportedPath = await exportDatabaseToFile(); }
-    catch (e) { migrationExportError = e instanceof Error ? e.message : String(e); }
+    catch (e) { migrationExportError = fail("Your data couldn't be exported.", e, handleExport); }
     finally { migrationExporting = false; }
   }
 
   async function handleImport() {
     migrationImporting = true; migrationImportError = null; migrationImportReport = null;
     try { migrationImportReport = await importDatabaseFromFile(); }
-    catch (e) { migrationImportError = e instanceof Error ? e.message : String(e); }
+    catch (e) { migrationImportError = fail("That file couldn't be imported.", e, handleImport); }
     finally { migrationImporting = false; }
   }
 
@@ -540,11 +580,11 @@
           {#if startupLoading}
             <p class="muted">Loading…</p>
           {:else if startupError}
-            <div class="error-row">
-              <p class="error">{startupError}</p>
-              <button type="button" class="btn-retry" on:click={loadStartup}>Retry</button>
-            </div>
+            <ErrorNotice compact {...startupError} on:dismiss={() => (startupError = null)} />
           {:else}
+            {#if startupSaveError}
+              <ErrorNotice compact {...startupSaveError} on:dismiss={() => (startupSaveError = null)} />
+            {/if}
             <div class="toggle-row">
               <span class="label">Launch AniVault when Windows starts</span>
               <button
@@ -601,11 +641,11 @@
           {#if trackingLoading}
             <p class="muted">Loading…</p>
           {:else if trackingError}
-            <div class="error-row">
-              <p class="error">{trackingError}</p>
-              <button type="button" class="btn-retry" on:click={loadTracking}>Retry</button>
-            </div>
+            <ErrorNotice compact {...trackingError} on:dismiss={() => (trackingError = null)} />
           {:else}
+            {#if trackingSaveError}
+              <ErrorNotice compact {...trackingSaveError} on:dismiss={() => (trackingSaveError = null)} />
+            {/if}
             <div class="toggle-row">
               <span class="label">Enable tracking</span>
               <button
@@ -651,6 +691,9 @@
             />
           </div>
           <p class="hint">Set 0 to prompt however briefly the episode played.</p>
+          {#if upNextError}
+            <ErrorNotice compact {...upNextError} on:dismiss={() => (upNextError = null)} />
+          {/if}
         </section>
       </div>
     {/if}
@@ -664,7 +707,7 @@
           {#if libraryFoldersLoading && libraryFolders.length === 0}
             <p class="muted">Loading…</p>
           {:else if libraryFoldersError && libraryFolders.length === 0}
-            <div class="error-row"><p class="error">{libraryFoldersError}</p><button class="btn-retry" on:click={loadLibraryFolders}>Retry</button></div>
+            <ErrorNotice compact {...libraryFoldersError} on:dismiss={() => (libraryFoldersError = null)} />
           {:else}
             {#if libraryFolders.length === 0}
               <p class="muted">No folders configured. Add a folder below.</p>
@@ -690,8 +733,11 @@
               </button>
             </div>
 
+            {#if libraryFoldersError && libraryFolders.length > 0}
+              <ErrorNotice compact {...libraryFoldersError} on:dismiss={() => (libraryFoldersError = null)} />
+            {/if}
             {#if libraryScanError}
-              <div class="error-row"><p class="error">{libraryScanError}</p></div>
+              <ErrorNotice compact {...libraryScanError} on:dismiss={() => (libraryScanError = null)} />
             {/if}
             {#if libraryScanReport}
               <div class="import-report">
@@ -700,12 +746,8 @@
                   <p>Skipped {libraryScanReport.skipped} already-indexed files.</p>
                 {/if}
                 {#if libraryScanReport.errors.length > 0}
-                  <p class="scan-errors">Errors:</p>
-                  <ul class="scan-error-list">
-                    {#each libraryScanReport.errors as err}
-                      <li>{err}</li>
-                    {/each}
-                  </ul>
+                  {@const scanProblems = explainScanErrors(libraryScanReport.errors)}
+                  <ErrorNotice compact message={scanProblems.message} items={scanProblems.items} details={scanProblems.details} retry={handleScanFolders} on:dismiss={() => libraryScanReport && (libraryScanReport = { ...libraryScanReport, errors: [] })} />
                 {/if}
                 {#if libraryScanReport.found === 0 && libraryScanReport.errors.length === 0}
                   <p class="muted">No video files found in configured folders. Make sure the folders contain .mkv, .mp4, .avi, or other video files in their directory tree.</p>
@@ -749,6 +791,9 @@
               <span class="switch-thumb"></span>
             </button>
           </div>
+          {#if cleanupError}
+            <ErrorNotice compact {...cleanupError} on:dismiss={() => (cleanupError = null)} />
+          {/if}
         </section>
       </div>
     {/if}
@@ -777,10 +822,7 @@
           </section>
         {:else if sonarrStatusError && !sonarrStatus}
           <section class="card">
-            <div class="error-row">
-              <p class="error">{sonarrStatusError}</p>
-              <button type="button" class="btn-retry" on:click={loadSonarrStatus}>Retry</button>
-            </div>
+            <ErrorNotice compact {...sonarrStatusError} on:dismiss={() => (sonarrStatusError = null)} />
           </section>
         {:else if sonarrStatus?.connected}
           <!-- Connected state -->
@@ -808,7 +850,7 @@
             </div>
 
             {#if sonarrConnectionError}
-              <p class="error">{sonarrConnectionError}</p>
+              <ErrorNotice compact {...sonarrConnectionError} on:dismiss={() => (sonarrConnectionError = null)} />
             {/if}
 
             <fieldset class="form-group tag-filter">
@@ -819,10 +861,7 @@
               {#if sonarrTagsLoading && sonarrTagRows.length === 0}
                 <p class="muted">Loading Sonarr tags…</p>
               {:else if sonarrWantedTagsError && sonarrTagRows.length === 0}
-                <div class="error-row">
-                  <p class="error">Could not load Sonarr tags: {sonarrWantedTagsError}</p>
-                  <button type="button" class="btn-retry" on:click={loadSonarrWantedTags}>Retry</button>
-                </div>
+                <ErrorNotice compact {...sonarrWantedTagsError} on:dismiss={() => (sonarrWantedTagsError = null)} />
               {:else if sonarrTagRows.length === 0}
                 <p class="muted">This Sonarr has no tags, so every series is imported.</p>
               {:else}
@@ -842,7 +881,7 @@
                   {/each}
                 </ul>
                 {#if sonarrWantedTagsError}
-                  <p class="error">{sonarrWantedTagsError}</p>
+                  <ErrorNotice compact {...sonarrWantedTagsError} on:dismiss={() => (sonarrWantedTagsError = null)} />
                 {/if}
               {/if}
               <p class="hint">Only series carrying at least one checked tag are imported. With nothing checked, every series is imported.</p>
@@ -873,7 +912,7 @@
               </div>
             {/if}
             {#if sonarrImportError}
-              <p class="error">{sonarrImportError}</p>
+              <ErrorNotice compact {...sonarrImportError} on:dismiss={() => (sonarrImportError = null)} />
             {/if}
           </section>
 
@@ -892,6 +931,8 @@
 
             {#if sonarrSeriesLoading}
               <p class="muted">Loading…</p>
+            {:else if sonarrSeriesError}
+              <ErrorNotice compact {...sonarrSeriesError} on:dismiss={() => (sonarrSeriesError = null)} />
             {:else if sonarrSeries.length === 0}
               <p class="muted">No series imported yet. Click Import Series above.</p>
             {:else}
@@ -919,7 +960,7 @@
             <h3>Sonarr Connection</h3>
 
             {#if sonarrConnectionError}
-              <p class="error">{sonarrConnectionError}</p>
+              <ErrorNotice compact {...sonarrConnectionError} on:dismiss={() => (sonarrConnectionError = null)} />
             {/if}
 
             <div class="form-group">
@@ -967,8 +1008,6 @@
 
             {#if sonarrTestResult === 'success'}
               <p class="success-msg">Connection successful!</p>
-            {:else if sonarrTestResult === 'failure'}
-              <p class="error">Connection failed. Check URL and API key.</p>
             {/if}
           </section>
         {/if}
@@ -990,7 +1029,7 @@
             </button>
           </div>
           {#if migrationDiscoverError}
-            <p class="error">{migrationDiscoverError}</p>
+            <ErrorNotice compact {...migrationDiscoverError} on:dismiss={() => (migrationDiscoverError = null)} />
           {/if}
           {#if migrationDataPaths}
             <div class="migration-path-list">
@@ -1016,7 +1055,7 @@
             </button>
           </div>
           {#if migrationPreviewError}
-            <p class="error">{migrationPreviewError}</p>
+            <ErrorNotice compact {...migrationPreviewError} on:dismiss={() => (migrationPreviewError = null)} />
           {/if}
           {#if migrationPreviewReport}
             <div class="import-report">
@@ -1054,7 +1093,7 @@
             </button>
           </div>
           {#if migrationRunError}
-            <p class="error">{migrationRunError}</p>
+            <ErrorNotice compact {...migrationRunError} on:dismiss={() => (migrationRunError = null)} />
           {/if}
           {#if migrationRunReport}
             <div class="import-report">
@@ -1078,7 +1117,7 @@
             </button>
           </div>
           {#if migrationBackupError}
-            <p class="error">{migrationBackupError}</p>
+            <ErrorNotice compact {...migrationBackupError} on:dismiss={() => (migrationBackupError = null)} />
           {/if}
           {#if migrationBackupPath}
             <p class="success-msg">Backup created: {migrationBackupPath}</p>
@@ -1094,7 +1133,7 @@
             </button>
           </div>
           {#if migrationRestoreError}
-            <p class="error">{migrationRestoreError}</p>
+            <ErrorNotice compact {...migrationRestoreError} on:dismiss={() => (migrationRestoreError = null)} />
           {/if}
           {#if migrationRestoreResult}
             <p class="success-msg">{migrationRestoreResult}</p>
@@ -1116,13 +1155,13 @@
             </button>
           </div>
           {#if migrationExportError}
-            <p class="error">{migrationExportError}</p>
+            <ErrorNotice compact {...migrationExportError} on:dismiss={() => (migrationExportError = null)} />
           {/if}
           {#if migrationExportedPath}
             <p class="hint">Saved to {migrationExportedPath}</p>
           {/if}
           {#if migrationImportError}
-            <p class="error">{migrationImportError}</p>
+            <ErrorNotice compact {...migrationImportError} on:dismiss={() => (migrationImportError = null)} />
           {/if}
           {#if migrationImportReport}
             <div class="import-report">
@@ -1141,10 +1180,7 @@
           {#if engineLoading}
             <p class="muted">Loading…</p>
           {:else if engineError}
-            <div class="error-row">
-              <p class="error">{engineError}</p>
-              <button type="button" class="btn-retry" on:click={loadEngineStatus}>Retry</button>
-            </div>
+            <ErrorNotice compact {...engineError} on:dismiss={() => (engineError = null)} />
           {:else}
             <dl class="info-list">
               <div><dt>App</dt><dd>AniVault</dd></div>
@@ -1239,35 +1275,6 @@
     color: var(--color-muted);
     font-size: 0.85rem;
     margin: 0;
-  }
-
-  .error {
-    color: var(--color-error);
-    font-size: 0.85rem;
-    margin: 0;
-  }
-
-  .error-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .btn-retry {
-    border: 1px solid rgba(var(--color-accent-rgb), 0.35);
-    border-radius: 999px;
-    padding: 0.45rem 0.9rem;
-    font-size: 0.78rem;
-    cursor: pointer;
-    background: rgba(var(--color-accent-rgb), 0.18);
-    color: #e9eefc;
-    font-family: inherit;
-  }
-
-  .btn-retry:hover {
-    background: rgba(var(--color-accent-rgb), 0.28);
   }
 
   .toggle-row {
@@ -1538,18 +1545,6 @@
     color: #c8d2e0;
   }
 
-  .scan-errors {
-    color: var(--color-error);
-    font-size: 0.82rem;
-    margin-top: 0.5rem;
-  }
-
-  .scan-error-list {
-    margin: 0.25rem 0 0 1.2rem;
-    font-size: 0.78rem;
-    color: var(--color-error);
-  }
-
   .success-msg {
     margin-top: 0.5rem;
     color: var(--color-success);
@@ -1591,10 +1586,6 @@
   .warning-list li {
     margin-bottom: 0.15rem;
   }
-
-
-
-
 
   .action-btn.outline.active {
     background: rgba(var(--color-accent-rgb), 0.28);

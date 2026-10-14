@@ -46,7 +46,7 @@ vi.mock('./api', () => ({
 
 import { createClassComponent } from 'svelte/legacy';
 import LibraryView from './LibraryView.svelte';
-import { searchLibrary } from './api';
+import { searchLibrary, deleteAnime } from './api';
 import { resetPrefs, setPref } from './prefs';
 
 async function settle() {
@@ -231,5 +231,28 @@ describe('LibraryView selection', () => {
 
     expect(checkedTitles()).toEqual(['Fall One']);
     expect(batchCount()).toBe('1 selected');
+  });
+  it('keeps a show that failed to delete, still selected, and says why in plain words', async () => {
+    vi.mocked(deleteAnime).mockImplementation(async (id: number) => {
+      if (id === 2) throw new Error('error returned from database: (code: 5) database is locked');
+    });
+    mount();
+    await settle();
+    await click(groupCheck('Fall 2026'));
+
+    const button = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim().startsWith(label))!;
+    await click(button('Delete'));
+    await click(button('Confirm delete'));
+
+    const titles = [...document.querySelectorAll('tr.data-row .title-text')].map((n) => n.textContent?.trim());
+    expect(titles).toContain('Fall Two');
+    expect(titles).not.toContain('Fall One');
+    expect(checkedTitles()).toEqual(['Fall Two']);
+    const notice = document.querySelector('.error-notice')!;
+    expect(notice.textContent).toContain("Some shows couldn't be removed from your library. They're still selected.");
+    expect(notice.textContent).toContain('"Fall Two" couldn\'t be removed.');
+    expect(notice.textContent).not.toContain('code: 5');
+    vi.mocked(deleteAnime).mockReset().mockResolvedValue(undefined);
   });
 });

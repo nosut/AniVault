@@ -8,7 +8,7 @@
 <script lang="ts">
   import ErrorNotice from './ErrorNotice.svelte';
   import { playFile, showInFolder } from './notify';
-  import { explainError, type ExplainedError } from './errors';
+  import { explainError, explainFailures, type ExplainedError, type StepFailure } from './errors';
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
@@ -63,6 +63,13 @@
   let entries: LibraryEntry[] = [];
   let loading = false;
   let error: ExplainedError | null = null;
+  // Failures of actions on the list (drag, progress, batch, context menu).
+  // Kept apart from `error` so the list stays on screen.
+  type ActionError = ExplainedError & { items?: string[]; retry?: () => void };
+  let actionError: ActionError | null = null;
+
+  const titleOf = (id: number) => entries.find((e) => e.anime_id === id)?.title ?? 'A show';
+  const statusLabel = (status: string) => statusOptions.find((o) => o.value === status)?.label ?? status;
   let episodeFilesMap = new Map<number, FileIndexEntry[]>();
   let stats: LibraryStats | null = null;
 
@@ -348,6 +355,11 @@
     if (!dragEntry || !newStatus || dragEntry.status === newStatus) return;
     const entry = dragEntry;
     dragEntry = null;
+    await moveToStatus(entry, newStatus);
+  }
+
+  async function moveToStatus(entry: LibraryEntry, newStatus: string) {
+    actionError = null;
     try {
       await updateListEntry(entry.anime_id, { status: newStatus });
       entry.status = newStatus;
@@ -360,12 +372,16 @@
       }
       void loadStats();
     } catch (e) {
-      // revert on next reload
+      actionError = {
+        ...explainError(`"${entry.title}" couldn't be moved to ${statusLabel(newStatus)}.`, e),
+        retry: () => moveToStatus(entry, newStatus),
+      };
     }
   }
 
   async function handleIncrement(entry: LibraryEntry) {
     if (progressUpdating.has(entry.anime_id)) return;
+    actionError = null;
     const newEp = entry.watched_episodes + 1;
     if (entry.episode_count && newEp > entry.episode_count) return;
     progressUpdating.add(entry.anime_id);
@@ -379,7 +395,7 @@
       }
       commitEntries();
     } catch (e) {
-      // revert on error handled by refresh
+      actionError = { ...explainError(`Progress for "${entry.title}" couldn't be saved.`, e), retry: () => handleIncrement(entry) };
     } finally {
       progressUpdating.delete(entry.anime_id);
     }
@@ -387,6 +403,7 @@
 
   async function handleDecrement(entry: LibraryEntry) {
     if (progressUpdating.has(entry.anime_id)) return;
+    actionError = null;
     const newEp = Math.max(0, entry.watched_episodes - 1);
     progressUpdating.add(entry.anime_id);
     try {
@@ -394,7 +411,7 @@
       entry.watched_episodes = newEp;
       entries = [...entries];
     } catch (e) {
-      // revert on error
+      actionError = { ...explainError(`Progress for "${entry.title}" couldn't be saved.`, e), retry: () => handleDecrement(entry) };
     } finally {
       progressUpdating.delete(entry.anime_id);
     }
@@ -432,15 +449,26 @@
     return async () => {
       if (batchUpdating) return;
       batchUpdating = true;
+      actionError = null;
+      const failed: StepFailure[] = [];
+      const failedIds = new Set<number>();
       for (const id of selectedIds) {
         try {
           await updateListEntry(id, { status });
           const entry = entries.find(e => e.anime_id === id);
           if (entry) entry.status = status;
-        } catch { /* continue */ }
+        } catch (e) {
+          failed.push({ what: `"${titleOf(id)}" couldn't be moved to ${statusLabel(status)}.`, error: e });
+          failedIds.add(id);
+        }
       }
-      selectedIds.clear();
-      selectedIds = new Set(selectedIds);
+      selectedIds = failedIds;
+      if (failed.length > 0) {
+        actionError = {
+          ...explainFailures(`Some shows couldn't be moved to ${statusLabel(status)}. They're still selected.`, failed),
+          retry: batchSetStatus(status),
+        };
+      }
       commitEntries();
       void loadStats();
       batchUpdating = false;
@@ -450,6 +478,9 @@
   async function batchIncrementProgress() {
     if (batchUpdating) return;
     batchUpdating = true;
+    actionError = null;
+    const failed: StepFailure[] = [];
+    const failedIds = new Set<number>();
     for (const id of selectedIds) {
       const entry = entries.find(e => e.anime_id === id);
       if (!entry) continue;
@@ -461,10 +492,18 @@
         if (entry.episode_count && newEp >= entry.episode_count) {
           entry.status = 'completed';
         }
-      } catch { /* continue */ }
+      } catch (e) {
+        failed.push({ what: `Progress for "${entry.title}" couldn't be saved.`, error: e });
+        failedIds.add(id);
+      }
     }
-    selectedIds.clear();
-    selectedIds = new Set(selectedIds);
+    selectedIds = failedIds;
+    if (failed.length > 0) {
+      actionError = {
+        ...explainFailures("Some shows' progress couldn't be saved. They're still selected.", failed),
+        retry: batchIncrementProgress,
+      };
+    }
     commitEntries();
     batchUpdating = false;
   }
@@ -490,15 +529,26 @@
     confirmingDelete = false;
     if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
     batchUpdating = true;
+    actionError = null;
     const ids = [...selectedIds];
+    const deleted = new Set<number>();
+    const failed: StepFailure[] = [];
     for (const id of ids) {
       try {
         await deleteAnime(id);
-      } catch { /* continue */ }
+        deleted.add(id);
+      } catch (e) {
+        failed.push({ what: `"${titleOf(id)}" couldn't be removed.`, error: e });
+      }
     }
-    entries = entries.filter((e) => !selectedIds.has(e.anime_id));
-    selectedIds.clear();
-    selectedIds = new Set(selectedIds);
+    entries = entries.filter((e) => !deleted.has(e.anime_id));
+    selectedIds = new Set(ids.filter((id) => !deleted.has(id)));
+    if (failed.length > 0) {
+      actionError = {
+        ...explainFailures("Some shows couldn't be removed from your library. They're still selected.", failed),
+        retry: confirmBatchDelete,
+      };
+    }
     void loadStats();
     batchUpdating = false;
   }
@@ -569,24 +619,34 @@
   }
   async function ctxDelete() {
     if (!ctxMenu) return;
-    const id = ctxMenu.entry.anime_id;
+    await removeShow(ctxMenu.entry);
+  }
+  async function removeShow(entry: LibraryEntry) {
     closeContextMenu();
+    actionError = null;
     try {
-      await deleteAnime(id);
-      entries = entries.filter(e => e.anime_id !== id);
+      await deleteAnime(entry.anime_id);
+      entries = entries.filter(e => e.anime_id !== entry.anime_id);
       void loadStats();
-    } catch { /* ignore */ }
+    } catch (e) {
+      actionError = { ...explainError(`"${entry.title}" couldn't be removed from your library.`, e), retry: () => removeShow(entry) };
+    }
   }
   async function ctxRescan() {
     if (!ctxMenu) return;
-    const id = ctxMenu.entry.anime_id;
+    await rescanFor(ctxMenu.entry);
+  }
+  async function rescanFor(entry: LibraryEntry) {
     closeContextMenu();
+    actionError = null;
     try {
       await scanLibraryFolders();
-      const files = await getEpisodeFiles(id);
-      episodeFilesMap.set(id, files);
+      const files = await getEpisodeFiles(entry.anime_id);
+      episodeFilesMap.set(entry.anime_id, files);
       episodeFilesMap = new Map(episodeFilesMap);
-    } catch { /* ignore */ }
+    } catch (e) {
+      actionError = { ...explainError(`The folders for "${entry.title}" couldn't be rescanned.`, e), retry: () => rescanFor(entry) };
+    }
   }
 
   // Category display order for grouping cross-category search results.
@@ -744,6 +804,9 @@
 
   {#if error}
     <ErrorNotice {...error} actionLabel="Try again" on:action={load} on:dismiss={() => (error = null)} />
+  {/if}
+  {#if actionError}
+    <ErrorNotice {...actionError} on:dismiss={() => (actionError = null)} />
   {/if}
 
   {#if viewMode === 'grid'}

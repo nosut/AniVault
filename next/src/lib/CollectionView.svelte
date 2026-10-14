@@ -34,6 +34,8 @@
   let entries: CollectionEntry[] = [];
   let loading = false;
   let error: ExplainedError | null = null;
+  // Failures of context-menu actions; the collection stays on screen.
+  let actionError: (ExplainedError & { retry?: () => void }) | null = null;
   let query = loadPref('anivault-collection-query', '');
   let filter = loadPref('anivault-collection-filter', 'all') as CollectionFilter;
   let viewMode = loadPref('anivault-collection-viewmode', 'grid') as 'grid' | 'table';
@@ -192,21 +194,32 @@
   }
   async function ctxSetStatus(status: string) {
     if (!ctxMenu) return;
-    const id = ctxMenu.entry.anime_id;
+    await setStatusFor(ctxMenu.entry, status);
+  }
+  async function setStatusFor(entry: CollectionEntry, status: string) {
     closeContextMenu();
+    actionError = null;
     try {
-      await updateListEntry(id, { status });
+      await updateListEntry(entry.anime_id, { status });
       await load();
-    } catch { /* ignore */ }
+    } catch (e) {
+      const label = STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
+      actionError = { ...explainError(`"${entry.title}" couldn't be moved to ${label}.`, e), retry: () => setStatusFor(entry, status) };
+    }
   }
   async function ctxRemove() {
     if (!ctxMenu) return;
-    const id = ctxMenu.entry.anime_id;
+    await removeShow(ctxMenu.entry);
+  }
+  async function removeShow(entry: CollectionEntry) {
     closeContextMenu();
+    actionError = null;
     try {
-      await deleteAnime(id);
-      entries = entries.filter((e) => e.anime_id !== id);
-    } catch { /* ignore */ }
+      await deleteAnime(entry.anime_id);
+      entries = entries.filter((e) => e.anime_id !== entry.anime_id);
+    } catch (e) {
+      actionError = { ...explainError(`"${entry.title}" couldn't be removed from your library.`, e), retry: () => removeShow(entry) };
+    }
   }
 
   onMount(load);
@@ -251,6 +264,9 @@
 
   {#if error}
     <ErrorNotice {...error} actionLabel="Try again" on:action={load} on:dismiss={() => (error = null)} />
+  {/if}
+  {#if actionError}
+    <ErrorNotice {...actionError} on:dismiss={() => (actionError = null)} />
   {/if}
 
   {#if loading}
