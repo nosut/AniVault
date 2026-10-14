@@ -25,6 +25,7 @@ export type ErrorCause =
   | 'drive-root'
   | 'startup-setting'
   | 'damaged-setting'
+  | 'saved-login-unreadable'
   | 'unknown';
 
 export interface ExplainedError {
@@ -38,7 +39,8 @@ export interface ExplainedError {
 export function errorDetail(e: unknown): string {
   if (e instanceof Error) return e.message;
   if (typeof e === 'string') return e;
-  try { return JSON.stringify(e); } catch { return String(e); }
+  if (e === undefined || e === null) return 'No error details were given.';
+  try { return JSON.stringify(e) ?? String(e); } catch { return String(e); }
 }
 
 const SONARR_HINT = /sonarr|\/api\/v3\//i;
@@ -67,6 +69,7 @@ export function errorCause(raw: string): ErrorCause {
   if (/Refusing to scan a filesystem root/i.test(raw)) return 'drive-root';
   if (/registry key/i.test(raw)) return 'startup-setting';
   if (/saved .* is damaged/i.test(raw)) return 'damaged-setting';
+  if (/saved login couldn't be read/i.test(raw)) return 'saved-login-unreadable';
 
   // HTTP responses.
   if (status === 401 || status === 403) return sonarr ? 'sonarr-rejected' : 'anilist-login';
@@ -109,6 +112,7 @@ const ADVICE: Record<ErrorCause, string> = {
   'no-old-data': 'No data from the old version of AniVault was found on this PC.',
   'drive-root': 'Choose a specific folder rather than a whole drive.',
   'startup-setting': "Windows didn't let AniVault change its startup setting. Try again, or check whether security software is blocking it.",
+  'saved-login-unreadable': "AniVault can't read a saved login on this Windows account. Reconnect it in Settings.",
   'damaged-setting': "That saved setting is damaged. Set it again to replace it.",
   'unknown': 'Try again. If it keeps happening, Show details has the technical information to report.',
 };

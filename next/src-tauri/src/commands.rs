@@ -1146,7 +1146,16 @@ pub async fn get_status_change_preview_inner(
 ) -> anyhow::Result<Vec<StatusChangePreview>> {
     let mut standings = std::collections::HashMap::new();
     let mut sonarr_error = None;
-    if let Some(client) = sonarr_client_from_settings(state).await {
+    // A saved connection that can't be read must still say why the Sonarr
+    // options are missing, like an unreachable Sonarr does.
+    let client = match sonarr_client_from_settings(state).await {
+        Ok(client) => client,
+        Err(e) => {
+            sonarr_error = Some(e.to_string());
+            None
+        }
+    };
+    if let Some(client) = client {
         match client.fetch_series().await {
             Ok(series) => {
                 let targets = state.storage.coverage_candidates_for(&anime_ids).await?;
@@ -1205,7 +1214,7 @@ pub async fn set_sonarr_monitored_inner(
     search: bool,
 ) -> anyhow::Result<()> {
     let client = sonarr_client_from_settings(state)
-        .await
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
     client.set_series_monitored(sonarr_id, monitored).await?;
     state.storage.sonarr_series_set_monitored(sonarr_id, monitored).await?;
@@ -1233,7 +1242,7 @@ pub async fn remove_from_sonarr_inner(
     delete_files: bool,
 ) -> anyhow::Result<()> {
     let client = sonarr_client_from_settings(state)
-        .await
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
     client.delete_series(sonarr_id, delete_files).await?;
     state.storage.sonarr_series_delete(sonarr_id).await
@@ -1345,16 +1354,6 @@ pub async fn delete_anime_files(
 
 // ── Sonarr command inner functions ──────────────────────────────────────────
 
-async fn load_sonarr_connection(state: &EngineState) -> Option<(String, String)> {
-    let url_raw = state.storage.get_setting("sonarr.url").await.ok()??;
-    let url: String = serde_json::from_str(&url_raw).ok()?;
-
-    let encrypted = state.storage.get_setting("sonarr.api_key").await.ok()??;
-    let api_key = crate::engine::secrets::unprotect_secret(&encrypted).ok()?;
-
-    Some((url, api_key))
-}
-
 pub async fn connect_sonarr_inner(
     url: &str,
     api_key: &str,
@@ -1428,10 +1427,9 @@ pub async fn get_sonarr_status_inner(state: &EngineState) -> anyhow::Result<Sona
 pub async fn import_sonarr_series_inner(
     state: &EngineState,
 ) -> anyhow::Result<crate::engine::sonarr::import::ImportReport> {
-    let (url, api_key) = load_sonarr_connection(state)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("Sonarr not connected"))?;
-    let client = SonarrClient::new(url, api_key);
+    let client = sonarr_client_from_settings(state)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
     let report =
         crate::engine::sonarr::import::import_sonarr_series(&client, &state.storage).await?;
 
@@ -1910,6 +1908,8 @@ pub struct CalendarEntry {
 /// the local file index at read time.
 const CALENDAR_CACHE_KEY: &str = "calendar.cache";
 const CALENDAR_CACHE_TTL_SECS: i64 = 15 * 60;
+/// How long a calendar built with a source missing stays cached.
+const PARTIAL_CALENDAR_TTL_SECS: i64 = 120;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CalendarCache {
@@ -2025,9 +2025,12 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
     // Set when a configured source failed, so an empty result is not cached as
     // if nothing were airing.
     let mut source_failed = false;
+    let mut failures: Vec<String> = Vec::new();
 
     // Universe of the airing calendar: the shows you're watching or plan to watch.
-    let calendar_ids: Vec<i64> = state.storage.calendar_anime_ids().await.unwrap_or_default();
+    // A failed read is an error, not "following nothing": that empty result
+    // would be cached as the schedule for the whole TTL.
+    let calendar_ids: Vec<i64> = state.storage.calendar_anime_ids().await?;
     let calendar_id_set: std::collections::HashSet<i64> = calendar_ids.iter().copied().collect();
     // Cover the previous ~month through ~2 months ahead so the month grid the
     // user pages through (prev / current / next) is populated.
@@ -2079,26 +2082,24 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                 }
                 Err(e) => {
                     source_failed = true;
-                    tracing::warn!("AniList calendar failed: {}, relying on Sonarr", e)
+                    tracing::warn!("AniList calendar failed: {}, relying on Sonarr", e);
+                    failures.push(format!("AniList: {e}"));
                 }
             }
         }
     }
 
     // ── FALLBACK: Sonarr fills followed shows AniList had no airing for ───────
-    let url_raw = state.storage.get_setting("sonarr.url").await.ok().flatten();
-    let api_key_enc = state
-        .storage
-        .get_setting("sonarr.api_key")
-        .await
-        .ok()
-        .flatten();
-    if let (Some(url_raw), Some(api_key_enc)) = (url_raw, api_key_enc) {
-        if let (Ok(url), Ok(api_key)) = (
-            serde_json::from_str::<String>(&url_raw),
-            crate::engine::secrets::unprotect_secret(&api_key_enc),
-        ) {
-            let client = crate::engine::sonarr::client::SonarrClient::new(url, api_key);
+    let sonarr = match sonarr_client_from_settings(state).await {
+        Ok(client) => client,
+        Err(e) => {
+            source_failed = true;
+            failures.push(format!("Sonarr: {e}"));
+            None
+        }
+    };
+    {
+        if let Some(client) = sonarr {
             let today = chrono::Local::now().format("%Y-%m-%d").to_string();
             let future = (chrono::Local::now() + chrono::Duration::days(60))
                 .format("%Y-%m-%d")
@@ -2159,7 +2160,8 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
                 }
                 Err(e) => {
                     source_failed = true;
-                    tracing::warn!("Sonarr calendar failed: {}", e)
+                    tracing::warn!("Sonarr calendar failed: {}", e);
+                    failures.push(format!("Sonarr: {e}"));
                 }
             }
         }
@@ -2167,8 +2169,25 @@ pub async fn get_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<Calen
 
     result.sort_by_key(|e| e.airing_at.unwrap_or(i64::MAX));
 
+    {
+        use crate::engine::problems::area;
+        if failures.is_empty() {
+            state.problems.resolve(area::CALENDAR);
+        } else {
+            state.problems.report(
+                area::CALENDAR,
+                "Airing times couldn't be updated, so the calendar may be missing episodes.",
+                failures.join("; "),
+            );
+        }
+    }
+
     let stale = cache.filter(|c| !c.entries.is_empty());
-    if !result.is_empty() {
+    if !result.is_empty() && source_failed {
+        // Partial data: keep it for a short while only, so a failed source is
+        // asked again soon instead of after the full TTL.
+        save_calendar_cache(state, now - CALENDAR_CACHE_TTL_SECS + PARTIAL_CALENDAR_TTL_SECS, &result).await;
+    } else if !result.is_empty() {
         save_calendar_cache(state, now, &result).await;
     } else if let Some(c) = stale {
         // Remote sources came back empty (rate limit, offline) but an expired
@@ -2238,14 +2257,23 @@ pub async fn continue_watching_inner(
 // ── Sonarr episode search ────────────────────────────────────────────────────
 
 /// Configured Sonarr client from settings, or None when not connected.
+/// The saved Sonarr connection. `Ok(None)` only when none is saved; a damaged
+/// address, an API key this Windows account can't decrypt, or a database
+/// error is an error, so it never reads as "Sonarr is not connected" while
+/// the Settings status says it is.
 async fn sonarr_client_from_settings(
     state: &EngineState,
-) -> Option<crate::engine::sonarr::client::SonarrClient> {
-    let url_raw = state.storage.get_setting("sonarr.url").await.ok().flatten()?;
-    let api_key_enc = state.storage.get_setting("sonarr.api_key").await.ok().flatten()?;
-    let url = serde_json::from_str::<String>(&url_raw).ok()?;
-    let api_key = crate::engine::secrets::unprotect_secret(&api_key_enc).ok()?;
-    Some(crate::engine::sonarr::client::SonarrClient::new(url, api_key))
+) -> anyhow::Result<Option<crate::engine::sonarr::client::SonarrClient>> {
+    let (Some(url_raw), Some(api_key_enc)) = (
+        state.storage.get_setting("sonarr.url").await?,
+        state.storage.get_setting("sonarr.api_key").await?,
+    ) else {
+        return Ok(None);
+    };
+    let url = serde_json::from_str::<String>(&url_raw)
+        .map_err(|e| anyhow::anyhow!("The saved Sonarr address is damaged: {e}"))?;
+    let api_key = crate::engine::secrets::unprotect_secret(&api_key_enc)?;
+    Ok(Some(crate::engine::sonarr::client::SonarrClient::new(url, api_key)))
 }
 
 /// The tags defined in Sonarr, for the import filter in Settings.
@@ -2253,7 +2281,7 @@ pub async fn list_sonarr_tags_inner(
     state: &EngineState,
 ) -> anyhow::Result<Vec<crate::engine::sonarr::client::SonarrTagOption>> {
     let client = sonarr_client_from_settings(state)
-        .await
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
     let details = client.fetch_tag_details().await?;
     Ok(crate::engine::sonarr::client::tag_options(details))
@@ -2277,7 +2305,7 @@ pub async fn search_sonarr_episode_inner(
         .await?
         .ok_or_else(|| anyhow::anyhow!("This show is not linked to a Sonarr series"))?;
     let client = sonarr_client_from_settings(state)
-        .await
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
     let episodes = client.list_episodes(mapping.sonarr_id).await?;
     let episode_id = crate::engine::sonarr::client::find_episode_id(&episodes, episode)
@@ -2308,7 +2336,7 @@ pub struct SonarrCoverageResponse {
 
 pub async fn get_sonarr_coverage_inner(state: &EngineState) -> anyhow::Result<SonarrCoverageResponse> {
     let client = sonarr_client_from_settings(state)
-        .await
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
     // Unreachable Sonarr must never read as "everything is missing".
     let series = match client.fetch_series().await {
@@ -2344,7 +2372,7 @@ pub async fn lookup_sonarr_candidates_inner(
     anime_id: i64,
 ) -> anyhow::Result<Vec<crate::engine::sonarr::client::SonarrCandidate>> {
     let client = sonarr_client_from_settings(state)
-        .await
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
     let titles_json = state
         .storage
@@ -2365,7 +2393,7 @@ pub async fn lookup_sonarr_candidates_inner(
 
 pub async fn add_to_sonarr_inner(state: &EngineState, anime_id: i64, tvdb_id: i64) -> anyhow::Result<i64> {
     let client = sonarr_client_from_settings(state)
-        .await
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
     let lists = client.fetch_import_lists().await?;
     let list = crate::engine::sonarr::client::pick_anilist_import_list(&lists)
@@ -3513,7 +3541,7 @@ pub async fn get_sync_status(state: tauri::State<'_, EngineState>) -> Result<Syn
 
 pub async fn trigger_sync_inner(state: &EngineState) -> anyhow::Result<SyncResult> {
     let (pending_before, _, _) = state.storage.sync_status_counts("anilist").await?;
-    crate::engine::sync_worker::drain_queue(state).await?;
+    crate::engine::sync_worker::drain_and_report(state).await?;
     let (pending_after, failed, _) = state.storage.sync_status_counts("anilist").await?;
     Ok(SyncResult {
         processed: (pending_before as usize).saturating_sub(pending_after as usize),

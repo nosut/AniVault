@@ -58,3 +58,35 @@ fn token_errors_are_detected_and_do_not_block_rows() {
 fn http_error_display_keeps_the_status_and_body() {
     assert_eq!(http(404, "nope").to_string(), "AniList HTTP 404: nope");
 }
+
+#[tokio::test]
+async fn an_unreadable_saved_login_is_reported_and_clears_once_fixed() {
+    let state = anivault_core::engine::runtime::fresh_test_state().await;
+    // Valid base64, but not something this Windows account encrypted.
+    state.storage.set_setting("anilist_access_token", "bm90IGEgYmxvYg==", 1).await.unwrap();
+
+    let err = anivault_core::engine::sync_worker::drain_and_report(&state).await.unwrap_err();
+    assert!(err.to_string().contains("saved login couldn't be read"));
+    let problems = state.problems.current();
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].summary, "Your changes aren't reaching AniList.");
+
+    state.storage.delete_setting("anilist_access_token").await.unwrap();
+    anivault_core::engine::sync_worker::drain_and_report(&state).await.unwrap();
+    assert!(state.problems.current().is_empty());
+}
+
+#[tokio::test]
+async fn a_change_that_cant_be_queued_is_reported() {
+    let state = anivault_core::engine::runtime::fresh_test_state().await;
+    state.storage.set_setting("anilist_access_token", "\"stored\"", 1).await.unwrap();
+    state.storage.upsert_anime_full(1, r#"{"romaji":"Show"}"#, 12, None, None, None, None, 1).await.unwrap();
+    state.storage.upsert_list_entry_full(1, "watching", 1, None, "", 1, 1).await.unwrap();
+    anivault_core::engine::storage::Tests::exec(&state.storage, "DROP TABLE sync_queue").await;
+
+    anivault_core::engine::sync_worker::enqueue_anilist_sync(&state, 1).await;
+
+    let problems = state.problems.current();
+    assert_eq!(problems.len(), 1);
+    assert!(problems[0].summary.contains("couldn't be queued for AniList"));
+}

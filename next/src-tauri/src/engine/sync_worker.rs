@@ -138,6 +138,19 @@ fn unix_now() -> i64 {
 /// 3. Pushes the live list state for each anime (see `resolve_sync_push`).
 /// 4. On success: deletes every queued row for that anime.
 /// 5. On failure: see `handle_push_failure`. A rejected token stops the pass.
+/// `drain_queue`, with the outcome on the problem board: a pass that can't
+/// run (login unreadable, database error) would otherwise leave the Sync
+/// card at "N pending" forever with no reason given.
+pub async fn drain_and_report(state: &EngineState) -> anyhow::Result<()> {
+    use crate::engine::problems::area;
+    let result = drain_queue(state).await;
+    match &result {
+        Ok(()) => state.problems.resolve(area::SYNC),
+        Err(e) => state.problems.report(area::SYNC, "Your changes aren't reaching AniList.", e),
+    }
+    result
+}
+
 pub async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
     let token = match load_token(&state.storage).await? {
         Some(t) => t,
@@ -208,12 +221,25 @@ pub async fn drain_queue(state: &EngineState) -> anyhow::Result<()> {
 /// AniList after reconnecting). The drain pushes the live `list_entry`; the
 /// payload is a fallback. Call after any list-entry change.
 pub async fn enqueue_anilist_sync(state: &EngineState, anime_id: i64) {
-    if !matches!(token_stored(&state.storage).await, Ok(true)) {
-        return;
+    use crate::engine::problems::area;
+    // Any failure here means the change never reaches the queue, so it would
+    // not even count as pending; say so instead of dropping it.
+    let report = |e: &dyn std::fmt::Display| {
+        state.problems.report(
+            area::SYNC_QUEUE,
+            "A list change couldn't be queued for AniList, so AniList may not show it. Make the change again to resend it.",
+            e,
+        )
+    };
+    match token_stored(&state.storage).await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(e) => return report(&e),
     }
     let entry = match state.storage.get_list_entry_full(anime_id).await {
         Ok(Some(e)) => e,
-        _ => return,
+        Ok(None) => return, // no list entry: nothing to push
+        Err(e) => return report(&e),
     };
     let payload = serde_json::json!({
         "episode": entry.watched_episodes,
@@ -221,10 +247,14 @@ pub async fn enqueue_anilist_sync(state: &EngineState, anime_id: i64) {
         "score": entry.score,
     })
     .to_string();
-    let _ = state
+    match state
         .storage
         .queue_sync(anime_id, "anilist", "update", &payload, unix_now())
-        .await;
+        .await
+    {
+        Ok(_) => state.problems.resolve(area::SYNC_QUEUE),
+        Err(e) => report(&e),
+    }
 }
 
 /// Backfill missing episode counts / airing status from AniList (only when
@@ -269,7 +299,8 @@ pub fn spawn_sync_worker(state: &EngineState) -> tauri::async_runtime::JoinHandl
         tracing::debug!("Sync worker started for service: anilist");
         let mut cycle: u64 = 0;
         loop {
-            let _ = drain_queue(&state).await;
+            // Already on the problem board; the loop just carries on.
+            let _ = drain_and_report(&state).await;
             // First pass covers "on startup"; every 20th pass (~10 min) refreshes.
             if cycle % 20 == 0 {
                 run_meta_backfill(&state).await;

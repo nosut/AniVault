@@ -44,3 +44,28 @@ async fn add_without_sonarr_connected_is_an_error_and_links_nothing() {
     assert!(add_to_sonarr_inner(&state, 1, 100).await.is_err());
     assert!(state.storage.coverage_links().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn an_unreadable_sonarr_key_is_an_error_not_not_connected() {
+    let state = fresh_test_state().await;
+    state.storage.set_setting("sonarr.url", "\"http://127.0.0.1:1/\"", 1).await.unwrap();
+    state.storage.set_setting("sonarr.api_key", "bm90IGEgYmxvYg==", 1).await.unwrap();
+
+    let err = anivault_core::commands::list_sonarr_tags_inner(&state).await.unwrap_err();
+    assert!(err.to_string().contains("saved login couldn't be read"), "{err}");
+
+    // The drop prompt says why the Sonarr options are missing.
+    let previews = anivault_core::commands::get_status_change_preview_inner(&state, vec![1]).await.unwrap();
+    assert!(previews[0].sonarr_error.as_deref().unwrap_or("").contains("saved login couldn't be read"));
+}
+
+#[tokio::test]
+async fn a_calendar_with_a_failed_source_raises_a_problem() {
+    let state = state_with_dead_sonarr().await;
+    anivault_core::commands::get_calendar_inner(&state).await.unwrap();
+
+    let problems = state.problems.current();
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].area, "calendar");
+    assert!(problems[0].detail.starts_with("Sonarr: "));
+}

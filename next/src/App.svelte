@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getPref, setPref, prefsError, retryFailedSaves, describePrefsProblem } from './lib/prefs';
   import ErrorNotice from './lib/ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './lib/errors';
   import { appProblem, playFile, openLink } from './lib/notify';
   import { backgroundProblems, dismissedProblems, dismissProblem, refreshBackgroundProblems, visibleNotices } from './lib/backgroundProblems';
   import { onMount, onDestroy, tick } from 'svelte';
@@ -228,6 +229,25 @@
   function retryPrefs() {
     if ($prefsError?.kind === 'save') retryFailedSaves();
     else location.reload();
+  }
+
+  // A page that throws while rendering would otherwise freeze or go blank
+  // with no message. The boundary shows this instead; moving to another page
+  // clears it.
+  let pageCrash: ExplainedError | null = null;
+  let crashReset: (() => void) | null = null;
+  let crashedView: string | null = null;
+  function onPageCrash(error: unknown, reset: () => void) {
+    console.error(error);
+    pageCrash = explainError("This page ran into a problem and couldn't be shown.", error instanceof Error && error.stack ? error.stack : error);
+    crashReset = reset;
+    crashedView = currentView;
+  }
+  $: if (crashReset && currentView !== crashedView) {
+    const reset = crashReset;
+    crashReset = null;
+    pageCrash = null;
+    reset();
   }
 
   const RAIL_COLLAPSED_KEY = 'anivault-rail-collapsed';
@@ -487,6 +507,7 @@
       preserving the always-mounted behavior above for every visit after the
       first.
     -->
+    <svelte:boundary onerror={onPageCrash}>
     {#if seasonEverOpened}
       <div class="season-view-slot" style={currentView === 'season' ? 'display: contents' : 'display: none'}>
         <SeasonView on:select={handleSelect} />
@@ -515,6 +536,12 @@
     {:else if currentView === 'settings'}
       <SettingsView events={latestEvents} />
     {/if}
+    {#snippet failed(_error, reset)}
+      {#if pageCrash}
+        <ErrorNotice {...pageCrash} retry={() => { pageCrash = null; reset(); }} on:dismiss={() => (pageCrash = null)} />
+      {/if}
+    {/snippet}
+    </svelte:boundary>
   </section>
 
   {#if navCtxMenu}

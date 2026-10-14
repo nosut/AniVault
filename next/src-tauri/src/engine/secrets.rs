@@ -32,6 +32,14 @@ pub fn protect_secret(plaintext: &str) -> anyhow::Result<String> {
 }
 
 pub fn unprotect_secret(ciphertext_b64: &str) -> anyhow::Result<String> {
+    // Windows' own message ("Key not valid for use in specified state") says
+    // nothing about the cause: the secret was saved under another Windows
+    // account or install, so it has to be entered again.
+    unprotect_secret_raw(ciphertext_b64)
+        .map_err(|e| anyhow::anyhow!("The saved login couldn't be read on this Windows account: {e}"))
+}
+
+fn unprotect_secret_raw(ciphertext_b64: &str) -> anyhow::Result<String> {
     let mut encrypted = STANDARD.decode(ciphertext_b64)?;
     let input = CRYPT_INTEGER_BLOB {
         cbData: encrypted.len() as u32,

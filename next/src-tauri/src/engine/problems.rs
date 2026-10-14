@@ -20,6 +20,7 @@ pub mod area {
     pub const LIBRARY_WATCHER: &str = "library_watcher";
     pub const PROGRESS: &str = "progress";
     pub const SONARR_SETTINGS: &str = "sonarr_settings";
+    pub const CALENDAR: &str = "calendar";
     pub const STARTUP_ENTRY: &str = "startup_entry";
     pub const WORKER: &str = "worker";
 }

@@ -18,7 +18,6 @@ export function dismissProblem(p: BackgroundProblem) {
 /// The fix to offer for each area, where retrying makes sense.
 const RETRY: Record<string, () => Promise<unknown>> = {
   sync: () => triggerSync(),
-  sync_queue: () => triggerSync(),
   library_scan: () => scanLibraryFolders(),
   library_folders: () => scanLibraryFolders(),
 };

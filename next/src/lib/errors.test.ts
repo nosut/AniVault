@@ -30,6 +30,7 @@ describe('errorCause', () => {
     ['Refusing to scan a filesystem root: C:\\', 'drive-root'],
     ['Failed to write registry key', 'startup-setting'],
     ['The saved library folder list is damaged: expected value at line 1 column 1', 'damaged-setting'],
+    ["The saved login couldn't be read on this Windows account: Key not valid for use in specified state. (0x8009000B)", 'saved-login-unreadable'],
     ['something nobody planned for', 'unknown'],
   ];
 
@@ -47,6 +48,8 @@ describe('errorDetail', () => {
     expect(errorDetail(new Error('boom'))).toBe('boom');
     expect(errorDetail('plain')).toBe('plain');
     expect(errorDetail({ code: 5 })).toBe('{"code":5}');
+    expect(errorDetail(undefined)).toBe('No error details were given.');
+    expect(errorDetail(null)).toBe('No error details were given.');
   });
 });
 
@@ -64,7 +67,7 @@ describe('explainError', () => {
       'offline', 'sonarr-unreachable', 'sonarr-not-connected', 'sonarr-rejected', 'sonarr-import-list',
       'sonarr-not-linked', 'anilist-login', 'anilist-busy', 'oauth-timeout', 'port-in-use', 'service-down',
       'file-missing', 'file-locked', 'no-permission', 'disk-full', 'database-busy', 'not-a-backup',
-      'no-old-data', 'drive-root', 'startup-setting', 'damaged-setting', 'unknown',
+      'no-old-data', 'drive-root', 'startup-setting', 'damaged-setting', 'saved-login-unreadable', 'unknown',
     ];
     for (const cause of causes) {
       expect(causeAdvice(cause)).not.toMatch(/os error|HTTP|\d{3}|sqlite|oauth|registry|exception|null/i);
