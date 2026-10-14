@@ -7,6 +7,8 @@
   export let message: string;
   export let details: string;
   export let actionLabel: string | null = null;
+  /** Plain one-line descriptions of the separate things that failed. */
+  export let items: string[] = [];
   /** Smaller, for errors shown inside a card, form row or dialog. */
   export let compact = false;
 
@@ -39,6 +41,9 @@
     </div>
     <button type="button" class="dismiss" aria-label="Dismiss" on:click={() => dispatch('dismiss')}>×</button>
   </div>
+  {#if items.length > 0}
+    <ul class="items">{#each items as item}<li>{item}</li>{/each}</ul>
+  {/if}
   {#if showDetails}
     <div class="details">
       <pre>{details}</pre>
@@ -112,6 +117,11 @@
     padding: 0 0.3rem;
   }
   .dismiss:hover { color: var(--color-text); }
+
+  .items {
+    margin: 0.4rem 0 0;
+    padding-left: 1.2rem;
+  }
 
   .details {
     display: flex;

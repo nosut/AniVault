@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { errorCause, errorDetail, explainError, causeAdvice, type ErrorCause } from './errors';
+import { errorCause, errorDetail, explainError, explainFailures, causeAdvice, type ErrorCause } from './errors';
 
 describe('errorCause', () => {
   const cases: [string, ErrorCause][] = [
@@ -68,5 +68,23 @@ describe('explainError', () => {
     for (const cause of causes) {
       expect(causeAdvice(cause)).not.toMatch(/os error|HTTP|\d{3}|sqlite|oauth|registry|exception|null/i);
     }
+  });
+});
+
+describe('explainFailures', () => {
+  it('lists what failed in plain words and advises on the most common cause', () => {
+    const out = explainFailures("Some of the clean-up didn't finish.", [
+      { what: "Sonarr couldn't unmonitor Frieren.", error: 'Sonarr series HTTP 0: error sending request for url (http://nas:8989/api/v3/series)' },
+      { what: "Sonarr couldn't unmonitor Dandadan.", error: 'error sending request for url (http://nas:8989/api/v3/series/2)' },
+      { what: "“ep1.mkv” couldn't be deleted.", error: 'Access is denied. (os error 5)' },
+    ]);
+    expect(out.message).toBe(`Some of the clean-up didn't finish. ${causeAdvice('sonarr-unreachable')}`);
+    expect(out.items).toEqual([
+      "Sonarr couldn't unmonitor Frieren.",
+      "Sonarr couldn't unmonitor Dandadan.",
+      "“ep1.mkv” couldn't be deleted.",
+    ]);
+    expect(out.details).toContain('os error 5');
+    expect(out.message).not.toContain('os error');
   });
 });

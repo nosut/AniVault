@@ -44,8 +44,6 @@
   .dialog :global(label.nested) { margin-left: 1.5rem; }
   .dialog :global(.hint) { margin: 0; font-size: 0.72rem; color: var(--color-muted); }
   .dialog :global(.warning) { margin: 0; font-size: 0.78rem; color: var(--color-warning); }
-  .dialog :global(.error) { margin: 0; font-size: 0.82rem; color: var(--color-warning); }
-  .dialog :global(.errors) { margin: 0; padding-left: 1.1rem; font-size: 0.78rem; color: var(--color-muted); word-break: break-all; }
   .dialog :global(.shows) { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; max-height: 10rem; overflow-y: auto; }
   .dialog :global(.shows li) { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; font-size: 0.82rem; }
   .dialog :global(.show-title) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

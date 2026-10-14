@@ -24,7 +24,7 @@
       status = await getSyncStatus();
       pollError = null;
     } catch (e) {
-      pollError = explainError('The AniList sync status couldn’t be checked.', e);
+      pollError = explainError("The AniList sync status couldn't be checked.", e);
     } finally {
       loading = false;
     }
@@ -39,7 +39,7 @@
       await refresh();
       syncResultTimeout = setTimeout(() => { syncResult = null; }, 5000);
     } catch (e) {
-      actionError = { ...explainError('Your changes couldn’t be synced to AniList.', e), retry: handleSyncNow };
+      actionError = { ...explainError("Your changes couldn't be synced to AniList.", e), retry: handleSyncNow };
     } finally {
       syncing = false;
     }
@@ -53,7 +53,7 @@
       await retryBlockedSync();
       await handleSyncNow();
     } catch (e) {
-      actionError = { ...explainError('The blocked updates couldn’t be retried.', e), retry: handleRetryBlocked };
+      actionError = { ...explainError("The blocked updates couldn't be retried.", e), retry: handleRetryBlocked };
     } finally {
       retrying = false;
     }

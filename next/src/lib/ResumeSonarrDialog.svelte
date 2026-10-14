@@ -6,6 +6,8 @@
   import { resumeItems, STATUS_LABELS, type CleanupRequest, type ResumeItem } from './dropCleanup';
   import PromptDialog from './PromptDialog.svelte';
   import SonarrAddDialog from './SonarrAddDialog.svelte';
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainFailures, type ExplainedError, type StepFailure } from './errors';
 
   export let request: CleanupRequest;
 
@@ -14,7 +16,7 @@
   let items: ResumeItem[] = [];
   let loading = true;
   let busy = false;
-  let errors: string[] = [];
+  let failures: (ExplainedError & { items: string[] }) | null = null;
   let finished = false;
 
   let monitor = true;
@@ -28,7 +30,7 @@
   async function load(req: CleanupRequest) {
     loadedFor = req;
     loading = true;
-    errors = [];
+    failures = null;
     finished = false;
     added = new Set();
     addingFor = null;
@@ -67,19 +69,19 @@
       return;
     }
     busy = true;
-    const failed: string[] = [];
+    const failed: StepFailure[] = [];
     for (const item of unmonitored) {
       try {
         await setSonarrMonitored(item.sonarr.sonarr_id, true, search);
       } catch (e) {
-        failed.push(`${item.title}: ${e}`);
+        failed.push({ what: `Sonarr couldn't start monitoring ${item.title} again.`, error: e });
       }
     }
     busy = false;
     dispatch('done', { animeIds: unmonitored.map((i) => i.animeId) });
     if (failed.length === 0) dispatch('close');
     else {
-      errors = failed;
+      failures = explainFailures("Some shows couldn't be picked back up in Sonarr.", failed);
       finished = true;
     }
   }
@@ -93,8 +95,9 @@
     on:close={() => dispatch('close')}
   >
     {#if finished}
-      <p class="error">Some steps failed:</p>
-      <ul class="errors">{#each errors as err}<li>{err}</li>{/each}</ul>
+      {#if failures}
+        <ErrorNotice compact message={failures.message} items={failures.items} details={failures.details} on:dismiss={() => dispatch('close')} />
+      {/if}
       <div class="actions">
         <button class="primary" on:click={() => dispatch('close')}>Close</button>
       </div>

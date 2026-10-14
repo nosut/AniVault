@@ -89,24 +89,24 @@ export function errorCause(raw: string): ErrorCause {
 const ADVICE: Record<ErrorCause, string> = {
   'offline': "AniVault couldn't connect to the internet. Check your connection and try again.",
   'sonarr-unreachable': "AniVault couldn't reach Sonarr. Make sure Sonarr is running and its address in Settings is right.",
-  'sonarr-not-connected': 'Sonarr isn’t connected yet. Connect it in Settings first.',
+  'sonarr-not-connected': "Sonarr isn't connected yet. Connect it in Settings first.",
   'sonarr-rejected': 'Sonarr turned the request down. Check the API key in Settings.',
   'sonarr-import-list': 'This needs an AniList import list in Sonarr with a root folder and quality profile. Set one up in Sonarr, then try again.',
-  'sonarr-not-linked': 'This show isn’t linked to a series in Sonarr yet.',
+  'sonarr-not-linked': "This show isn't linked to a series in Sonarr yet.",
   'anilist-login': 'Your AniList login has expired or was removed. Reconnect AniList in Settings.',
   'anilist-busy': 'The service is limiting requests right now. Wait a minute, then try again.',
-  'oauth-timeout': 'The AniList sign-in wasn’t finished in time. Start connecting again.',
+  'oauth-timeout': "The AniList sign-in wasn't finished in time. Start connecting again.",
   'port-in-use': 'Another copy of AniVault seems to be running. Close it, then try again.',
   'service-down': 'The service had a problem on its end. Try again in a few minutes.',
-  'file-missing': 'The file or folder couldn’t be found. It may have been moved, renamed or deleted.',
+  'file-missing': "The file or folder couldn't be found. It may have been moved, renamed or deleted.",
   'file-locked': 'A file is open in another program. Close it, then try again.',
-  'no-permission': 'Windows didn’t allow AniVault to do this. Check that the folder isn’t read-only or protected.',
+  'no-permission': "Windows didn't allow AniVault to do this. Check that the folder isn't read-only or protected.",
   'disk-full': 'The drive is full. Free up some space, then try again.',
-  'database-busy': 'AniVault’s database was busy. Try again in a moment.',
-  'not-a-backup': 'That file isn’t an AniVault backup. Choose a different file.',
+  'database-busy': "AniVault's database was busy. Try again in a moment.",
+  'not-a-backup': "That file isn't an AniVault backup. Choose a different file.",
   'no-old-data': 'No data from the old version of AniVault was found on this PC.',
   'drive-root': 'Choose a specific folder rather than a whole drive.',
-  'startup-setting': 'Windows didn’t let AniVault change its startup setting. Try again, or check whether security software is blocking it.',
+  'startup-setting': "Windows didn't let AniVault change its startup setting. Try again, or check whether security software is blocking it.",
   'unknown': 'Try again. If it keeps happening, Show details has the technical information to report.',
 };
 
@@ -122,4 +122,31 @@ export function causeAdvice(cause: ErrorCause): string {
 export function explainError(summary: string, e: unknown): ExplainedError {
   const details = errorDetail(e);
   return { message: `${summary} ${causeAdvice(errorCause(details))}`, details };
+}
+
+/** One step of a multi-step action that failed, described in plain words. */
+export interface StepFailure {
+  /** What didn't happen, e.g. "Sonarr couldn't unmonitor Frieren." */
+  what: string;
+  error: unknown;
+}
+
+/**
+ * Several steps that failed together: a summary with advice for the most
+ * common cause, the plain list of what didn't happen, and every raw error
+ * in the details.
+ */
+export function explainFailures(summary: string, failures: StepFailure[]): ExplainedError & { items: string[] } {
+  const raws = failures.map((f) => errorDetail(f.error));
+  const counts = new Map<ErrorCause, number>();
+  for (const raw of raws) {
+    const cause = errorCause(raw);
+    counts.set(cause, (counts.get(cause) ?? 0) + 1);
+  }
+  const [top] = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return {
+    message: `${summary} ${causeAdvice(top?.[0] ?? 'unknown')}`,
+    items: failures.map((f) => f.what),
+    details: failures.map((f, i) => `${f.what}\n  ${raws[i]}`).join('\n'),
+  };
 }

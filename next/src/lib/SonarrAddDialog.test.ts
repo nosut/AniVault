@@ -56,7 +56,7 @@ describe('SonarrAddDialog', () => {
     expect(done).toHaveBeenCalledTimes(2);
   });
 
-  it('shows the error text when adding fails', async () => {
+  it('explains a failed add in plain words, with the raw error behind Show details', async () => {
     vi.mocked(addToSonarr).mockRejectedValueOnce('No AniList import list in Sonarr to copy settings from');
     createClassComponent({
       component: SonarrAddDialog,
@@ -66,7 +66,28 @@ describe('SonarrAddDialog', () => {
     await settle();
     buttons()[0]!.click();
     await settle();
+    expect(document.body.textContent).toContain(`"Overgeared" couldn't be added to Sonarr. This needs an AniList import list in Sonarr`);
+    expect(document.body.textContent).not.toContain('copy settings from');
+
+    [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Show details')!.click();
+    await settle();
     expect(document.body.textContent).toContain('No AniList import list in Sonarr to copy settings from');
+  });
+
+  it('retries the same choice from the error', async () => {
+    vi.mocked(addToSonarr).mockRejectedValueOnce('Sonarr add series HTTP 503: Service Unavailable');
+    createClassComponent({
+      component: SonarrAddDialog,
+      target: document.getElementById('app')!,
+      props: { animeId: 7, title: 'Overgeared' },
+    });
+    await settle();
+    buttons()[0]!.click();
+    await settle();
+    [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Try again')!.click();
+    await settle();
+    expect(addToSonarr).toHaveBeenLastCalledWith(7, 100);
+    expect(addToSonarr).toHaveBeenCalledTimes(2);
   });
 
   it('re-searches for the new show when animeId changes, so Add never uses the old show results', async () => {

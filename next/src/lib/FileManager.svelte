@@ -251,7 +251,7 @@
           : '';
       statusMsg = `Matched ${r.groups_matched} of ${r.groups_total} series (${r.files_mapped} files).${unmatchedNote}`;
     } catch (e) {
-      actionError = { ...explainError('Matching with AniList didn’t finish.', e), retry: handleDeepMatch };
+      actionError = { ...explainError("Matching with AniList didn't finish.", e), retry: handleDeepMatch };
     } finally {
       deepMatching = false;
     }

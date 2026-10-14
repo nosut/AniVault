@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { createEventDispatcher } from 'svelte';
   import { addToSonarr, linkSonarrCoverage, lookupSonarrCandidates, type SonarrCandidate } from './api';
   import { candidateAction, candidateLabel } from './sonarrCoverageUi';
@@ -11,7 +13,7 @@
   let candidates: SonarrCandidate[] = [];
   let loading = true;
   let busyTvdb: number | null = null;
-  let error: string | null = null;
+  let error: (ExplainedError & { retry: () => void }) | null = null;
 
   // The show the candidates were looked up for. The parent can reuse this
   // component for another show, so re-search whenever animeId changes and
@@ -28,7 +30,7 @@
       const found = await lookupSonarrCandidates(id);
       if (id === candidatesFor) candidates = found;
     } catch (e) {
-      if (id === candidatesFor) error = String(e);
+      if (id === candidatesFor) error = { ...explainError("AniVault couldn't look this show up in Sonarr.", e), retry: () => search(id) };
     } finally {
       if (id === candidatesFor) loading = false;
     }
@@ -47,7 +49,10 @@
       }
       dispatch('done', { animeId: id });
     } catch (e) {
-      error = String(e);
+      const summary = candidateAction(c) === 'link'
+        ? `"${title}" couldn't be linked to ${c.title} in Sonarr.`
+        : `"${title}" couldn't be added to Sonarr.`;
+      error = { ...explainError(summary, e), retry: () => choose(c) };
     } finally {
       busyTvdb = null;
     }
@@ -81,7 +86,9 @@
       {/each}
     </ul>
   {/if}
-  {#if error}<p class="error">{error}</p>{/if}
+  {#if error}
+    <ErrorNotice compact message={error.message} details={error.details} actionLabel="Try again" on:action={error.retry} on:dismiss={() => (error = null)} />
+  {/if}
 </div>
 
 <style>
@@ -94,5 +101,4 @@
   .label { flex: 1; font-size: 0.85rem; }
   .badge { margin-left: 0.4rem; font-size: 0.7rem; color: var(--color-success); }
   .muted { color: var(--color-muted); font-size: 0.85rem; margin: 0; }
-  .error { color: var(--color-warning); font-size: 0.85rem; margin: 0; }
 </style>

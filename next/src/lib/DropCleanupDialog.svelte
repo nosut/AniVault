@@ -4,16 +4,19 @@
   import { cleanupItems, loadCleanupSettings, sharedWarnings, STATUS_LABELS, type CleanupItem, type CleanupRequest, type SonarrAction } from './dropCleanup';
   import { formatBytes } from './fileSize';
   import PromptDialog from './PromptDialog.svelte';
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, explainFailures, type ExplainedError, type StepFailure } from './errors';
 
   export let request: CleanupRequest;
 
   const dispatch = createEventDispatcher<{ close: void; done: { animeIds: number[] } }>();
 
   let items: CleanupItem[] = [];
-  let sonarrError: string | null = null;
+  let sonarrError: ExplainedError | null = null;
   let loading = true;
   let busy = false;
-  let errors: string[] = [];
+  let loadError: ExplainedError | null = null;
+  let failures: (ExplainedError & { items: string[] }) | null = null;
   let finished = false;
 
   let sonarrAction: SonarrAction = 'unmonitor';
@@ -27,7 +30,8 @@
   async function load(req: CleanupRequest) {
     loadedFor = req;
     loading = true;
-    errors = [];
+    loadError = null;
+    failures = null;
     finished = false;
     // The next queued prompt reuses this component; start it from the defaults.
     sonarrAction = 'unmonitor';
@@ -40,11 +44,12 @@
       ]);
       if (req !== loadedFor) return;
       items = cleanupItems(req.shows, previews, settings);
-      sonarrError = settings.offerSonarr ? (previews.find((p) => p.sonarr_error)?.sonarr_error ?? null) : null;
+      const sonarrRaw = settings.offerSonarr ? (previews.find((p) => p.sonarr_error)?.sonarr_error ?? null) : null;
+      sonarrError = sonarrRaw ? explainError("Sonarr options aren't shown because AniVault couldn't check this show in Sonarr.", sonarrRaw) : null;
       // Nothing linked to Sonarr and no files: there is nothing to offer.
       if (items.length === 0) dispatch('close');
     } catch (e) {
-      if (req === loadedFor) errors = [String(e)];
+      if (req === loadedFor) loadError = explainError("The clean-up options couldn't be loaded.", e);
     } finally {
       if (req === loadedFor) loading = false;
     }
@@ -61,8 +66,8 @@
 
   async function apply() {
     busy = true;
-    errors = [];
-    const failed: string[] = [];
+    failures = null;
+    const failed: StepFailure[] = [];
     // Shows on one series share a single Sonarr action.
     const doneSeries = new Set<number>();
     for (const item of items) {
@@ -72,15 +77,18 @@
           if (sonarrAction === 'unmonitor') await setSonarrMonitored(item.sonarr.sonarr_id, false, false);
           else await removeFromSonarr(item.sonarr.sonarr_id, deleteSonarrFiles);
         } catch (e) {
-          failed.push(`${item.title}: Sonarr: ${e}`);
+          const did = sonarrAction === 'unmonitor' ? 'unmonitor' : 'remove';
+          failed.push({ what: `Sonarr couldn't ${did} ${item.title}.`, error: e });
         }
       }
       if (item.fileCount > 0 && deleteLocalFiles) {
         try {
           const report = await deleteAnimeFiles(item.animeId);
-          for (const f of report.failed) failed.push(`${item.title}: ${f}`);
+          for (const f of report.failed) {
+            failed.push({ what: `A file from ${item.title} couldn't be moved to the Recycle Bin.`, error: f });
+          }
         } catch (e) {
-          failed.push(`${item.title}: files: ${e}`);
+          failed.push({ what: `The files for ${item.title} couldn't be deleted.`, error: e });
         }
       }
     }
@@ -88,22 +96,21 @@
     dispatch('done', { animeIds: items.map((i) => i.animeId) });
     if (failed.length === 0) dispatch('close');
     else {
-      errors = failed;
+      failures = explainFailures("Some of the clean-up didn't finish.", failed);
       finished = true;
     }
   }
 </script>
 
-{#if !loading && (items.length > 0 || errors.length > 0)}
+{#if !loading && (items.length > 0 || loadError)}
   <PromptDialog
     eyebrow={`Moved to ${STATUS_LABELS[request.status] ?? request.status}`}
     heading={`Clean up ${heading}?`}
     {busy}
     on:close={() => dispatch('close')}
   >
-    {#if finished}
-      <p class="error">Some steps failed:</p>
-      <ul class="errors">{#each errors as err}<li>{err}</li>{/each}</ul>
+    {#if finished && failures}
+      <ErrorNotice compact message={failures.message} items={failures.items} details={failures.details} on:dismiss={() => dispatch('close')} />
       <div class="actions">
         <button class="primary" on:click={() => dispatch('close')}>Close</button>
       </div>
@@ -137,7 +144,7 @@
           {/if}
         </fieldset>
       {:else if sonarrError}
-        <p class="hint">Couldn't reach Sonarr, so it isn't offered: {sonarrError}</p>
+        <ErrorNotice compact message={sonarrError.message} details={sonarrError.details} on:dismiss={() => (sonarrError = null)} />
       {/if}
 
       {#if withFiles.length > 0}
@@ -151,7 +158,9 @@
         </fieldset>
       {/if}
 
-      {#if errors.length > 0}<p class="error">{errors[0]}</p>{/if}
+      {#if loadError}
+        <ErrorNotice compact message={loadError.message} details={loadError.details} actionLabel="Try again" on:action={() => load(request)} on:dismiss={() => (loadError = null)} />
+      {/if}
 
       <div class="actions">
         <button on:click={() => dispatch('close')} disabled={busy}>Skip</button>

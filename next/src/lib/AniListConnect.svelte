@@ -64,7 +64,7 @@
       tokenExpired = false;
     } catch (e) {
       oauthError = rejectedCredentials(e,
-        'AniList didn’t accept that client ID and secret. Check both values against your AniList developer settings, then try again.',
+        "AniList didn't accept that client ID and secret. Check both values against your AniList developer settings, then try again.",
         handleOAuthConnect);
     } finally {
       oauthConnecting = false;
@@ -81,7 +81,7 @@
       tokenExpired = false;
     } catch (e) {
       error = rejectedCredentials(e,
-        'AniList didn’t accept that token. Check that you copied all of it, then try again.',
+        "AniList didn't accept that token. Check that you copied all of it, then try again.",
         handleConnect);
       connected = false;
     } finally {
@@ -116,7 +116,7 @@
       manualToken = '';
       importReport = null;
     } catch (e) {
-      error = { ...explainError('AniList couldn’t be disconnected.', e), retry: handleDisconnect };
+      error = { ...explainError("AniList couldn't be disconnected.", e), retry: handleDisconnect };
     }
   }
 
@@ -127,7 +127,7 @@
     try {
       importReport = await importAniListLibrary();
     } catch (e) {
-      error = { ...explainError('Your AniList library couldn’t be imported.', e), retry: handleImport };
+      error = { ...explainError("Your AniList library couldn't be imported.", e), retry: handleImport };
       // The import may have just found the token expired.
       await loadStatus();
     } finally {
