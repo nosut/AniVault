@@ -294,8 +294,7 @@ async fn run_meta_backfill(state: &EngineState) {
 /// Spawn a background task that polls the sync queue every 30 seconds and, on the
 /// first pass then roughly every 10 minutes, backfills unknown episode counts.
 pub fn spawn_sync_worker(state: &EngineState) -> tauri::async_runtime::JoinHandle<()> {
-    let state = state.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::engine::runtime::spawn_supervised(state, "AniList sync", move |state| async move {
         tracing::debug!("Sync worker started for service: anilist");
         let mut cycle: u64 = 0;
         loop {

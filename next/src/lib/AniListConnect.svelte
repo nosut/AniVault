@@ -24,7 +24,7 @@
   // were wrong, not that a saved login expired.
   function rejectedCredentials(e: unknown, message: string, retry: () => void): ActionError {
     const raw = errorDetail(e);
-    if (errorCause(raw) === 'anilist-login' || /invalid_client|invalid_grant|invalid_request/i.test(raw)) {
+    if (errorCause(raw) === 'anilist-login' || /invalid_client|invalid_grant|invalid_request|didn't accept the sign-in/i.test(raw)) {
       return { message, details: raw, retry };
     }
     return { ...explainError("AniVault couldn't connect to AniList.", e), retry };

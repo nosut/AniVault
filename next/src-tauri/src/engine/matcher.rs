@@ -108,15 +108,18 @@ fn extract_video_filename(text: &str) -> Option<String> {
 }
 
 /// Build a "known file" recognition result for an already-mapped anime id.
+/// `Ok(None)` only when the mapped show no longer exists. A failed read is an
+/// error: falling through to title matching could record progress against a
+/// different show than the one the file is mapped to.
 async fn known_result(
     storage: &Storage,
     anime_id: i64,
     confidence: i32,
-) -> Option<RecognitionResult> {
-    let anime = storage.fetch_anime(anime_id).await.ok().flatten()?;
+) -> anyhow::Result<Option<RecognitionResult>> {
+    let Some(anime) = storage.fetch_anime(anime_id).await? else { return Ok(None) };
     let titles: serde_json::Value = serde_json::from_str(&anime.titles_json).unwrap_or_default();
     let title = titles["romaji"].as_str().unwrap_or("Unknown").to_string();
-    Some(RecognitionResult {
+    Ok(Some(RecognitionResult {
         known_file: true,
         parsed: None,
         candidates: vec![MatchCandidate {
@@ -125,7 +128,7 @@ async fn known_result(
             confidence: confidence as u8,
             match_source: "file_index".to_string(),
         }],
-    })
+    }))
 }
 
 pub async fn recognize_file(
@@ -138,7 +141,7 @@ pub async fn recognize_file(
     if looks_like_path(file_path) {
         if let Some(existing) = storage.get_file_index(file_path).await? {
             if let Some(anime_id) = existing.anime_id {
-                if let Some(res) = known_result(storage, anime_id, existing.confidence).await {
+                if let Some(res) = known_result(storage, anime_id, existing.confidence).await? {
                     return Ok(res);
                 }
             }
@@ -153,7 +156,7 @@ pub async fn recognize_file(
     if let Some(fname) = extract_video_filename(fname_source) {
         if let Some(existing) = storage.get_file_index_by_filename(&fname).await? {
             if let Some(anime_id) = existing.anime_id {
-                if let Some(res) = known_result(storage, anime_id, existing.confidence).await {
+                if let Some(res) = known_result(storage, anime_id, existing.confidence).await? {
                     return Ok(res);
                 }
             }

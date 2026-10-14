@@ -256,3 +256,10 @@ async fn backup_and_restore_round_trip_a_live_database() {
     assert!(restored.fetch_anime(2).await.unwrap().is_none(), "restored to the backup");
     restored.close().await;
 }
+
+#[tokio::test]
+async fn a_show_not_stored_locally_reports_why_it_couldnt_be_fetched() {
+    let state = test_state("detail-not-stored").await;
+    let err = anivault_core::commands::fetch_anime_detail_inner(999, &state).await.unwrap_err();
+    assert_eq!(err.to_string(), "not connected to AniList");
+}

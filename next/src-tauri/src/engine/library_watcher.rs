@@ -13,36 +13,64 @@ use crate::engine::runtime::EngineState;
 
 /// Run one automatic library scan pass. Publishes `LibraryUpdated` only when
 /// the index actually changed; silent no-op when no folders are configured.
-/// Errors are logged, never propagated — automatic passes must not kill loops.
+/// Errors never propagate, so the loop keeps running, but they go on the
+/// problem board: an offline folder or a failed scan is otherwise invisible.
 pub async fn run_auto_scan(state: &EngineState) {
+    use crate::engine::problems::area;
     let folders = match library_scanner::get_library_folders(&state.storage).await {
-        Ok(f) => f,
+        Ok(f) => {
+            state.problems.resolve(area::LIBRARY_FOLDERS);
+            f
+        }
         Err(e) => {
-            tracing::warn!("auto-scan: cannot read library folders: {e}");
+            state.problems.report(
+                area::LIBRARY_FOLDERS,
+                "Your library folders couldn't be read, so automatic scans are paused.",
+                e,
+            );
             return;
         }
     };
     if folders.is_empty() {
+        state.problems.resolve(area::LIBRARY_SCAN);
         return;
     }
-    match library_scanner::scan_library_folders(&state.storage).await {
-        Ok(r) if r.indexed > 0 || r.removed > 0 => {
+    let result = library_scanner::scan_library_folders(&state.storage).await;
+    note_scan_result(state, &result);
+    if let Ok(r) = result {
+        if r.indexed > 0 || r.removed > 0 {
             tracing::info!(indexed = r.indexed, removed = r.removed, "auto-scan changed the index");
             state.events.publish(EngineEvent::LibraryUpdated {
                 indexed: r.indexed,
                 removed: r.removed,
             });
         }
-        Ok(_) => {}
-        Err(e) => tracing::warn!("auto-scan failed: {e}"),
+    }
+}
+
+/// Put a full library scan's outcome on the problem board. Shared by the
+/// automatic scan and the Scan button, so either one clears what the other
+/// reported once the folders are back.
+pub fn note_scan_result(
+    state: &EngineState,
+    result: &anyhow::Result<library_scanner::LibraryScanReport>,
+) {
+    use crate::engine::problems::area;
+    match result {
+        Ok(r) if r.errors.is_empty() => state.problems.resolve(area::LIBRARY_SCAN),
+        Ok(r) => state.problems.report(
+            area::LIBRARY_SCAN,
+            "Some library folders couldn't be scanned.",
+            r.errors.join("\n"),
+        ),
+        Err(e) => state.problems.report(area::LIBRARY_SCAN, "The library scan didn't finish.", e),
     }
 }
 
 /// Spawn the startup + hourly automatic scan: one pass shortly after launch
 /// (delayed so tracking/sync startup settles first), then every hour.
 pub fn spawn_library_scan_worker(state: &EngineState) -> tauri::async_runtime::JoinHandle<()> {
-    let state = state.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::engine::runtime::spawn_supervised(state, "The automatic library scan", move |state| async move {
         tokio::time::sleep(Duration::from_secs(20)).await;
         loop {
             run_auto_scan(&state).await;
@@ -122,30 +150,44 @@ pub fn take_quiet_dirs(
 /// Folders that are offline or fail to watch are logged and left to the hourly
 /// scan as fallback.
 pub fn spawn_library_watcher(state: &EngineState) -> tauri::async_runtime::JoinHandle<()> {
-    let state = state.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::engine::runtime::spawn_supervised(state, "The library folder watcher", move |state| async move {
+        use crate::engine::problems::area;
+        const NOT_WATCHING: &str =
+            "New files in your library won't be picked up straight away; the hourly scan will still find them.";
         loop {
-            let folders = library_scanner::get_library_folders(&state.storage)
-                .await
-                .unwrap_or_default();
+            let folders = match library_scanner::get_library_folders(&state.storage).await {
+                Ok(f) => f,
+                Err(e) => {
+                    // Reported as a library folders problem by the scan
+                    // worker; wait for the folders to be set again.
+                    tracing::warn!("library watcher: cannot read library folders: {e}");
+                    state.library_folders_changed.notified().await;
+                    continue;
+                }
+            };
 
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<notify::Event>();
+            let board = state.problems.clone();
             let mut watcher = match notify::recommended_watcher(
-                move |res: Result<notify::Event, notify::Error>| {
-                    if let Ok(ev) = res {
+                move |res: Result<notify::Event, notify::Error>| match res {
+                    Ok(ev) => {
                         let _ = tx.send(ev);
                     }
+                    Err(e) => board.report(area::LIBRARY_WATCHER, NOT_WATCHING, e),
                 },
             ) {
                 Ok(w) => w,
                 Err(e) => {
-                    tracing::warn!("library watcher unavailable: {e}");
+                    state.problems.report(area::LIBRARY_WATCHER, NOT_WATCHING, e);
                     // Still honor folder-change signals so a later config change retries.
                     state.library_folders_changed.notified().await;
                     continue;
                 }
             };
 
+            // Offline folders are reported by the scan; only a folder that is
+            // there but can't be watched is a watcher problem.
+            let mut failed: Vec<String> = Vec::new();
             for f in &folders {
                 let path = std::path::Path::new(f);
                 if !path.exists() {
@@ -153,8 +195,13 @@ pub fn spawn_library_watcher(state: &EngineState) -> tauri::async_runtime::JoinH
                     continue;
                 }
                 if let Err(e) = watcher.watch(path, notify::RecursiveMode::Recursive) {
-                    tracing::warn!("cannot watch library folder {f}: {e}");
+                    failed.push(format!("{f}: {e}"));
                 }
+            }
+            if failed.is_empty() {
+                state.problems.resolve(area::LIBRARY_WATCHER);
+            } else {
+                state.problems.report(area::LIBRARY_WATCHER, NOT_WATCHING, failed.join("\n"));
             }
 
             let mut pending: HashMap<PathBuf, Instant> = HashMap::new();
@@ -191,6 +238,8 @@ pub fn spawn_library_watcher(state: &EngineState) -> tauri::async_runtime::JoinH
                                 });
                             }
                             Ok(_) => {}
+                            // The hourly scan retries these folders and reports
+                            // if they stay unreadable.
                             Err(e) => tracing::warn!("watcher scan failed: {e}"),
                         }
                     }

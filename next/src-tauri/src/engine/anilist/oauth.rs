@@ -46,8 +46,9 @@ pub async fn start_oauth_flow(client_id: &str, client_secret: &str) -> anyhow::R
         urlencoding::encode(&expected_state),
     );
 
-    // Open browser
-    open_browser(&auth_url);
+    // Open browser. If that fails, say so now rather than after the
+    // two-minute wait for a sign-in that can never happen.
+    open_browser(&auth_url)?;
 
     // Wait for the callback (2 minute timeout). Keeps accepting connections
     // until one presents the matching `state`, so a stray/racing local
@@ -63,7 +64,7 @@ pub async fn start_oauth_flow(client_id: &str, client_secret: &str) -> anyhow::R
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()?;
-    let resp: TokenResponse = client
+    let resp = client
         .post(ANILIST_TOKEN_URL)
         .json(&serde_json::json!({
             "grant_type": "authorization_code",
@@ -73,23 +74,31 @@ pub async fn start_oauth_flow(client_id: &str, client_secret: &str) -> anyhow::R
             "code": code,
         }))
         .send()
-        .await?
-        .json()
         .await?;
-
-    Ok(resp.access_token)
+    // A rejected client ID or secret comes back as an error body; reading it
+    // as a token would only say "error decoding response body".
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(anyhow!("AniList didn't accept the sign-in: HTTP {status}: {body}"));
+    }
+    let token: TokenResponse = resp.json().await?;
+    Ok(token.access_token)
 }
 
-fn open_browser(url: &str) {
-    // Try `open` crate first, fall back to cmd /c start on Windows
-    if open::that(url).is_err() {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let _ = std::process::Command::new("cmd")
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(["/c", "start", url])
-            .spawn();
-    }
+fn open_browser(url: &str) -> anyhow::Result<()> {
+    // Try `open` crate first, fall back to the Windows URL handler.
+    let Err(first) = open::that(url) else { return Ok(()) };
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    // Not `cmd /c start`: cmd reads each `&` in the query string as a command
+    // separator and cuts the sign-in link short.
+    std::process::Command::new("rundll32")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(["url.dll,FileProtocolHandler", url])
+        .spawn()
+        .map(|_| ())
+        .map_err(|second| anyhow!("Your web browser couldn't be opened to sign in to AniList ({first}; {second})"))
 }
 
 /// Accept connections until one carries `code` and a `state` matching

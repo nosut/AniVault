@@ -6,6 +6,7 @@
 
 import { writable } from 'svelte/store';
 import { getSetting, type CleanupSonarrSeries, type StatusChangePreview } from './api';
+import { reportProblem } from './notify';
 
 export const CLEANUP_SONARR_KEY = 'cleanup.offer_sonarr';
 export const CLEANUP_FILES_KEY = 'cleanup.offer_files';
@@ -45,23 +46,22 @@ export const DEFAULT_CLEANUP_SETTINGS: CleanupSettings = {
   offerResume: true,
 };
 
+/// The saved clean-up preferences, with defaults for any never set. A failed
+/// read throws: quietly using the defaults would show prompts the user turned
+/// off, and show them as saved choices in Settings.
 export async function loadCleanupSettings(): Promise<CleanupSettings> {
-  try {
-    const [offerSonarr, offerFiles, statuses, offerResume] = await Promise.all([
-      getSetting<boolean>(CLEANUP_SONARR_KEY),
-      getSetting<boolean>(CLEANUP_FILES_KEY),
-      getSetting<string[]>(CLEANUP_STATUSES_KEY),
-      getSetting<boolean>(CLEANUP_RESUME_KEY),
-    ]);
-    return {
-      offerSonarr: offerSonarr ?? DEFAULT_CLEANUP_SETTINGS.offerSonarr,
-      offerFiles: offerFiles ?? DEFAULT_CLEANUP_SETTINGS.offerFiles,
-      statuses: Array.isArray(statuses) ? statuses : DEFAULT_CLEANUP_SETTINGS.statuses,
-      offerResume: offerResume ?? DEFAULT_CLEANUP_SETTINGS.offerResume,
-    };
-  } catch {
-    return DEFAULT_CLEANUP_SETTINGS;
-  }
+  const [offerSonarr, offerFiles, statuses, offerResume] = await Promise.all([
+    getSetting<boolean>(CLEANUP_SONARR_KEY),
+    getSetting<boolean>(CLEANUP_FILES_KEY),
+    getSetting<string[]>(CLEANUP_STATUSES_KEY),
+    getSetting<boolean>(CLEANUP_RESUME_KEY),
+  ]);
+  return {
+    offerSonarr: offerSonarr ?? DEFAULT_CLEANUP_SETTINGS.offerSonarr,
+    offerFiles: offerFiles ?? DEFAULT_CLEANUP_SETTINGS.offerFiles,
+    statuses: Array.isArray(statuses) ? statuses : DEFAULT_CLEANUP_SETTINGS.statuses,
+    offerResume: offerResume ?? DEFAULT_CLEANUP_SETTINGS.offerResume,
+  };
 }
 
 export type PromptKind = 'drop' | 'resume';
@@ -204,6 +204,13 @@ async function flushStatusChanges(): Promise<void> {
   settleTimer = null;
   const changes = pending;
   pending = [];
-  const requests = requestsFor(await loadCleanupSettings(), changes);
+  let settings: CleanupSettings;
+  try {
+    settings = await loadCleanupSettings();
+  } catch (e) {
+    reportProblem("Your clean-up settings couldn't be read, so no clean-up prompt was shown for that change.", e);
+    return;
+  }
+  const requests = requestsFor(settings, changes);
   if (requests.length > 0) cleanupQueue.update((q) => [...q, ...requests]);
 }

@@ -26,6 +26,13 @@ export type ErrorCause =
   | 'startup-setting'
   | 'damaged-setting'
   | 'saved-login-unreadable'
+  | 'database-unavailable'
+  | 'not-active'
+  | 'sonarr-episode-missing'
+  | 'sonarr-show-unknown'
+  | 'sonarr-already-has'
+  | 'folder-offline'
+  | 'browser-not-opened'
   | 'unknown';
 
 export interface ExplainedError {
@@ -57,36 +64,50 @@ export function errorCause(raw: string): ErrorCause {
   const status = httpStatus(raw);
   const sonarr = SONARR_HINT.test(raw);
 
+  // Explicit causes the backend states itself, whatever they wrap.
+  if (/saved login couldn't be read/i.test(raw)) return 'saved-login-unreadable';
+  if (/saved .* is damaged/i.test(raw)) return 'damaged-setting';
+
+  // The database, before the network check: "pool timed out" is not a network problem.
+  if (/pool timed out|database is locked|database is busy/i.test(raw)) return 'database-busy';
+  if (/database or disk is full/i.test(raw)) return 'disk-full';
+  if (/readonly database|unable to open database file/i.test(raw)) return 'database-unavailable';
+
+  // Network failures, before the backend's own messages: a token check that
+  // never reached AniList is wrapped as "Invalid AniList token" too.
+  if (/error sending request|connection refused|os error 10061|os error 10060|timed out|dns error|failed to lookup address|no such host|network is unreachable|os error 1003|connect error/i.test(raw)
+      && !/OAuth timed out/i.test(raw)) {
+    return sonarr ? 'sonarr-unreachable' : 'offline';
+  }
+
   // Messages AniVault's backend writes itself.
-  if (/rejected the saved login|not connected to AniList|invalid token|token (?:has )?expired/i.test(raw)) return 'anilist-login';
+  if (/rejected the saved login|not connected to AniList|invalid (?:AniList )?token|token (?:has )?expired/i.test(raw)) return 'anilist-login';
   if (/OAuth timed out/i.test(raw)) return 'oauth-timeout';
+  if (/web browser couldn't be opened/i.test(raw)) return 'browser-not-opened';
   if (/Port \d+ is in use/i.test(raw)) return 'port-in-use';
   if (/Sonarr (?:is )?not connected|^not connected$/i.test(raw)) return 'sonarr-not-connected';
   if (/AniList import list in Sonarr/i.test(raw)) return 'sonarr-import-list';
   if (/not linked to a Sonarr series/i.test(raw)) return 'sonarr-not-linked';
+  if (/not Watching or Planning/i.test(raw)) return 'not-active';
+  if (/Episode \d+ not found in Sonarr/i.test(raw)) return 'sonarr-episode-missing';
+  if (/could not find TVDB id/i.test(raw)) return 'sonarr-show-unknown';
+  if (sonarr && /already (?:been added|configured|exists)/i.test(raw)) return 'sonarr-already-has';
   if (/does not look like a SQLite database|too small to be a SQLite database/i.test(raw)) return 'not-a-backup';
   if (/No v1 data found/i.test(raw)) return 'no-old-data';
   if (/Refusing to scan a filesystem root/i.test(raw)) return 'drive-root';
-  if (/registry key/i.test(raw)) return 'startup-setting';
-  if (/saved .* is damaged/i.test(raw)) return 'damaged-setting';
-  if (/saved login couldn't be read/i.test(raw)) return 'saved-login-unreadable';
+  if (/registry key|startup entry/i.test(raw)) return 'startup-setting';
 
   // HTTP responses.
   if (status === 401 || status === 403) return sonarr ? 'sonarr-rejected' : 'anilist-login';
   if (status === 429 || /too many requests|rate limit/i.test(raw)) return 'anilist-busy';
   if (status !== null && status >= 500) return 'service-down';
 
-  // Network failures.
-  if (/error sending request|connection refused|os error 10061|os error 10060|timed out|dns error|failed to lookup address|no such host|network is unreachable|os error 1003|connect error/i.test(raw)) {
-    return sonarr ? 'sonarr-unreachable' : 'offline';
-  }
-
   // Files and storage.
+  if (/Folder not found/i.test(raw)) return 'folder-offline';
   if (/os error 32\b|being used by another process/i.test(raw)) return 'file-locked';
   if (/os error 5\b|access is denied|permission denied/i.test(raw)) return 'no-permission';
-  if (/os error 112\b|not enough space|disk (?:is )?full|database or disk is full/i.test(raw)) return 'disk-full';
-  if (/database is locked|database is busy/i.test(raw)) return 'database-busy';
-  if (/os error [23]\b|cannot find the (?:file|path)|Folder does not exist|Folder not found|Backup file not found|No such file or directory/i.test(raw)) return 'file-missing';
+  if (/os error 112\b|not enough space|disk (?:is )?full/i.test(raw)) return 'disk-full';
+  if (/os error [23]\b|cannot find the (?:file|path)|Folder does not exist|Backup file not found|No such file or directory/i.test(raw)) return 'file-missing';
 
   return 'unknown';
 }
@@ -114,6 +135,13 @@ const ADVICE: Record<ErrorCause, string> = {
   'startup-setting': "Windows didn't let AniVault change its startup setting. Try again, or check whether security software is blocking it.",
   'saved-login-unreadable': "AniVault can't read a saved login on this Windows account. Reconnect it in Settings.",
   'damaged-setting': "That saved setting is damaged. Set it again to replace it.",
+  'database-unavailable': "AniVault couldn't write to its database. Check that the AniVault folder in AppData isn't read-only, then restart AniVault.",
+  'not-active': "Only shows you're Watching or Planning can be added to Sonarr. Change its status first.",
+  'sonarr-episode-missing': "Sonarr doesn't list that episode yet. Refresh the series in Sonarr, then try again.",
+  'sonarr-show-unknown': "Sonarr couldn't find this show. It may not be listed on TheTVDB yet.",
+  'sonarr-already-has': 'Sonarr already has this series. Link it instead of adding it.',
+  'folder-offline': "A library folder couldn't be reached. Check that its drive or network share is connected, or remove it in Settings.",
+  'browser-not-opened': "Your web browser couldn't be opened to sign in. Check that Windows has a default browser set, then try again.",
   'unknown': 'Try again. If it keeps happening, Show details has the technical information to report.',
 };
 

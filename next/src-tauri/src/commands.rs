@@ -389,19 +389,42 @@ fn write_run_key(value: Option<&str>) -> anyhow::Result<()> {
                 ])
                 .output()?;
             if !output.status.success() {
-                anyhow::bail!("Failed to write registry key");
+                anyhow::bail!("Could not write the startup entry: {}", reg_error(&output));
             }
         }
         None => {
-            // Deleting an absent value is a no-op that returns a nonzero exit;
-            // ignore it so turning the feature off never surfaces an error.
-            let _ = std::process::Command::new("reg")
+            let output = std::process::Command::new("reg")
                 .creation_flags(CREATE_NO_WINDOW)
                 .args(["delete", RUN_KEY, "/v", RUN_VALUE_NAME, "/f"])
                 .output()?;
+            // Deleting an absent value also fails, and that's fine. Only a
+            // value that is still there afterwards is a real failure: the
+            // toggle would read Off while Windows keeps starting AniVault.
+            if !output.status.success() && run_value_exists()? {
+                anyhow::bail!("Could not remove the startup entry: {}", reg_error(&output));
+            }
         }
     }
     Ok(())
+}
+
+fn run_value_exists() -> anyhow::Result<bool> {
+    use std::os::windows::process::CommandExt;
+    let output = std::process::Command::new("reg")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(["query", RUN_KEY, "/v", RUN_VALUE_NAME])
+        .output()?;
+    Ok(output.status.success())
+}
+
+/// What `reg` said went wrong, for the error details.
+fn reg_error(output: &std::process::Output) -> String {
+    let text = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if text.is_empty() {
+        format!("reg exited with {}", output.status)
+    } else {
+        text
+    }
 }
 
 /// Write (or remove) the HKCU Run registry entry to match the requested state,
@@ -416,7 +439,9 @@ fn apply_startup_registry(
         return Ok(());
     }
     let exe_path = std::env::current_exe()?.to_string_lossy().to_string();
-    write_run_key(desired_run_value(enabled, start_in_tray, &exe_path).as_deref())
+    write_run_key(desired_run_value(enabled, start_in_tray, &exe_path).as_deref())?;
+    state.problems.resolve(crate::engine::problems::area::STARTUP_ENTRY);
+    Ok(())
 }
 
 /// Reconcile the HKCU Run entry with the persisted launch-on-startup setting on
@@ -440,9 +465,19 @@ pub async fn reconcile_startup_registry(state: &EngineState) {
             return;
         }
     };
+    use crate::engine::problems::area;
     match write_run_key(desired_run_value(true, start_in_tray, &exe_path).as_deref()) {
-        Ok(()) => tracing::info!("launch-on-startup reconciled to {exe_path}"),
-        Err(e) => tracing::warn!("startup registry reconcile failed: {e}"),
+        Ok(()) => {
+            tracing::info!("launch-on-startup reconciled to {exe_path}");
+            state.problems.resolve(area::STARTUP_ENTRY);
+        }
+        // Still best-effort for startup, but no longer only in the log: the
+        // user believes AniVault starts with Windows.
+        Err(e) => state.problems.report(
+            area::STARTUP_ENTRY,
+            "AniVault couldn't update its Windows startup entry, so it may not start with Windows.",
+            e,
+        ),
     }
 }
 
@@ -804,12 +839,14 @@ pub async fn fetch_anime_detail_inner(
 ) -> anyhow::Result<AnimeDetailResponse> {
     let mut detail = match state.storage.anime_detail(anime_id).await {
         Ok(d) => d,
-        Err(_) => {
-            // Auto-import from AniList if not found locally (best-effort).
-            let _ = import_anime_from_anilist(state, anime_id).await;
-            // Retry — should succeed after insert above
+        // Not stored locally yet (e.g. opened from Search or Seasons): fetch it
+        // from AniList, and if that fails, say why (offline, not signed in)
+        // rather than reporting the missing row.
+        Err(_) if state.storage.fetch_anime(anime_id).await?.is_none() => {
+            import_anime_from_anilist(state, anime_id).await?;
             state.storage.anime_detail(anime_id).await?
         }
+        Err(e) => return Err(e),
     };
 
     // Backfill a missing synopsis from AniList. Shows imported via the fast
@@ -963,7 +1000,9 @@ pub async fn set_library_folders_inner(
 pub async fn scan_library_folders_inner(
     state: &EngineState,
 ) -> anyhow::Result<library_scanner::LibraryScanReport> {
-    library_scanner::scan_library_folders(&state.storage).await
+    let result = library_scanner::scan_library_folders(&state.storage).await;
+    crate::engine::library_watcher::note_scan_result(state, &result);
+    result
 }
 
 pub async fn rescan_anime_files_inner(

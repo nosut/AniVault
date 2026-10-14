@@ -120,3 +120,32 @@ fn take_quiet_dirs_respects_debounce() {
     assert!(pending.contains_key(&PathBuf::from("C:\\Lib\\Busy")));
     assert!(!pending.contains_key(&PathBuf::from("C:\\Lib\\Quiet")));
 }
+
+#[tokio::test]
+async fn an_offline_library_folder_is_reported_and_clears_when_it_returns() {
+    let state = fresh_test_state().await;
+    let dir = std::env::temp_dir().join(format!("anivault-offline-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    set_library_folders(&state.storage, vec![dir.to_string_lossy().to_string()]).await.unwrap();
+
+    run_auto_scan(&state).await;
+    let problems = state.problems.current();
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].area, "library_scan");
+    assert!(problems[0].detail.starts_with("Folder not found: "));
+
+    fs::create_dir_all(&dir).unwrap();
+    run_auto_scan(&state).await;
+    assert!(state.problems.current().is_empty());
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn a_damaged_folder_list_pauses_auto_scans_with_a_problem() {
+    let state = fresh_test_state().await;
+    state.storage.set_setting("library.folders", "not json", 1).await.unwrap();
+    run_auto_scan(&state).await;
+    let problems = state.problems.current();
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].area, "library_folders");
+}

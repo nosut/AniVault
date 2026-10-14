@@ -124,3 +124,78 @@ pub async fn initialize_engine_at(
         problems: Default::default(),
     })
 }
+
+/// Run a background worker, restarting it if it panics. Without this, one
+/// panic would stop syncing or scanning for the rest of the session with
+/// nothing on screen. Each restart is reported on the problem board.
+pub fn spawn_supervised<F, Fut>(
+    state: &EngineState,
+    name: &'static str,
+    make: F,
+) -> tauri::async_runtime::JoinHandle<()>
+where
+    F: Fn(EngineState) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    supervise_with_delay(state, name, make, std::time::Duration::from_secs(30))
+}
+
+fn supervise_with_delay<F, Fut>(
+    state: &EngineState,
+    name: &'static str,
+    make: F,
+    delay: std::time::Duration,
+) -> tauri::async_runtime::JoinHandle<()>
+where
+    F: Fn(EngineState) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let state = state.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match tauri::async_runtime::spawn(make(state.clone())).await {
+                Ok(()) => return,
+                Err(e) => {
+                    state.problems.report(
+                        crate::engine::problems::area::WORKER,
+                        format!("{name} stopped unexpectedly and was restarted."),
+                        e,
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+    })
+}
+
+#[cfg(test)]
+mod supervisor_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn a_panicking_worker_is_restarted_and_reported() {
+        let state = fresh_test_state().await;
+        let runs = Arc::new(AtomicUsize::new(0));
+        let counter = runs.clone();
+        let handle = supervise_with_delay(
+            &state,
+            "Test worker",
+            move |_state| {
+                let counter = counter.clone();
+                async move {
+                    if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                        panic!("first run fails");
+                    }
+                }
+            },
+            std::time::Duration::ZERO,
+        );
+        handle.await.unwrap();
+
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
+        let problems = state.problems.current();
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].summary, "Test worker stopped unexpectedly and was restarted.");
+    }
+}
