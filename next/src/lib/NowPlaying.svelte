@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { onMount, onDestroy } from 'svelte';
   import { confirmIdentification, getTrackingStatus, setTrackingEnabled, type TrackingStatus, type EngineEvent, type PlaybackDetectedEvent } from './api';
 
@@ -7,7 +9,12 @@
 
   let status: TrackingStatus = { active: false, watching: null };
   let lastEvent: string | null = null;
-  let error: string | null = null;
+  // The status poll clears its own failure once it succeeds again; a failed
+  // button action stays until dismissed or retried.
+  type ActionError = ExplainedError & { retry?: () => void };
+  let pollError: ExplainedError | null = null;
+  let actionError: ActionError | null = null;
+  $: shownError = actionError ?? pollError;
   let intervalId: ReturnType<typeof setInterval> | null = null;
   let loading = false;
   let lastPlaybackEvent: PlaybackDetectedEvent['PlaybackDetected'] | null = null;
@@ -46,9 +53,9 @@
     loading = true;
     try {
       status = await getTrackingStatus();
-      error = null;
+      pollError = null;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      pollError = explainError("AniVault couldn't check what's playing.", e);
     } finally {
       loading = false;
     }
@@ -69,11 +76,12 @@
 
   async function handleStart() {
     loading = true;
+    actionError = null;
     try {
       await setTrackingEnabled(true);
       startPolling();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      actionError = { ...explainError("Tracking couldn't be started.", e), retry: handleStart };
     } finally {
       loading = false;
     }
@@ -84,11 +92,12 @@
     const episode = status.watching?.episode_guess ?? 0;
     if (!filePath || episode <= 0) return;
     confirming = animeId;
+    actionError = null;
     try {
       await confirmIdentification(filePath, animeId, episode);
       lastEvent = `Confirmed: anime ${animeId} ep ${episode}`;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      actionError = { ...explainError("That show couldn't be confirmed as what's playing.", e), retry: () => handleConfirm(animeId) };
     } finally {
       confirming = null;
     }
@@ -96,12 +105,13 @@
 
   async function handleStop() {
     loading = true;
+    actionError = null;
     stopPolling();
     try {
       await setTrackingEnabled(false);
       status = { active: false, watching: null };
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      actionError = { ...explainError("Tracking couldn't be stopped.", e), retry: handleStop };
     } finally {
       loading = false;
     }
@@ -127,8 +137,15 @@
     {/if}
   </div>
 
-  {#if error}
-    <p class="error" aria-live="polite">{error}</p>
+  {#if shownError}
+    <ErrorNotice
+      compact
+      message={shownError.message}
+      details={shownError.details}
+      actionLabel="Try again"
+      on:action={() => (actionError ? actionError.retry?.() : poll())}
+      on:dismiss={() => { if (actionError) actionError = null; else pollError = null; }}
+    />
   {/if}
 
   {#if status.watching}
@@ -308,11 +325,6 @@
   .np-idle, .np-event {
     color: var(--color-muted);
     font-size: 0.85rem;
-  }
-
-  .error {
-    color: var(--color-error);
-    font-size: 0.82rem;
   }
 
   .np-autotrack {

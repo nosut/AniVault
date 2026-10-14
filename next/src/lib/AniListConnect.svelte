@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, errorCause, errorDetail, type ExplainedError } from './errors';
   import { onMount, onDestroy } from 'svelte';
   import { storeAniListToken, disconnectAniList, importAniListLibrary, connectAniListOauth, getAniListConnectionStatus, getAniListTokenInvalid } from './api';
 
@@ -6,7 +8,7 @@
   let clientId = '';
   let clientSecret = '';
   let oauthConnecting = false;
-  let oauthError: string | null = null;
+  let oauthError: ActionError | null = null;
 
   // Manual token state
   let manualToken = '';
@@ -15,17 +17,30 @@
   let tokenExpired = false;
   let statusLoading = true;
   let loading = false;
-  let error: string | null = null;
+  type ActionError = ExplainedError & { retry: () => void };
+  let error: ActionError | null = null;
+
+  // A login AniList turns down while connecting means the values typed in
+  // were wrong, not that a saved login expired.
+  function rejectedCredentials(e: unknown, message: string, retry: () => void): ActionError {
+    const raw = errorDetail(e);
+    if (errorCause(raw) === 'anilist-login' || /invalid_client|invalid_grant|invalid_request/i.test(raw)) {
+      return { message, details: raw, retry };
+    }
+    return { ...explainError("AniVault couldn't connect to AniList.", e), retry };
+  }
   let importReport: { imported: number; merged: number; skipped: number } | null = null;
 
   async function loadStatus() {
     statusLoading = true;
+    error = null;
     try {
       connected = await getAniListConnectionStatus();
       tokenExpired = !connected && (await getAniListTokenInvalid());
-    } catch {
+    } catch (e) {
       connected = false;
       tokenExpired = false;
+      error = { ...explainError("AniVault couldn't check your AniList connection.", e), retry: loadStatus };
     } finally {
       statusLoading = false;
     }
@@ -48,7 +63,9 @@
       connected = true;
       tokenExpired = false;
     } catch (e) {
-      oauthError = e instanceof Error ? e.message : String(e);
+      oauthError = rejectedCredentials(e,
+        'AniList didn’t accept that client ID and secret. Check both values against your AniList developer settings, then try again.',
+        handleOAuthConnect);
     } finally {
       oauthConnecting = false;
     }
@@ -63,7 +80,9 @@
       connected = true;
       tokenExpired = false;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = rejectedCredentials(e,
+        'AniList didn’t accept that token. Check that you copied all of it, then try again.',
+        handleConnect);
       connected = false;
     } finally {
       loading = false;
@@ -97,7 +116,7 @@
       manualToken = '';
       importReport = null;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = { ...explainError('AniList couldn’t be disconnected.', e), retry: handleDisconnect };
     }
   }
 
@@ -108,7 +127,7 @@
     try {
       importReport = await importAniListLibrary();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = { ...explainError('Your AniList library couldn’t be imported.', e), retry: handleImport };
       // The import may have just found the token expired.
       await loadStatus();
     } finally {
@@ -121,7 +140,7 @@
   <p class="eyebrow">AniList</p>
 
   {#if error}
-    <p class="error" aria-live="polite">{error}</p>
+    <ErrorNotice compact message={error.message} details={error.details} actionLabel="Try again" on:action={error.retry} on:dismiss={() => (error = null)} />
   {/if}
 
   {#if statusLoading}
@@ -131,7 +150,7 @@
       <p class="error" role="alert">AniList rejected the saved login (tokens expire after a year). Reconnect below; queued updates will sync afterwards.</p>
     {/if}
     {#if oauthError}
-      <p class="error" role="alert">{oauthError}</p>
+      <ErrorNotice compact message={oauthError.message} details={oauthError.details} actionLabel="Try again" on:action={oauthError.retry} on:dismiss={() => (oauthError = null)} />
     {/if}
 
     <div class="oauth-section">

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { confirmIdentification, type MatchCandidate, type EngineEvent } from './api';
 
   export let events: EngineEvent[] = [];
@@ -8,7 +10,7 @@
   let filePath: string | null = null;
   let episodeGuess: number | null = null;
   let confirmed: string | null = null;
-  let error: string | null = null;
+  let error: (ExplainedError & { retry: () => void }) | null = null;
   let loading = false;
 
   $: {
@@ -38,7 +40,7 @@
       confirmed = `Confirmed: anime ${animeId} episode ${episode}`;
       onConfirmed();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = { ...explainError("That episode couldn't be confirmed.", e), retry: () => confirm(animeId, episode) };
     } finally {
       loading = false;
     }
@@ -50,7 +52,7 @@
     <p class="eyebrow">Recognition</p>
 
     {#if error}
-      <p class="error">{error}</p>
+      <ErrorNotice compact message={error.message} details={error.details} actionLabel="Try again" on:action={error.retry} on:dismiss={() => (error = null)} />
     {/if}
 
     {#if confirmed}
@@ -99,7 +101,6 @@
 
   .rc-hint { color: var(--color-muted); font-size: 0.82rem; }
   .confirm-msg { color: var(--color-accent); font-size: 0.85rem; }
-  .error { color: var(--color-error); font-size: 0.82rem; }
 
   .rc-list { display: grid; gap: 0.5rem; padding: 0; margin: 0; }
   .rc-item {

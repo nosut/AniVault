@@ -1,9 +1,16 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { onMount, onDestroy } from 'svelte';
   import { getSyncStatus, retryBlockedSync, triggerSync, type AniListSyncStatus, type SyncResult } from './api';
 
   let status: AniListSyncStatus | null = null;
-  let error: string | null = null;
+  // The status poll clears its own failure once it succeeds again; a failed
+  // button action stays until dismissed or retried.
+  type ActionError = ExplainedError & { retry: () => void };
+  let pollError: ExplainedError | null = null;
+  let actionError: ActionError | null = null;
+  $: error = actionError ?? pollError;
   let loading = false;
   let syncing = false;
   let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -15,9 +22,9 @@
     loading = true;
     try {
       status = await getSyncStatus();
-      error = null;
+      pollError = null;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      pollError = explainError('The AniList sync status couldn’t be checked.', e);
     } finally {
       loading = false;
     }
@@ -25,13 +32,14 @@
 
   async function handleSyncNow() {
     syncing = true;
+    actionError = null;
     if (syncResultTimeout) clearTimeout(syncResultTimeout);
     try {
       syncResult = await triggerSync();
       await refresh();
       syncResultTimeout = setTimeout(() => { syncResult = null; }, 5000);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      actionError = { ...explainError('Your changes couldn’t be synced to AniList.', e), retry: handleSyncNow };
     } finally {
       syncing = false;
     }
@@ -45,7 +53,7 @@
       await retryBlockedSync();
       await handleSyncNow();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      actionError = { ...explainError('The blocked updates couldn’t be retried.', e), retry: handleRetryBlocked };
     } finally {
       retrying = false;
     }
@@ -79,7 +87,14 @@
   </div>
 
   {#if error}
-    <p class="error" aria-live="polite">{error}</p>
+    <ErrorNotice
+      compact
+      message={error.message}
+      details={error.details}
+      actionLabel="Try again"
+      on:action={() => (actionError ? actionError.retry() : refresh())}
+      on:dismiss={() => { if (actionError) actionError = null; else pollError = null; }}
+    />
   {/if}
 
   {#if status}
@@ -189,11 +204,6 @@
     color: var(--color-muted);
     font-size: 0.82rem;
     margin: 0;
-  }
-
-  .error {
-    color: var(--color-error);
-    font-size: 0.82rem;
   }
 
   .blocked-row {

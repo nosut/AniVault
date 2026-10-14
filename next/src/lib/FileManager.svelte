@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { onMount, onDestroy } from 'svelte';
   import { ChevronRight, ChevronDown } from 'lucide-svelte';
   import {
@@ -33,7 +35,11 @@
 
   let entries: KnownFileEntry[] = [];
   let loading = true;
-  let error: string | null = null;
+  let error: ExplainedError | null = null;
+  // Failures of actions on the list. Kept apart from `error` so the list stays
+  // on screen; each carries the retry for the action that failed.
+  type ActionError = ExplainedError & { retry?: () => void };
+  let actionError: ActionError | null = null;
 
   export let events: EngineEvent[] = [];
 
@@ -64,7 +70,7 @@
   let mapSelected: MapCandidate | null = null;
   let mapOffset = 0;
   let mapSaving = false;
-  let mapError: string | null = null;
+  let mapError: ActionError | null = null;
 
   const filterDefs: { id: Filter; label: string }[] = [
     { id: 'all', label: 'All' },
@@ -79,7 +85,7 @@
     try {
       entries = await listKnownFiles(ALL_KNOWN_FILES);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = explainError("Your file list couldn't be loaded.", e);
     } finally {
       loading = false;
     }
@@ -220,12 +226,13 @@
   async function handleRematch() {
     rematching = true;
     statusMsg = null;
+    actionError = null;
     try {
       const n = await rematchUnmappedFiles();
       await load();
       statusMsg = `${n} files auto-matched`;
     } catch (e) {
-      statusMsg = e instanceof Error ? e.message : String(e);
+      actionError = { ...explainError("Automatic matching didn't finish.", e), retry: handleRematch };
     } finally {
       rematching = false;
     }
@@ -234,7 +241,7 @@
   async function handleDeepMatch() {
     deepMatching = true;
     statusMsg = null;
-    error = null;
+    actionError = null;
     try {
       const r = await deepMatchViaAnilist();
       await load();
@@ -244,7 +251,7 @@
           : '';
       statusMsg = `Matched ${r.groups_matched} of ${r.groups_total} series (${r.files_mapped} files).${unmatchedNote}`;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      actionError = { ...explainError('Matching with AniList didn’t finish.', e), retry: handleDeepMatch };
     } finally {
       deepMatching = false;
     }
@@ -256,7 +263,7 @@
       await setKnownFileIgnored(e.file_path, ignored);
       await load();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      actionError = { ...explainError("That file's ignore setting couldn't be changed.", err), retry: () => handleIgnoreOne(e, ignored) };
     }
   }
   // Only one row can be armed at a time; auto-expires so a stray click minutes
@@ -285,7 +292,7 @@
       selected = next;
       await load();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      actionError = { ...explainError("That file couldn't be removed from the list.", err), retry: () => handleRemoveOne(e) };
     }
   }
 
@@ -297,7 +304,7 @@
       const n = await setKnownFilesIgnored(paths, ignored);
       await afterMutation(`${n} files ${ignored ? 'ignored' : 'un-ignored'}`);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      actionError = { ...explainError("The selected files' ignore setting couldn't be changed.", err), retry: () => bulkIgnore(ignored) };
     }
   }
 
@@ -324,7 +331,7 @@
       const n = await deleteKnownFiles(paths);
       await afterMutation(`${n} files removed`);
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      actionError = { ...explainError("The selected files couldn't be removed from the list.", err), retry: bulkRemove };
     }
   }
 
@@ -369,7 +376,7 @@
         mapResults = res.map((r) => ({ anime_id: r.anime_id, title: r.title, from_anilist: false }));
       }
     } catch (err) {
-      mapError = err instanceof Error ? err.message : String(err);
+      mapError = { ...explainError("The search didn't go through.", err), retry: handleMapSearch };
     } finally {
       mapSearching = false;
     }
@@ -400,7 +407,7 @@
       closeMap();
       await afterMutation(`${n} files mapped to ${target.title}`);
     } catch (err) {
-      mapError = err instanceof Error ? err.message : String(err);
+      mapError = { ...explainError(`The selected files couldn't be mapped to ${target.title}.`, err), retry: applyMap };
     } finally {
       mapSaving = false;
     }
@@ -427,6 +434,9 @@
     permanently.
   </p>
 
+  {#if actionError}
+    <ErrorNotice compact message={actionError.message} details={actionError.details} actionLabel={actionError.retry ? 'Try again' : null} on:action={() => actionError?.retry?.()} on:dismiss={() => (actionError = null)} />
+  {/if}
   {#if statusMsg}
     <p class="success-msg">{statusMsg}</p>
   {/if}
@@ -526,7 +536,9 @@
           </button>
           <button class="mini-btn" on:click={closeMap}>Cancel</button>
         </div>
-        {#if mapError}<p class="error">{mapError}</p>{/if}
+        {#if mapError}
+          <ErrorNotice compact message={mapError.message} details={mapError.details} actionLabel="Try again" on:action={() => mapError?.retry?.()} on:dismiss={() => (mapError = null)} />
+        {/if}
       </div>
     {/if}
   {/if}
@@ -534,7 +546,7 @@
   {#if loading}
     <p class="muted">Loading…</p>
   {:else if error}
-    <div class="error-row"><p class="error">{error}</p><button class="btn-retry" on:click={load}>Retry</button></div>
+    <ErrorNotice compact {...error} actionLabel="Try again" on:action={load} on:dismiss={() => (error = null)} />
   {:else if entries.length === 0}
     <p class="muted">No indexed files yet. Add folders in the Library tab and run a scan.</p>
   {:else if groups.length === 0}
@@ -614,8 +626,6 @@
   h3 { margin: 0; font-size: 1rem; font-weight: 700; color: var(--color-text); }
   .hint { margin: 0; font-size: 0.78rem; color: var(--color-muted); }
   .muted { color: var(--color-muted); font-size: 0.85rem; margin: 0; }
-  .error { color: var(--color-error); font-size: 0.82rem; margin: 0; }
-  .error-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
   .success-msg { color: var(--color-success); font-size: 0.82rem; margin: 0; }
 
   .toolbar { display: grid; gap: 0.6rem; }
@@ -722,11 +732,6 @@
   }
   .action-btn:hover:not(:disabled) { background: rgba(var(--color-accent-rgb), 0.22); }
   .action-btn:disabled { opacity: 0.45; cursor: default; }
-
-  .btn-retry {
-    border: 1px solid rgba(var(--color-accent-rgb), 0.35); border-radius: 999px; padding: 0.35rem 0.75rem;
-    font-size: 0.78rem; cursor: pointer; background: rgba(var(--color-accent-rgb), 0.18); color: #e9eefc; font-family: inherit;
-  }
 
   .form-input {
     border: 1px solid rgba(var(--color-accent-rgb), 0.25); border-radius: 8px; padding: 0.5rem 0.7rem;
