@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
@@ -11,7 +13,7 @@
   let entries: CalendarEntry[] = [];
   let stats: LibraryStats | null = null;
   let loading = true;
-  let error: string | null = null;
+  let error: ExplainedError | null = null;
 
   // The browsed month is session state, not a saved preference: leaving the
   // calendar for another view and coming back should keep the month you were
@@ -68,7 +70,7 @@
     loading = true; error = null;
     try {
       [entries, stats] = await Promise.all([getCalendar(), getLibraryStats()]);
-    } catch(e) { error = e instanceof Error ? e.message : String(e); }
+    } catch(e) { error = explainError("The airing calendar couldn't be loaded.", e); }
     finally { loading = false; }
   }
 
@@ -205,7 +207,7 @@
   {#if loading}
     <div class="cal-skeleton">{#each Array(6) as _}<div class="skeleton-card"></div>{/each}</div>
   {:else if error}
-    <div class="message error"><p>{error}</p><button class="action-btn" on:click={load}>Retry</button></div>
+    <ErrorNotice {...error} actionLabel="Try again" on:action={load} on:dismiss={() => (error = null)} />
   {:else if viewMode === 'month'}
     <div class="cal-weekdays">
       {#each dayNames as day}

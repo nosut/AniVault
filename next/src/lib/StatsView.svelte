@@ -1,15 +1,17 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { onMount } from 'svelte';
   import { getStatistics, type AnimeStats } from './api';
 
   let stats: AnimeStats | null = null;
   let loading = true;
-  let error: string | null = null;
+  let error: ExplainedError | null = null;
 
   async function load() {
     loading = true; error = null;
     try { stats = await getStatistics(); }
-    catch (e) { error = e instanceof Error ? e.message : String(e); }
+    catch (e) { error = explainError("Your stats couldn't be loaded.", e); }
     finally { loading = false; }
   }
 
@@ -29,7 +31,7 @@
       {#each Array(4) as _}<div class="skeleton-card"></div>{/each}
     </div>
   {:else if error}
-    <div class="message error" role="alert"><p>{error}</p><button class="action-btn" on:click={load}>Retry</button></div>
+    <ErrorNotice {...error} actionLabel="Try again" on:action={load} on:dismiss={() => (error = null)} />
   {:else if stats}
     <div class="summary-grid">
       <div class="stat-card"><div class="stat-value">{stats.total_anime}</div><div class="stat-label">Total Anime</div></div>
@@ -79,6 +81,4 @@
   .skeleton-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
   .skeleton-card { height: 5rem; border-radius: 10px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.7} }
-  .message.error { color: var(--color-error); padding: 1rem; border: 1px solid rgba(var(--color-error-rgb),0.2); border-radius: 10px; background: rgba(var(--color-error-rgb),0.06); }
-  .action-btn { border: 1px solid rgba(var(--color-accent-rgb),0.3); border-radius: 999px; padding: 0.4rem 0.9rem; background: rgba(var(--color-accent-rgb),0.1); color: var(--color-text); cursor: pointer; margin-top: 0.5rem; }
 </style>

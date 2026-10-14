@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { getPref, setPref } from './prefs';
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
@@ -38,7 +40,10 @@
   let future = false;
   let entries: (SeasonAnimeEntry | FutureAnimeEntry)[] = [];
   let loading = true;
-  let error: string | null = null;
+  let error: ExplainedError | null = null;
+  // A failed add keeps the season on screen; it gets its own notice with a
+  // retry for that show.
+  let addError: (ExplainedError & { retry: () => void }) | null = null;
   let libraryIds = new Set<number>();
 
   // Ids flagged as added since the last visit. Held in component state and
@@ -70,7 +75,7 @@
         : await getSeasonAnime(season, year, genre || undefined);
       loaded = true;
     }
-    catch(e) { error = e instanceof Error ? e.message : String(e); }
+    catch(e) { error = explainError("This season's shows couldn't be loaded.", e); }
     finally { loading = false; }
     // Not awaited: the diff is a convenience layered on top of the grid and
     // must never make a slow or lock-contended diff_season call keep the
@@ -106,6 +111,7 @@
   }
 
   async function handleAddToList(animeId: number, title: string) {
+    addError = null;
     try {
       // Import the anime locally first — list_entry has a foreign key to the
       // anime table, so adding a show straight from AniList would otherwise fail.
@@ -114,7 +120,12 @@
       await updateListEntry(animeId, { status: 'plan_to_watch' });
       libraryIds.add(animeId);
       libraryIds = new Set(libraryIds);
-    } catch(e) { error = e instanceof Error ? e.message : String(e); }
+    } catch(e) {
+      addError = {
+        ...explainError(`${title || 'That show'} couldn't be added to Plan to Watch.`, e),
+        retry: () => handleAddToList(animeId, title),
+      };
+    }
   }
 
   async function handleQuickAdd(animeId: number) {
@@ -194,10 +205,13 @@
     </div>
   </div>
 
+  {#if addError}
+    <ErrorNotice message={addError.message} details={addError.details} actionLabel="Try again" on:action={addError.retry} on:dismiss={() => (addError = null)} />
+  {/if}
   {#if loading}
     <div class="poster-grid">{#each Array(12) as _}<div class="skeleton-poster"></div>{/each}</div>
   {:else if error}
-    <div class="message error"><p>{error}</p><button class="action-btn" on:click={load}>Retry</button></div>
+    <ErrorNotice {...error} actionLabel="Try again" on:action={load} on:dismiss={() => (error = null)} />
   {:else if entries.length === 0}
     <p class="empty">{future ? 'No far-future or TBA announcements found.' : 'No anime found for this season.'}</p>
   {:else}
@@ -260,6 +274,4 @@
   .skeleton-poster { aspect-ratio: 3/4; border-radius: 10px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.7} }
   .empty { color: var(--color-muted); text-align: center; padding: 2rem; }
-  .message.error { color: var(--color-error); padding: 1rem; border: 1px solid rgba(var(--color-error-rgb),0.2); border-radius: 10px; background: rgba(var(--color-error-rgb),0.06); }
-  .action-btn { border: 1px solid rgba(var(--color-accent-rgb),0.3); border-radius: 999px; padding: 0.4rem 0.9rem; background: rgba(var(--color-accent-rgb),0.1); color: var(--color-text); cursor: pointer; margin-top: 0.5rem; }
 </style>

@@ -6,6 +6,8 @@
 </script>
 
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
@@ -59,7 +61,7 @@
   let statusFilter: string | null = loadPersistedFilter();
   let entries: LibraryEntry[] = [];
   let loading = false;
-  let error = '';
+  let error: ExplainedError | null = null;
   let episodeFilesMap = new Map<number, FileIndexEntry[]>();
   let stats: LibraryStats | null = null;
 
@@ -260,7 +262,7 @@
 
   async function load() {
     loading = true;
-    error = '';
+    error = null;
     try {
       // A search spans the whole library — ignore the selected category tab so
       // matches from every status show up. With no query, the tab filters as usual.
@@ -278,7 +280,7 @@
         loadEpisodeFiles(results);
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = explainError("Your library couldn't be loaded.", e);
     } finally {
       loading = false;
       dispatch('loaded');
@@ -740,10 +742,7 @@
   </div>
 
   {#if error}
-    <div class="message error" role="alert">
-      <p>{error}</p>
-      <button type="button" class="retry" on:click={load}>Retry</button>
-    </div>
+    <ErrorNotice {...error} actionLabel="Try again" on:action={load} on:dismiss={() => (error = null)} />
   {/if}
 
   {#if viewMode === 'grid'}
@@ -1564,39 +1563,6 @@
   .empty {
     color: var(--color-muted);
     margin: 0;
-  }
-
-  .message {
-    border: 1px solid rgba(var(--color-error-rgb), 0.35);
-    border-radius: var(--radius-card);
-    background: rgba(var(--color-error-rgb), 0.08);
-    padding: 1rem 1.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .message p {
-    margin: 0;
-    color: var(--color-error);
-  }
-
-  .retry {
-    border: 1px solid rgba(var(--color-error-rgb), 0.45);
-    border-radius: 999px;
-    background: rgba(var(--color-error-rgb), 0.14);
-    color: var(--color-error);
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    font-family: var(--font-ui);
-    font-weight: 600;
-    font-size: 0.85rem;
-  }
-
-  .retry:hover {
-    background: rgba(var(--color-error-rgb), 0.22);
   }
 
   .skeleton-row td {

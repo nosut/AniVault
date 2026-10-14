@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { onMount } from 'svelte';
   import { getWatchHistory, type WatchHistoryEntry } from './api';
 
@@ -7,7 +9,7 @@
   export let offset = 0;
   export let hasMore = true;
   let loading = true;
-  let error: string | null = null;
+  let error: ExplainedError | null = null;
   const pageSize = 50;
 
   async function load(reset = false) {
@@ -21,7 +23,7 @@
       hasMore = newEntries.length === pageSize;
       offset += newEntries.length;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = explainError("Your watch history couldn't be loaded.", e);
     } finally {
       loading = false;
     }
@@ -55,7 +57,7 @@
       {#each Array(8) as _}<div class="skeleton-row"></div>{/each}
     </div>
   {:else if error}
-    <div class="message error" role="alert"><p>{error}</p><button class="action-btn" on:click={() => load(true)}>Retry</button></div>
+    <ErrorNotice {...error} actionLabel="Try again" on:action={() => load(true)} on:dismiss={() => (error = null)} />
   {:else if entries.length === 0}
     <p class="empty">No watch history yet. Start tracking anime to build history.</p>
   {:else}
@@ -110,7 +112,6 @@
   .load-more { display: block; margin: 0.5rem auto; border: 1px solid rgba(var(--color-accent-rgb),0.2); border-radius: 999px; padding: 0.5rem 1.5rem; background: transparent; color: var(--color-muted); cursor: pointer; font-size: 0.85rem; }
   .load-more:hover { background: rgba(var(--color-accent-rgb),0.08); color: var(--color-text); }
   .empty { color: var(--color-muted); text-align: center; padding: 2rem; }
-  .message.error { color: var(--color-error); padding: 1rem; border: 1px solid rgba(var(--color-error-rgb),0.2); border-radius: 10px; background: rgba(var(--color-error-rgb),0.06); }
   .skeleton-list { display: grid; gap: 0.5rem; }
   .skeleton-row { height: 2rem; border-radius: 6px; background: rgba(255,255,255,0.04); animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.7} }

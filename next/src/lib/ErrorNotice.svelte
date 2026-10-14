@@ -7,6 +7,8 @@
   export let message: string;
   export let details: string;
   export let actionLabel: string | null = null;
+  /** Smaller, for errors shown inside a card, form row or dialog. */
+  export let compact = false;
 
   const dispatch = createEventDispatcher<{ action: null; dismiss: null }>();
 
@@ -22,7 +24,7 @@
   }
 </script>
 
-<div class="error-notice" role="alert">
+<div class="error-notice" class:compact role="alert">
   <div class="row">
     <div class="body">
       <span class="message">{message}</span>
@@ -53,12 +55,19 @@
     z-index: 7;
     margin-bottom: 1rem;
     padding: 0.5rem 0.9rem;
-    border: 1px solid rgba(var(--color-warning-rgb), 0.45);
+    border: 1px solid rgba(var(--color-error-rgb), 0.45);
     border-radius: 10px;
-    background: rgba(var(--color-warning-rgb), 0.12);
+    background: rgba(var(--color-error-rgb), 0.12);
     font-size: 0.85rem;
     color: var(--color-text);
   }
+
+  .compact {
+    margin: 0.5rem 0 0;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.8rem;
+  }
+  .compact .message { flex-basis: 12rem; }
 
   .row {
     display: flex;
@@ -83,16 +92,16 @@
   }
 
   .action, .toggle {
-    border: 1px solid rgba(var(--color-warning-rgb), 0.45);
+    border: 1px solid rgba(var(--color-error-rgb), 0.45);
     border-radius: 999px;
     padding: 0.25rem 0.75rem;
-    background: rgba(var(--color-warning-rgb), 0.18);
+    background: rgba(var(--color-error-rgb), 0.18);
     color: var(--color-text);
     font-size: 0.78rem;
     cursor: pointer;
   }
   .toggle { background: transparent; }
-  .action:hover, .toggle:hover { background: rgba(var(--color-warning-rgb), 0.3); }
+  .action:hover, .toggle:hover { background: rgba(var(--color-error-rgb), 0.3); }
 
   .dismiss {
     border: none;
