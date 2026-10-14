@@ -706,9 +706,10 @@
 
           {#if libraryFoldersLoading && libraryFolders.length === 0}
             <p class="muted">Loading…</p>
-          {:else if libraryFoldersError && libraryFolders.length === 0}
-            <ErrorNotice compact {...libraryFoldersError} on:dismiss={() => (libraryFoldersError = null)} />
           {:else}
+            {#if libraryFoldersError && libraryFolders.length === 0}
+              <ErrorNotice compact {...libraryFoldersError} on:dismiss={() => (libraryFoldersError = null)} />
+            {/if}
             {#if libraryFolders.length === 0}
               <p class="muted">No folders configured. Add a folder below.</p>
             {:else}

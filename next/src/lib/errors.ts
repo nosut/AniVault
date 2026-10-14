@@ -24,6 +24,7 @@ export type ErrorCause =
   | 'no-old-data'
   | 'drive-root'
   | 'startup-setting'
+  | 'damaged-setting'
   | 'unknown';
 
 export interface ExplainedError {
@@ -65,6 +66,7 @@ export function errorCause(raw: string): ErrorCause {
   if (/No v1 data found/i.test(raw)) return 'no-old-data';
   if (/Refusing to scan a filesystem root/i.test(raw)) return 'drive-root';
   if (/registry key/i.test(raw)) return 'startup-setting';
+  if (/saved .* is damaged/i.test(raw)) return 'damaged-setting';
 
   // HTTP responses.
   if (status === 401 || status === 403) return sonarr ? 'sonarr-rejected' : 'anilist-login';
@@ -107,6 +109,7 @@ const ADVICE: Record<ErrorCause, string> = {
   'no-old-data': 'No data from the old version of AniVault was found on this PC.',
   'drive-root': 'Choose a specific folder rather than a whole drive.',
   'startup-setting': "Windows didn't let AniVault change its startup setting. Try again, or check whether security software is blocking it.",
+  'damaged-setting': "That saved setting is damaged. Set it again to replace it.",
   'unknown': 'Try again. If it keeps happening, Show details has the technical information to report.',
 };
 

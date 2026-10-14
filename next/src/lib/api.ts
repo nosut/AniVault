@@ -321,6 +321,20 @@ export function importDatabaseFromFile(invokeFn: InvokeFn = tauriInvoke): Promis
   return invokeFn<MigrationReport | null>('import_database_from_file');
 }
 
+/** A background failure the engine keeps until the work recovers. */
+export interface BackgroundProblem {
+  area: string;
+  /** What didn't happen, in plain words. */
+  summary: string;
+  /** The raw error. */
+  detail: string;
+  since: number;
+}
+
+export function getBackgroundProblems(invokeFn: InvokeFn = tauriInvoke): Promise<BackgroundProblem[]> {
+  return invokeFn<BackgroundProblem[]>('get_background_problems');
+}
+
 export function getSetting<T>(key: string, invokeFn: InvokeFn = tauriInvoke): Promise<T | null> {
   return invokeFn<T | null>('get_setting', { key });
 }

@@ -1319,9 +1319,16 @@ pub async fn delete_anime_files_inner(
         .collect();
     let report = remove_files_with(&paths, |p| trash::delete(p).map_err(|e| e.to_string()));
     state.storage.delete_file_indexes(&report.deleted).await?;
-    let roots = library_scanner::get_library_folders(&state.storage).await.unwrap_or_default();
-    for dir in empty_parent_dirs(&report.deleted, &roots) {
-        let _ = std::fs::remove_dir(&dir);
+    // Tidying up emptied folders needs the library roots, so it never removes
+    // a root itself. Without them, leave every folder alone.
+    match library_scanner::get_library_folders(&state.storage).await {
+        Ok(roots) => {
+            for dir in empty_parent_dirs(&report.deleted, &roots) {
+                // Best effort: a folder that isn't empty or can't be removed stays.
+                let _ = std::fs::remove_dir(&dir);
+            }
+        }
+        Err(e) => tracing::warn!("skipping empty-folder cleanup, library folders unavailable: {e}"),
     }
     Ok(report)
 }
@@ -2769,6 +2776,14 @@ pub async fn set_setting(
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
     set_setting_inner(&key, value, &state).await
+}
+
+/// Background problems the user should see; the frontend polls this.
+#[tauri::command]
+pub async fn get_background_problems(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<crate::engine::problems::Problem>, String> {
+    Ok(state.problems.current())
 }
 
 #[tauri::command]

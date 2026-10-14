@@ -12,7 +12,11 @@ const VIDEO_EXTENSIONS: &[&str] = &["mkv", "mp4", "avi", "mov", "wmv", "flv", "w
 pub async fn get_library_folders(storage: &Storage) -> anyhow::Result<Vec<String>> {
     let raw = storage.get_setting(LIBRARY_FOLDERS_KEY).await?;
     match raw {
-        Some(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
+        // A damaged value is an error, not "no folders": an empty list makes
+        // every scan a no-op and lifts the guard that keeps library roots
+        // from being deleted as empty folders.
+        Some(json) => serde_json::from_str(&json)
+            .map_err(|e| anyhow::anyhow!("The saved library folder list is damaged: {e}")),
         None => Ok(vec![]),
     }
 }
@@ -369,7 +373,7 @@ pub async fn rescan_anime_dirs(
     //    drive) is currently reachable.
     let missing: Vec<String> = files
         .into_iter()
-        .filter(|p| !Path::new(p).exists() && library_root_online(p, &lib_folders))
+        .filter(|p| confirmed_missing(p) && library_root_online(p, &lib_folders))
         .collect();
     if !missing.is_empty() {
         report.removed += missing.len() as i64;
@@ -511,6 +515,20 @@ pub async fn detect_mapping_conflicts(
     Ok(conflicts)
 }
 
+/// True only when Windows reports the file as not found. `Path::exists` is
+/// false for *any* error, so a permission problem or a share that is briefly
+/// unreachable would read as "deleted" and prune the row, manual mappings
+/// included.
+pub(crate) fn confirmed_missing(path: &str) -> bool {
+    matches!(std::fs::metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+}
+
+/// A folder that can be listed right now. Stronger than `exists`, which is
+/// true for a folder whose contents can't be read.
+fn readable_dir(path: &Path) -> bool {
+    std::fs::read_dir(path).is_ok()
+}
+
 /// Is the library storage holding `file_path` currently reachable? Prevents
 /// pruning when a whole drive/library folder is offline (every file under it
 /// would look "missing"). A file is prunable when the configured library folder
@@ -521,7 +539,7 @@ fn library_root_online(file_path: &str, lib_folders: &[String]) -> bool {
     for folder in lib_folders {
         if file_path.starts_with(&dir_prefix(folder)) {
             under_a_library_folder = true;
-            if Path::new(folder).exists() {
+            if readable_dir(Path::new(folder)) {
                 return true;
             }
         }
@@ -538,9 +556,9 @@ fn library_root_online(file_path: &str, lib_folders: &[String]) -> bool {
             // Windows drive such as "Y:" → check that "Y:\" is mounted.
             let mut root = prefix.as_os_str().to_os_string();
             root.push(std::path::MAIN_SEPARATOR.to_string());
-            Path::new(&root).exists()
+            readable_dir(Path::new(&root))
         }
-        _ => path.ancestors().last().map(|r| r.exists()).unwrap_or(false),
+        _ => path.ancestors().last().map(readable_dir).unwrap_or(false),
     }
 }
 
@@ -655,9 +673,11 @@ async fn scan_dirs(
         let indexed_paths = storage.file_paths_under(&prefix).await?;
         let missing: Vec<String> = indexed_paths
             .into_iter()
-            .filter(|p| !Path::new(p).exists())
+            .filter(|p| confirmed_missing(p))
             .collect();
-        if !missing.is_empty() {
+        // Re-check the folder right before deleting: the scan can take long
+        // enough for a network share to drop out part way through.
+        if !missing.is_empty() && readable_dir(path) {
             report.removed += missing.len() as i64;
             storage.delete_file_indexes(&missing).await?;
         }
@@ -813,6 +833,19 @@ pub fn open_containing_folder(path: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn confirmed_missing_only_for_a_file_that_is_not_there() {
+        let dir = std::env::temp_dir().join(format!("anivault-missing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let present = dir.join("ep01.mkv");
+        std::fs::write(&present, b"x").unwrap();
+        assert!(!super::confirmed_missing(present.to_str().unwrap()));
+        assert!(super::confirmed_missing(dir.join("gone.mkv").to_str().unwrap()));
+        // A deleted season folder still counts as gone.
+        assert!(super::confirmed_missing(dir.join("Season 9").join("ep01.mkv").to_str().unwrap()));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     use super::*;
     use std::path::PathBuf;
 

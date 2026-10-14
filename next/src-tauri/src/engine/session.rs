@@ -276,7 +276,9 @@ pub async fn process_scan_result(
                 hist_path,
                 "auto-detect",
             )
-            .await;
+            .await
+            // Already on the problem board; tracking carries on.
+            .ok();
         }
     }
 
@@ -303,6 +305,11 @@ pub async fn process_scan_result(
 /// the AniList sync, a `ProgressAdvanced` event and a toast. A no-op for an
 /// episode at or below the recorded progress, so repeated ticks (or a repeated
 /// confirm) write once. Returns whether progress advanced.
+///
+/// A failed write is an error, never a silent `true`: the toast and
+/// `ProgressAdvanced` only follow progress that was actually saved. Failures
+/// also go on the problem board, since automatic tracking has no one waiting
+/// on the result.
 pub async fn record_progress(
     state: &EngineState,
     anime_id: i64,
@@ -310,30 +317,69 @@ pub async fn record_progress(
     player: Option<&str>,
     path: Option<&str>,
     source: &str,
-) -> bool {
+) -> anyhow::Result<bool> {
+    use crate::engine::problems::area;
+    let result = record_progress_inner(state, anime_id, episode, player, path, source).await;
+    if let Err(e) = &result {
+        state.problems.report(area::PROGRESS, "Your watch progress couldn't be saved.", e);
+    }
+    result
+}
+
+async fn record_progress_inner(
+    state: &EngineState,
+    anime_id: i64,
+    episode: i32,
+    player: Option<&str>,
+    path: Option<&str>,
+    source: &str,
+) -> anyhow::Result<bool> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64;
 
-    let old_entry = state.storage.get_list_entry(anime_id).await.ok().flatten();
+    // A failed read must not count as "no progress yet": that would add a
+    // duplicate history row and flip a Completed show back to Watching.
+    let old_entry = state.storage.get_list_entry(anime_id).await?;
     let old_episode = old_entry.as_ref().map(|e| e.watched_episodes).unwrap_or(0);
     let old_status = old_entry.map(|e| e.status);
 
     if episode <= old_episode {
-        return false;
+        return Ok(false);
     }
 
-    let _ = state
+    state
         .storage
         .upsert_list_entry_progress(anime_id, "watching", episode, now)
-        .await;
-    let _ = state
+        .await?;
+    // Progress is saved from here on; a failure below is reported but still
+    // lets the rest (AniList sync, the toast) go ahead.
+    let mut complete = true;
+    if let Err(e) = state
         .storage
         .append_watch_history(anime_id, episode, path, player, source, now)
-        .await;
+        .await
+    {
+        state.problems.report(
+            crate::engine::problems::area::PROGRESS,
+            "Your progress was saved, but this episode couldn't be added to your watch history.",
+            e,
+        );
+        complete = false;
+    }
     // Auto-complete when playback reaches the episode cap.
-    let _ = state.storage.auto_complete_if_capped(anime_id).await;
+    if let Err(e) = state.storage.auto_complete_if_capped(anime_id).await {
+        state.problems.report(
+            crate::engine::problems::area::PROGRESS,
+            "Your progress was saved, but the show couldn't be marked Completed.",
+            e,
+        );
+        complete = false;
+    }
+    if complete {
+        state.problems.resolve(crate::engine::problems::area::PROGRESS);
+    }
     // Covers both auto-complete and a dropped show flipped back to watching.
     state.announce_status_change(anime_id, old_status).await;
     // Push status + progress back to AniList.
@@ -347,7 +393,7 @@ pub async fn record_progress(
     });
 
     notify_progress(state, anime_id, episode).await;
-    true
+    Ok(true)
 }
 
 /// Show a desktop toast when playback auto-advances an episode. Respects the

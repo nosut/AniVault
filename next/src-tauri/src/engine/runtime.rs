@@ -18,6 +18,7 @@ pub async fn fresh_test_state() -> EngineState {
         tracking_paused: Arc::new(AtomicBool::new(false)),
         app_handle: None,
         library_folders_changed: Arc::new(tokio::sync::Notify::new()),
+        problems: Default::default(),
     }
 }
 
@@ -32,6 +33,8 @@ pub struct EngineState {
     /// Notified whenever the configured library folders change, so the
     /// filesystem watcher can rebuild its watch list.
     pub library_folders_changed: Arc<tokio::sync::Notify>,
+    /// Background failures the user should see; see `problems`.
+    pub problems: crate::engine::problems::ProblemBoard,
 }
 
 impl EngineState {
@@ -118,5 +121,6 @@ pub async fn initialize_engine_at(
         tracking_paused: Arc::new(AtomicBool::new(false)),
         app_handle,
         library_folders_changed: Arc::new(tokio::sync::Notify::new()),
+        problems: Default::default(),
     })
 }

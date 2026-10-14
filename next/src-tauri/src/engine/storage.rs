@@ -2945,6 +2945,12 @@ pub struct ContinueWatchingRow {
 pub struct Tests;
 
 impl Tests {
+    /// Run raw SQL against a test database, e.g. to break a table so a test
+    /// can check how a write failure is reported.
+    pub async fn exec(storage: &Storage, sql: &str) {
+        sqlx::query(sql).execute(&storage.pool).await.unwrap();
+    }
+
     pub async fn new_in_memory() -> Storage {
         let storage = Storage::connect("sqlite::memory:").await.unwrap();
         storage.migrate().await.unwrap();

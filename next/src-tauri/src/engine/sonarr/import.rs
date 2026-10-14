@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::engine::storage::{SonarrSeriesDb, Storage};
-use crate::engine::sonarr::client::{SonarrClient, SonarrSeriesRaw};
+use crate::engine::sonarr::client::{SonarrClient, SonarrSeriesRaw, SonarrTag};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ImportReport {
@@ -64,13 +64,35 @@ const WANTED_TAGS: &[&str] = &["1 - nosut", "mine"];
 
 /// Tag labels used to filter the Sonarr import: the `sonarr.wanted_tags`
 /// setting when present, else the built-in default.
-async fn wanted_tag_labels(storage: &Storage) -> Vec<String> {
-    if let Ok(Some(raw)) = storage.get_setting("sonarr.wanted_tags").await {
-        if let Ok(labels) = serde_json::from_str::<Vec<String>>(&raw) {
-            return labels;
+async fn wanted_tag_labels(storage: &Storage) -> anyhow::Result<Vec<String>> {
+    // A failed read must not quietly swap in a different filter.
+    if let Some(raw) = storage.get_setting("sonarr.wanted_tags").await? {
+        match serde_json::from_str::<Vec<String>>(&raw) {
+            Ok(labels) => return Ok(labels),
+            Err(e) => tracing::warn!("sonarr.wanted_tags is not a list of labels ({e}); using the defaults"),
         }
     }
-    WANTED_TAGS.iter().map(|s| s.to_string()).collect()
+    Ok(WANTED_TAGS.iter().map(|s| s.to_string()).collect())
+}
+
+/// The Sonarr tag ids the wanted labels resolve to. With a filter set, a
+/// failed tag fetch stops the import: going ahead without the filter would
+/// import and auto-map every series the filter exists to leave out.
+fn wanted_tag_ids(
+    wanted_labels: &[String],
+    tags: anyhow::Result<Vec<SonarrTag>>,
+) -> anyhow::Result<std::collections::HashSet<i64>> {
+    if wanted_labels.is_empty() {
+        return Ok(Default::default());
+    }
+    let tags = tags.map_err(|e| {
+        anyhow::anyhow!("Sonarr's tag list couldn't be loaded, so the import was stopped to keep your tag filter: {e}")
+    })?;
+    Ok(tags
+        .iter()
+        .filter(|t| wanted_labels.iter().any(|w| w.eq_ignore_ascii_case(t.label.trim())))
+        .map(|t| t.id)
+        .collect())
 }
 
 pub async fn import_sonarr_series(
@@ -83,17 +105,9 @@ pub async fn import_sonarr_series(
     // carrying at least one of them. When none of the wanted labels exist in this
     // Sonarr instance (e.g. a fresh install without the tags set up), import
     // everything instead of silently importing nothing.
-    let wanted_labels = wanted_tag_labels(storage).await;
-    let tags = client.fetch_tags().await.unwrap_or_default();
-    let wanted_ids: std::collections::HashSet<i64> = tags
-        .iter()
-        .filter(|t| {
-            wanted_labels
-                .iter()
-                .any(|w| w.eq_ignore_ascii_case(t.label.trim()))
-        })
-        .map(|t| t.id)
-        .collect();
+    let wanted_labels = wanted_tag_labels(storage).await?;
+    let tags = if wanted_labels.is_empty() { Ok(Vec::new()) } else { client.fetch_tags().await };
+    let wanted_ids = wanted_tag_ids(&wanted_labels, tags)?;
     let raw_series: Vec<&SonarrSeriesRaw> = if wanted_labels.is_empty() {
         tracing::info!("No Sonarr tag filter set — importing all series");
         all_series.iter().collect()
@@ -230,4 +244,29 @@ pub async fn import_sonarr_series(
         auto_mapped,
         unmapped,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tag(id: i64, label: &str) -> SonarrTag {
+        SonarrTag { id, label: label.to_string() }
+    }
+
+    #[test]
+    fn a_failed_tag_fetch_stops_a_filtered_import() {
+        let labels = vec!["mine".to_string()];
+        let err = wanted_tag_ids(&labels, Err(anyhow::anyhow!("Sonarr returned HTTP 500"))).unwrap_err();
+        assert!(err.to_string().contains("import was stopped to keep your tag filter"));
+        assert!(err.to_string().contains("HTTP 500"));
+    }
+
+    #[test]
+    fn resolves_labels_case_insensitively_and_ignores_fetch_without_a_filter() {
+        let labels = vec!["Mine".to_string()];
+        let ids = wanted_tag_ids(&labels, Ok(vec![tag(1, " mine "), tag(2, "other")])).unwrap();
+        assert_eq!(ids, [1].into_iter().collect());
+        assert!(wanted_tag_ids(&[], Err(anyhow::anyhow!("never fetched"))).unwrap().is_empty());
+    }
 }

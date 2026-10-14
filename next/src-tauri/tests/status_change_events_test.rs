@@ -63,6 +63,35 @@ async fn auto_complete_from_progress_is_announced() {
 async fn playback_resuming_a_dropped_show_is_announced() {
     let state = fresh_test_state().await;
     show(&state, 1, "dropped", 3).await;
-    assert!(anivault_core::engine::session::record_progress(&state, 1, 4, None, None, "test").await);
+    assert!(anivault_core::engine::session::record_progress(&state, 1, 4, None, None, "test").await.unwrap());
     assert_eq!(status_changes(&state), vec![(1, Some("dropped".into()), "watching".into())]);
+}
+
+#[tokio::test]
+async fn a_failed_progress_write_is_an_error_with_no_toast_or_event() {
+    let state = fresh_test_state().await;
+    show(&state, 1, "completed", 12).await;
+    anivault_core::engine::storage::Tests::exec(&state.storage, "ALTER TABLE list_entry RENAME TO list_entry_gone").await;
+
+    let result = anivault_core::engine::session::record_progress(&state, 1, 13, None, None, "test").await;
+
+    assert!(result.is_err());
+    assert!(state.events.drain().iter().all(|e| !matches!(e, EngineEvent::ProgressAdvanced { .. })));
+    let problems = state.problems.current();
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].summary, "Your watch progress couldn't be saved.");
+}
+
+#[tokio::test]
+async fn a_failed_history_write_still_saves_progress_and_says_so() {
+    let state = fresh_test_state().await;
+    show(&state, 1, "watching", 3).await;
+    anivault_core::engine::storage::Tests::exec(&state.storage, "DROP TABLE watch_history").await;
+
+    assert!(anivault_core::engine::session::record_progress(&state, 1, 4, None, None, "test").await.unwrap());
+
+    assert_eq!(state.storage.get_list_entry(1).await.unwrap().unwrap().watched_episodes, 4);
+    let problems = state.problems.current();
+    assert_eq!(problems.len(), 1);
+    assert!(problems[0].summary.contains("couldn't be added to your watch history"));
 }

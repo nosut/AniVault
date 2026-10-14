@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod engine;
+pub mod startup_failure;
 
 use crate::engine::runtime::initialize_engine_at;
 use crate::engine::runtime::EngineState;
@@ -36,7 +37,7 @@ pub fn window_state_flags() -> StateFlags {
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         // Single-instance MUST be the first plugin registered. When a second
         // launch is attempted, this callback runs in the already-running instance
         // and brings its window forward instead of opening a duplicate.
@@ -73,7 +74,10 @@ pub fn run() {
                 .app_log_dir()
                 .or_else(|_| app.path().app_data_dir().map(|d| d.join("logs")));
             match log_dir {
-                Ok(dir) => crate::engine::log::init_logging(&dir),
+                Ok(dir) => {
+                    crate::engine::log::init_logging(&dir);
+                    let _ = crate::startup_failure::LOG_DIR.set(dir);
+                }
                 Err(e) => eprintln!("[AniVault] could not resolve a log directory: {e}"),
             }
 
@@ -264,6 +268,7 @@ pub fn run() {
             commands::get_sonarr_status,
             commands::get_setting,
             commands::get_ui_prefs,
+            commands::get_background_problems,
             commands::import_ui_prefs,
             commands::get_sync_status,
             commands::get_anilist_token_invalid,
@@ -322,6 +327,11 @@ pub fn run() {
             commands::trigger_sync,
             commands::update_list_entry,
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run AniVault");
+        .run(tauri::generate_context!());
+    // A setup failure (most often the database not opening) would otherwise
+    // end the process with no window and no message.
+    if let Err(error) = result {
+        crate::startup_failure::report(&error.to_string());
+        std::process::exit(1);
+    }
 }

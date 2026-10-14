@@ -2,6 +2,7 @@
   import { getPref, setPref, prefsError, retryFailedSaves, describePrefsProblem } from './lib/prefs';
   import ErrorNotice from './lib/ErrorNotice.svelte';
   import { appProblem, playFile, openLink } from './lib/notify';
+  import { backgroundProblems, dismissedProblems, dismissProblem, refreshBackgroundProblems, visibleNotices } from './lib/backgroundProblems';
   import { onMount, onDestroy, tick } from 'svelte';
   import { drainEngineEvents, onEngineEventsReady, checkForUpdate, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
   import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -254,7 +255,10 @@
     isDesktopRail = railMediaQuery ? railMediaQuery.matches : true;
   }
 
+  $: backgroundNotices = visibleNotices($backgroundProblems, $dismissedProblems, () => void refreshBackgroundProblems());
+
   async function pollEvents() {
+    void refreshBackgroundProblems();
     try {
       const events = await drainEngineEvents();
       latestEvents = events;
@@ -437,6 +441,14 @@
         <button class="update-dismiss" aria-label="Dismiss update notice" on:click={hideUpdate}>×</button>
       </div>
     {/if}
+    {#each backgroundNotices as notice (notice.problem.area)}
+      <ErrorNotice
+        message={notice.message}
+        details={notice.details}
+        retry={notice.retry}
+        on:dismiss={() => dismissProblem(notice.problem)}
+      />
+    {/each}
     {#if $appProblem}
       <ErrorNotice
         message={$appProblem.message}

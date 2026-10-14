@@ -29,6 +29,7 @@ describe('errorCause', () => {
     ['No v1 data found. Cannot run migration.', 'no-old-data'],
     ['Refusing to scan a filesystem root: C:\\', 'drive-root'],
     ['Failed to write registry key', 'startup-setting'],
+    ['The saved library folder list is damaged: expected value at line 1 column 1', 'damaged-setting'],
     ['something nobody planned for', 'unknown'],
   ];
 
@@ -63,7 +64,7 @@ describe('explainError', () => {
       'offline', 'sonarr-unreachable', 'sonarr-not-connected', 'sonarr-rejected', 'sonarr-import-list',
       'sonarr-not-linked', 'anilist-login', 'anilist-busy', 'oauth-timeout', 'port-in-use', 'service-down',
       'file-missing', 'file-locked', 'no-permission', 'disk-full', 'database-busy', 'not-a-backup',
-      'no-old-data', 'drive-root', 'startup-setting', 'unknown',
+      'no-old-data', 'drive-root', 'startup-setting', 'damaged-setting', 'unknown',
     ];
     for (const cause of causes) {
       expect(causeAdvice(cause)).not.toMatch(/os error|HTTP|\d{3}|sqlite|oauth|registry|exception|null/i);

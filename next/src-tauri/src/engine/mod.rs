@@ -4,6 +4,7 @@ pub mod matcher;
 pub mod migration;
 pub mod models;
 pub mod parser;
+pub mod problems;
 pub mod player_registry;
 pub mod runtime;
 pub mod session;

@@ -91,3 +91,13 @@ async fn insert_settings_if_absent_keeps_existing_values() {
     assert_eq!(storage.get_setting("ui.kept").await.unwrap(), Some(r#""newer""#.to_string()));
     assert_eq!(storage.get_setting("ui.added").await.unwrap(), Some(r#""x""#.to_string()));
 }
+
+#[tokio::test]
+async fn a_damaged_library_folder_list_is_an_error_not_an_empty_list() {
+    let storage = Storage::connect("sqlite::memory:").await.unwrap();
+    storage.migrate().await.unwrap();
+    storage.set_setting("library.folders", "not json", 1).await.unwrap();
+
+    let err = anivault_core::engine::library_scanner::get_library_folders(&storage).await.unwrap_err();
+    assert!(err.to_string().contains("library folder list is damaged"));
+}

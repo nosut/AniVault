@@ -324,7 +324,7 @@ pub async fn confirm_identification(
     if episode > 0 {
         let path = looks_like_path(file_path).then_some(file_path);
         crate::engine::session::record_progress(state, anime_id, episode, None, path, "confirmed")
-            .await;
+            .await?;
     }
 
     Ok(())
