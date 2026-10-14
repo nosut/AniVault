@@ -7,13 +7,14 @@
 
 <script lang="ts">
   import ErrorNotice from './ErrorNotice.svelte';
+  import { playFile, showInFolder } from './notify';
   import { explainError, type ExplainedError } from './errors';
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
   import { cleanupApplied } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
-  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
+  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
   import {
     normalizeStatusFilter, DEFAULT_STATUS_FILTER, groupBySeason, flattenGroups, asDisplayRows,
     seasonSortVal, getCurrentSeason,
@@ -523,7 +524,7 @@
     const files = episodeFilesMap.get(animeId);
     if (!files) return;
     const file = files.find(f => (f.episode ?? 0) === episode);
-    if (file) openEpisodeFile(file.file_path);
+    if (file) playFile(file.file_path);
   }
 
   // Right-click context menu.
@@ -542,7 +543,7 @@
       .filter(f => f.ep > 0)
       .sort((a, b) => a.ep - b.ep);
   }
-  function playCtxPath(path: string) { openEpisodeFile(path); closeContextMenu(); }
+  function playCtxPath(path: string) { playFile(path); closeContextMenu(); }
   function ctxNextEp(): number | null {
     if (!ctxMenu) return null;
     const files = ctxFiles();
@@ -563,7 +564,7 @@
   }
   function ctxOpenFolder() {
     const first = ctxFiles()[0];
-    if (first) openContainingFolder(first.path);
+    if (first) showInFolder(first.path);
     closeContextMenu();
   }
   async function ctxDelete() {
@@ -1120,7 +1121,7 @@
                         if (!files || files.length === 0) return;
                         const nextEp = files.find(f => (f.episode ?? 0) > entry.watched_episodes);
                         const target = nextEp ?? files[0];
-                        if (target) openEpisodeFile(target.file_path);
+                        if (target) playFile(target.file_path);
                       }} title="Play next episode">&#9654;</button>
                     {/if}
                   </td>

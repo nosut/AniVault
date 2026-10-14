@@ -1,8 +1,9 @@
 <script lang="ts">
   import { getPref, setPref, prefsError, retryFailedSaves, describePrefsProblem } from './lib/prefs';
   import ErrorNotice from './lib/ErrorNotice.svelte';
+  import { appProblem, playFile, openLink } from './lib/notify';
   import { onMount, onDestroy, tick } from 'svelte';
-  import { drainEngineEvents, onEngineEventsReady, checkForUpdate, openEpisodeFile, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
+  import { drainEngineEvents, onEngineEventsReady, checkForUpdate, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { dismissUpdate, loadDismissedUpdate, shouldShowUpdate } from './lib/updateUi';
   import { latestPlaybackEnded, samePrompt, type PromptKey } from './lib/upNext';
@@ -294,7 +295,7 @@
   // not raising a second toast over one already on screen — while letting the
   // same episode prompt again later, e.g. after rewatching it.
   function playUpNext() {
-    if (upNextPrompt) openEpisodeFile(upNextPrompt.file_path);
+    if (upNextPrompt) playFile(upNextPrompt.file_path);
     upNextPrompt = null;
     lastPromptKey = null;
   }
@@ -342,7 +343,7 @@
   let updateDismissed = loadDismissedUpdate();
 
   function openUpdate() {
-    if (update) openEpisodeFile(update.url);
+    if (update) openLink(update.url);
   }
   function hideUpdate() {
     if (!update) return;
@@ -435,6 +436,15 @@
         <button class="update-link" on:click={openUpdate}>View release</button>
         <button class="update-dismiss" aria-label="Dismiss update notice" on:click={hideUpdate}>×</button>
       </div>
+    {/if}
+    {#if $appProblem}
+      <ErrorNotice
+        message={$appProblem.message}
+        details={$appProblem.details}
+        actionLabel={$appProblem.retry ? 'Try again' : null}
+        on:action={() => $appProblem?.retry?.()}
+        on:dismiss={() => appProblem.set(null)}
+      />
     {/if}
     {#if $prefsError}
       {@const text = describePrefsProblem($prefsError)}

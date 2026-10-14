@@ -1,7 +1,10 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
+  import { playFile, showInFolder, openLink } from './notify';
   import { activateOnKey } from './a11y';
   import { createEventDispatcher } from 'svelte';
-  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, openEpisodeFile, openContainingFolder, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, getSonarrCoverageFor, unignoreSonarrCoverage, type CoverageRow, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
+  import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, getSonarrCoverageFor, unignoreSonarrCoverage, type CoverageRow, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { formatBytes } from './fileSize';
   import { onDestroy } from 'svelte';
   import { cleanupApplied } from './dropCleanup';
@@ -17,7 +20,9 @@
 
   let detail: AnimeDetail | null = null;
   let loading = false;
-  let error: string | null = null;
+  // Problems carry their own retry, since one slot serves several actions.
+  type ActionError = ExplainedError & { retry?: () => void };
+  let error: ActionError | null = null;
   let savingField: 'progress' | 'status' | 'score' | null = null;
   let saveOk: string | null = null;
 
@@ -30,7 +35,7 @@
   let rescanning = false;
 
   let fileScanReport: LibraryScanReport | null = null;
-  let fileActionError: string | null = null;
+  let fileActionError: ActionError | null = null;
   let fileActionMessage: string | null = null;
   let repairConfirming = false;
   let repairing = false;
@@ -150,7 +155,7 @@
       await deleteAnime(animeId);
       dispatch('back');
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = { ...explainError("This show couldn't be removed from your library.", e), retry: handleDelete };
     } finally {
       deleting = false;
     }
@@ -236,7 +241,7 @@
       loadRelations();
     } catch (e) {
       if (requestedId !== animeId) return;
-      error = e instanceof Error ? e.message : String(e);
+      error = { ...explainError("This show's details couldn't be loaded.", e), retry: load };
     } finally {
       if (requestedId === animeId) loading = false;
     }
@@ -277,8 +282,11 @@
       const files = await getEpisodeFiles(requestedId);
       if (requestedId !== animeId) return;
       episodeFiles = files;
-    } catch {
-      if (requestedId === animeId) episodeFiles = [];
+    } catch (e) {
+      if (requestedId !== animeId) return;
+      // An empty list here would read as "no files", so say it failed instead.
+      episodeFiles = [];
+      fileActionError = { ...explainError("This show's episode files couldn't be loaded.", e), retry: loadEpisodeFiles };
     } finally {
       if (requestedId === animeId) episodeFilesLoading = false;
     }
@@ -301,6 +309,7 @@
 
   let mappingFolder = false;
   let mapFolderMsg: string | null = null;
+  let mapFolderError: ActionError | null = null;
 
   async function handleRescanFiles() {
     rescanning = true;
@@ -316,7 +325,7 @@
         fileActionMessage = 'Rescan complete. No mapping conflicts found.';
       }
     } catch (e) {
-      fileActionError = e instanceof Error ? e.message : String(e);
+      fileActionError = { ...explainError("This show's folders couldn't be rescanned.", e), retry: handleRescanFiles };
     } finally {
       rescanning = false;
     }
@@ -341,7 +350,7 @@
       fileActionMessage = `Repaired ${result.repaired} file mapping${result.repaired === 1 ? '' : 's'}.`;
       repairConfirming = false;
     } catch (e) {
-      fileActionError = e instanceof Error ? e.message : String(e);
+      fileActionError = { ...explainError("The file mappings couldn't be repaired.", e), retry: confirmRepairMappings };
     } finally {
       repairing = false;
     }
@@ -350,20 +359,31 @@
   async function handleMapFolder() {
     if (mappingFolder) return;
     mapFolderMsg = null;
+    mapFolderError = null;
     let folder: string | null = null;
     try {
       folder = await pickFolder();
-    } catch {
+    } catch (e) {
+      mapFolderError = { ...explainError("The folder picker couldn't be opened.", e), retry: handleMapFolder };
       return;
     }
     if (!folder) return; // cancelled
+    await mapPickedFolder(folder);
+  }
+
+  async function mapPickedFolder(folder: string) {
+    mapFolderMsg = null;
+    mapFolderError = null;
     mappingFolder = true;
     try {
       const n = await mapFolderToAnime(folder, animeId);
       await loadEpisodeFiles();
       mapFolderMsg = `Mapped ${n} file${n === 1 ? '' : 's'} from this folder`;
     } catch (e) {
-      mapFolderMsg = e instanceof Error ? e.message : String(e);
+      mapFolderError = {
+        ...explainError("The files in that folder couldn't be mapped to this show.", e),
+        retry: () => mapPickedFolder(folder),
+      };
     } finally {
       mappingFolder = false;
     }
@@ -375,7 +395,9 @@
     try {
       await unmapKnownFiles([path]);
       episodeFiles = episodeFiles.filter((f) => f.file_path !== path);
-    } catch { /* silent */ }
+    } catch (e) {
+      fileActionError = { ...explainError("That file couldn't be unmapped.", e), retry: () => handleUnmapFile(path) };
+    }
   }
 
   async function handleUnmapAll() {
@@ -384,13 +406,15 @@
     try {
       await unmapKnownFiles(episodeFiles.map((f) => f.file_path));
       episodeFiles = [];
-    } catch { /* silent */ } finally {
+    } catch (e) {
+      fileActionError = { ...explainError("This show's files couldn't be unmapped.", e), retry: handleUnmapAll };
+    } finally {
       unmappingAll = false;
     }
   }
 
   function handlePlayFile(path: string) {
-    openEpisodeFile(path);
+    playFile(path);
   }
 
   // Reactive statements run once on init (in addition to on every later
@@ -430,7 +454,7 @@
 
   function openFolder() {
     const first = episodeFiles[0];
-    if (first) openContainingFolder(first.file_path);
+    if (first) showInFolder(first.file_path);
   }
 
   function clearSaveOkSoon() {
@@ -449,7 +473,7 @@
       await load();
       clearSaveOkSoon();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = { ...explainError("Your progress couldn't be saved.", e), retry: saveProgress };
     } finally {
       savingField = null;
     }
@@ -465,7 +489,7 @@
       await load();
       clearSaveOkSoon();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = { ...explainError("The new status couldn't be saved.", e), retry: saveStatus };
     } finally {
       savingField = null;
     }
@@ -481,7 +505,7 @@
       await load();
       clearSaveOkSoon();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = { ...explainError("Your score couldn't be saved.", e), retry: saveScore };
     } finally {
       savingField = null;
     }
@@ -548,10 +572,7 @@
       </div>
     </div>
   {:else if error && !detail}
-    <div class="error-panel" role="alert">
-      <p class="error-text">{error}</p>
-      <button class="action-btn" type="button" on:click={load}>Retry</button>
-    </div>
+    <ErrorNotice message={error.message} details={error.details} actionLabel="Try again" on:action={load} on:dismiss={() => (error = null)} />
   {:else if detail}
     <div class="detail-layout">
       <div class="media-col">
@@ -601,7 +622,7 @@
         <div class="detail-header">
           <h1 class="title">
             {pickTitle(detail)}
-            <button class="anilist-link" on:click={() => openEpisodeFile(`https://anilist.co/anime/${detail?.anime_id}`)} title="View on AniList" aria-label="View on AniList"><ExternalLink size={14} /></button>
+            <button class="anilist-link" on:click={() => openLink(`https://anilist.co/anime/${detail?.anime_id}`)} title="View on AniList" aria-label="View on AniList"><ExternalLink size={14} /></button>
           </h1>
           {#if titles.english && titles.english !== (titles.romaji ?? '')}
             <p class="alt-title">English: {titles.english}</p>
@@ -635,7 +656,7 @@
           <p class="save-ok" aria-live="polite">{saveOk}</p>
         {/if}
         {#if error}
-          <p class="error-text" role="alert">{error}</p>
+          <ErrorNotice compact message={error.message} details={error.details} actionLabel={error.retry ? 'Try again' : null} on:action={() => error?.retry?.()} on:dismiss={() => (error = null)} />
         {/if}
 
         <div class="editors">
@@ -841,6 +862,9 @@
             {#if mapFolderMsg}
               <p class="success-msg">{mapFolderMsg}</p>
             {/if}
+            {#if mapFolderError}
+              <ErrorNotice compact message={mapFolderError.message} details={mapFolderError.details} actionLabel="Try again" on:action={() => mapFolderError?.retry?.()} on:dismiss={() => (mapFolderError = null)} />
+            {/if}
 
             {#if fileScanReport && fileScanReport.mapping_conflicts.length > 0}
               <div class="mapping-conflict-warning">
@@ -875,7 +899,9 @@
               </div>
             {/if}
             {#if fileActionMessage}<p class="success-msg">{fileActionMessage}</p>{/if}
-            {#if fileActionError}<p class="error-text">{fileActionError}</p>{/if}
+            {#if fileActionError}
+              <ErrorNotice compact message={fileActionError.message} details={fileActionError.details} actionLabel={fileActionError.retry ? 'Try again' : null} on:action={() => fileActionError?.retry?.()} on:dismiss={() => (fileActionError = null)} />
+            {/if}
 
             {#if episodeFilesLoading}
               <p class="muted">Loading…</p>
@@ -1155,21 +1181,6 @@
     margin: 0;
     color: var(--color-accent);
     font-size: 0.9rem;
-  }
-
-  .error-text {
-    margin: 0;
-    color: var(--color-error);
-    font-size: 0.9rem;
-  }
-
-  .error-panel {
-    display: grid;
-    gap: 0.75rem;
-    padding: 1rem;
-    border: 1px solid rgba(var(--color-error-rgb), 0.35);
-    border-radius: 14px;
-    background: rgba(var(--color-error-rgb), 0.08);
   }
 
   .editors {

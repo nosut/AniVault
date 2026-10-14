@@ -1,5 +1,6 @@
 <script lang="ts">
   import ErrorNotice from './ErrorNotice.svelte';
+  import { playFile, showInFolder } from './notify';
   import { explainError, type ExplainedError } from './errors';
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
@@ -9,8 +10,6 @@
   import {
     getCollection,
     getEpisodeFiles,
-    openEpisodeFile,
-    openContainingFolder,
     deleteAnime,
     updateListEntry,
     type CollectionEntry,
@@ -126,7 +125,7 @@
   }
 
   function playNext(e: CollectionEntry) {
-    if (e.next_episode_path) openEpisodeFile(e.next_episode_path);
+    if (e.next_episode_path) playFile(e.next_episode_path);
   }
 
   function open(e: CollectionEntry) { dispatch('select', { anime_id: e.anime_id }); }
@@ -159,7 +158,7 @@
       .filter((f) => f.ep > 0)
       .sort((a, b) => a.ep - b.ep);
   }
-  function playCtxPath(path: string) { openEpisodeFile(path); closeContextMenu(); }
+  function playCtxPath(path: string) { playFile(path); closeContextMenu(); }
   function ctxNextEp(): number | null {
     const menu = ctxMenu;
     if (!menu) return null;
@@ -182,7 +181,7 @@
   }
   function ctxOpenFolder() {
     const first = ctxFiles()[0];
-    if (first) openContainingFolder(first.path);
+    if (first) showInFolder(first.path);
     closeContextMenu();
   }
   function ctxOpenDetails() {
