@@ -12,7 +12,7 @@
   import { createEventDispatcher } from 'svelte';
   import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, openEpisodeFile, openContainingFolder, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
   import {
-    normalizeStatusFilter, groupBySeason, flattenGroups, asDisplayRows,
+    normalizeStatusFilter, DEFAULT_STATUS_FILTER, groupBySeason, flattenGroups, asDisplayRows,
     seasonSortVal, getCurrentSeason,
     groupSelection, toggleGroupSelection, pruneSelection,
     nextAiringByAnime, formatAiringCountdown, nextAiringSortVal, airingSoonMarker,
@@ -38,7 +38,7 @@
         localStorage.getItem('anivault-library-filter'),
         KNOWN_STATUS_FILTERS,
       );
-    } catch { return null; }
+    } catch { return DEFAULT_STATUS_FILTER; }
   }
 
   function persistFilter(value: string | null) {

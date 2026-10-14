@@ -12,20 +12,20 @@ describe('normalizeStatusFilter', () => {
     expect(normalizeStatusFilter('watching', KNOWN)).toBe('watching');
   });
 
-  it('maps a removed status to All', () => {
-    expect(normalizeStatusFilter('unlisted', KNOWN)).toBeNull();
+  it('maps a removed status to Watching', () => {
+    expect(normalizeStatusFilter('unlisted', KNOWN)).toBe('watching');
   });
 
-  it('maps an empty string to All', () => {
+  it('keeps an empty string as a saved choice of All', () => {
     expect(normalizeStatusFilter('', KNOWN)).toBeNull();
   });
 
-  it('maps null to All', () => {
-    expect(normalizeStatusFilter(null, KNOWN)).toBeNull();
+  it('opens on Watching when nothing has been saved', () => {
+    expect(normalizeStatusFilter(null, KNOWN)).toBe('watching');
   });
 
-  it('maps any unrecognised value to All', () => {
-    expect(normalizeStatusFilter('nonsense', KNOWN)).toBeNull();
+  it('maps any unrecognised value to Watching', () => {
+    expect(normalizeStatusFilter('nonsense', KNOWN)).toBe('watching');
   });
 });
 

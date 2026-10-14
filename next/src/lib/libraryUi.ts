@@ -4,16 +4,19 @@ import { getCurrentSeason } from './seasonUi';
 
 export { getCurrentSeason };
 
+/// The tab the Library opens on before the user has ever picked one.
+export const DEFAULT_STATUS_FILTER = 'watching';
+
 /// A persisted status filter is only trusted if it still corresponds to a tab.
-/// Anything else -- an empty string, or a category that has since been removed
-/// -- falls back to All, so a stale localStorage value cannot leave the view
-/// with no tab selected and an empty-looking list.
+/// Nothing saved yet, or a category that has since been removed, opens on
+/// Watching, so a stale localStorage value cannot leave the view with no tab
+/// selected. An empty string is a saved choice of All.
 export function normalizeStatusFilter(
   value: string | null,
   known: (string | null)[],
 ): string | null {
-  if (!value) return null;
-  return known.includes(value) ? value : null;
+  if (value === '') return null;
+  return value !== null && known.includes(value) ? value : DEFAULT_STATUS_FILTER;
 }
 
 /// The season fields every grouped row carries. Structural, so both
