@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { getSeasonAnime, getFutureAnime, getLibraryIds, updateListEntry, importAnilistAnime, diffSeason, FUTURE_SEASON_KEY, type SeasonAnimeEntry, type FutureAnimeEntry } from './api';
-  import { addSeasons, futureLabel, getCurrentSeason, seasonOffset } from './seasonUi';
+  import { futureLabel, getCurrentSeason, seasonOffset } from './seasonUi';
   import { partitionNew } from './seasonNew';
   import { ChevronLeft, ChevronRight } from 'lucide-svelte';
   import SeasonPosterCard from './SeasonPosterCard.svelte';
@@ -17,35 +17,24 @@
   // sits the single "Future Seasons" page (far-out and TBA announcements).
   const BROWSABLE_SEASONS_AHEAD = 4;
 
-  function loadSeasonState(): { season: string; year: number; genre: string; future: boolean } {
+  // The view mounts once per launch and always opens on the current season;
+  // only the genre filter carries over between launches.
+  function loadSavedGenre(): string {
     try {
       const saved = localStorage.getItem('anivault-season-state');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const current = getCurrentSeason();
-        // Saved states deeper than the browsable window (including ones from
-        // before the future page existed) land on the Future Seasons page,
-        // anchored at the last browsable season so prev exits sensibly.
-        if (parsed.future || seasonOffset(parsed.season, parsed.year, current.season, current.year) > BROWSABLE_SEASONS_AHEAD) {
-          const last = addSeasons(current.season, current.year, BROWSABLE_SEASONS_AHEAD);
-          return { ...last, genre: parsed.genre ?? '', future: true };
-        }
-        return { season: parsed.season, year: parsed.year, genre: parsed.genre ?? '', future: false };
-      }
+      if (saved) return JSON.parse(saved).genre ?? '';
     } catch {}
-    return { ...getCurrentSeason(), genre: '', future: false };
+    return '';
   }
 
-  function saveSeasonState(s: string, y: number, g: string, f: boolean) {
-    try { localStorage.setItem('anivault-season-state', JSON.stringify({ season: s, year: y, genre: g, future: f })); }
+  function saveGenre(g: string) {
+    try { localStorage.setItem('anivault-season-state', JSON.stringify({ genre: g })); }
     catch {}
   }
 
-  let initial = loadSeasonState();
-  let season = initial.season;
-  let year = initial.year;
-  let genre: string = initial.genre;
-  let future = initial.future;
+  let { season, year } = getCurrentSeason();
+  let genre: string = loadSavedGenre();
+  let future = false;
   let entries: (SeasonAnimeEntry | FutureAnimeEntry)[] = [];
   let loading = true;
   let error: string | null = null;
@@ -174,7 +163,7 @@
     return futureLabel(entry as FutureAnimeEntry);
   }
 
-  $: saveSeasonState(season, year, genre, future);
+  $: saveGenre(genre);
 
   async function loadAll() {
     await Promise.all([load(), loadLibraryIds()]);

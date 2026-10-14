@@ -52,25 +52,73 @@ async function settle() {
   flushSync();
 }
 
+async function clickNext(times: number) {
+  for (let i = 0; i < times; i++) {
+    document.querySelector<HTMLButtonElement>('button[aria-label="Next season"]')!.click();
+    flushSync();
+    await settle();
+  }
+}
+
+function currentSeasonHeader(): string {
+  const { season, year } = currentSeasonKey();
+  return `${season[0]}${season.slice(1).toLowerCase()} ${year}`;
+}
+
+describe('SeasonView startup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    document.body.innerHTML = '<div id="app"></div>';
+    localStorage.clear();
+  });
+
+  it('opens on the current season even when the last session ended on Future Seasons', async () => {
+    localStorage.setItem('anivault-season-state', JSON.stringify({ future: true, season: 'FALL', year: 2030, genre: '' }));
+    const app = mount(SeasonView, { target: document.getElementById('app')! });
+    await settle();
+
+    expect(headerText()).toBe(currentSeasonHeader());
+    expect(getFutureAnime).not.toHaveBeenCalled();
+    await unmount(app);
+  });
+
+  it('opens on the current season even when the last session ended on another season', async () => {
+    const last = lastBrowsableSeason();
+    localStorage.setItem('anivault-season-state', JSON.stringify({ season: last.season, year: last.year, genre: '' }));
+    const app = mount(SeasonView, { target: document.getElementById('app')! });
+    await settle();
+
+    expect(headerText()).toBe(currentSeasonHeader());
+    await unmount(app);
+  });
+
+  it('keeps the saved genre filter', async () => {
+    localStorage.setItem('anivault-season-state', JSON.stringify({ genre: 'Mecha' }));
+    const app = mount(SeasonView, { target: document.getElementById('app')! });
+    await settle();
+
+    expect((document.querySelector('.genre-select') as HTMLSelectElement).value).toBe('Mecha');
+    const { season, year } = currentSeasonKey();
+    expect(getSeasonAnime).toHaveBeenCalledWith(season, year, 'Mecha');
+    await unmount(app);
+  });
+});
+
 describe('SeasonView future mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '<div id="app"></div>';
     localStorage.clear();
-    const last = lastBrowsableSeason();
-    localStorage.setItem('anivault-season-state', JSON.stringify({ season: last.season, year: last.year, genre: '' }));
   });
 
   it('switches to Future Seasons after the last browsable season and back', async () => {
     const app = mount(SeasonView, { target: document.getElementById('app')! });
     await settle();
+    await clickNext(4);
 
     // On the +4 season: normal browsing.
     expect(getSeasonAnime).toHaveBeenCalled();
-    const next = document.querySelector<HTMLButtonElement>('button[aria-label="Next season"]')!;
-    next.click();
-    flushSync();
-    await settle();
+    await clickNext(1);
 
     // Now on the Future Seasons page.
     expect(headerText()).toBe('Future Seasons');
@@ -92,23 +140,13 @@ describe('SeasonView future mode', () => {
     await unmount(app);
   });
 
-  it('restores directly into future mode when the saved state is beyond the window', async () => {
-    const beyond = addSeasons(lastBrowsableSeason().season, lastBrowsableSeason().year, 3);
-    localStorage.setItem('anivault-season-state', JSON.stringify({ season: beyond.season, year: beyond.year, genre: '' }));
-
-    const app = mount(SeasonView, { target: document.getElementById('app')! });
-    await settle();
-
-    expect(headerText()).toBe('Future Seasons');
-    expect(getFutureAnime).toHaveBeenCalled();
-    await unmount(app);
-  });
-
   it('jumps back to the current season from the future page and hides the button there', async () => {
     const app = mount(SeasonView, { target: document.getElementById('app')! });
     await settle();
+    await clickNext(5);
+    expect(headerText()).toBe('Future Seasons');
 
-    // Saved state is the +4 season, so the Current button is offered.
+    // Off the current season, so the Current button is offered.
     const current = document.querySelector<HTMLButtonElement>('button[aria-label="Go to current season"]')!;
     expect(current).not.toBeNull();
     current.click();
@@ -350,12 +388,12 @@ describe('SeasonView new-releases band', () => {
     unmount(component);
   });
 
-  it('diffs against the future sentinel key when mounted in future mode', async () => {
-    localStorage.setItem('anivault-season-state', JSON.stringify({ future: true, season: 'FALL', year: 2026, genre: '' }));
+  it('diffs against the future sentinel key on the future page', async () => {
     const target = document.createElement('div');
     document.body.appendChild(target);
     const component = mount(SeasonView, { target });
     await settle();
+    await clickNext(5);
 
     expect(vi.mocked(diffSeason)).toHaveBeenCalledWith('__FUTURE__', 0, [futureEntry.id], true);
 
