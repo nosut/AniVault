@@ -1,5 +1,6 @@
 // Which page the app opens to. A plain UI preference, so it lives in
-// localStorage like the other view state (rail collapse, calendar month).
+// the prefs store like the other view state (rail collapse, calendar month).
+import { getPref, setPref } from './prefs';
 
 const KEY = 'anivault-start-page';
 
@@ -17,12 +18,12 @@ export type StartPage = (typeof START_PAGE_OPTIONS)[number]['value'];
 
 export function loadStartPage(): StartPage {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = getPref(KEY);
     if (raw && START_PAGE_OPTIONS.some((o) => o.value === raw)) return raw as StartPage;
   } catch {}
   return 'dashboard';
 }
 
 export function saveStartPage(page: StartPage) {
-  try { localStorage.setItem(KEY, page); } catch {}
+  try { setPref(KEY, page); } catch {}
 }

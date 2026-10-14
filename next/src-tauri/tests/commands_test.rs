@@ -1,6 +1,7 @@
 use anivault_core::commands::{
     delete_setting_inner, drain_engine_events_inner, get_calendar_inner, get_engine_status_inner,
-    get_setting_inner, set_setting_inner,
+    get_setting_inner, get_ui_prefs_inner, import_ui_prefs_inner, set_setting_inner,
+    set_ui_pref_inner,
 };
 use anivault_core::engine::events::EngineEvent;
 use anivault_core::engine::runtime::initialize_engine_at;
@@ -111,6 +112,66 @@ async fn settings_commands_roundtrip_json() {
 
     assert!(delete_setting_inner("tracking.enabled", &state).await.unwrap());
     assert_eq!(get_setting_inner("tracking.enabled", &state).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn ui_prefs_start_empty_and_not_imported() {
+    let state = test_state("ui-prefs-empty").await;
+
+    let prefs = get_ui_prefs_inner(&state).await.unwrap();
+    assert!(prefs.prefs.is_empty());
+    assert!(!prefs.imported);
+}
+
+#[tokio::test]
+async fn ui_prefs_set_and_remove_roundtrip() {
+    let state = test_state("ui-prefs-roundtrip").await;
+
+    set_ui_pref_inner("anivault-library-filter", Some("watching".to_string()), &state)
+        .await
+        .unwrap();
+    set_ui_pref_inner("anivault-rail-collapsed", Some("true".to_string()), &state)
+        .await
+        .unwrap();
+    set_ui_pref_inner("anivault-rail-collapsed", None, &state).await.unwrap();
+
+    let prefs = get_ui_prefs_inner(&state).await.unwrap();
+    assert_eq!(
+        prefs.prefs,
+        std::collections::HashMap::from([(
+            "anivault-library-filter".to_string(),
+            "watching".to_string()
+        )])
+    );
+    // Prefs are namespaced, so they never collide with engine settings.
+    assert_eq!(
+        get_setting_inner("ui.anivault-library-filter", &state).await.unwrap(),
+        Some(serde_json::json!("watching"))
+    );
+}
+
+#[tokio::test]
+async fn ui_prefs_import_marks_imported_and_keeps_existing_values() {
+    let state = test_state("ui-prefs-import").await;
+    set_ui_pref_inner("anivault-start-page", Some("library".to_string()), &state)
+        .await
+        .unwrap();
+
+    import_ui_prefs_inner(
+        std::collections::HashMap::from([
+            ("anivault-start-page".to_string(), "dashboard".to_string()),
+            ("anivault-library-filter".to_string(), "completed".to_string()),
+        ]),
+        &state,
+    )
+    .await
+    .unwrap();
+
+    let prefs = get_ui_prefs_inner(&state).await.unwrap();
+    assert!(prefs.imported);
+    assert_eq!(prefs.prefs.get("anivault-start-page").map(String::as_str), Some("library"));
+    assert_eq!(prefs.prefs.get("anivault-library-filter").map(String::as_str), Some("completed"));
+    assert_eq!(prefs.prefs.len(), 2);
 }
 
 #[tokio::test]

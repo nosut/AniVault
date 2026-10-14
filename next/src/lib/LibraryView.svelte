@@ -6,6 +6,7 @@
 </script>
 
 <script lang="ts">
+  import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
   import { cleanupApplied } from './dropCleanup';
@@ -35,23 +36,23 @@
   function loadPersistedFilter(): string | null {
     try {
       return normalizeStatusFilter(
-        localStorage.getItem('anivault-library-filter'),
+        getPref('anivault-library-filter'),
         KNOWN_STATUS_FILTERS,
       );
     } catch { return DEFAULT_STATUS_FILTER; }
   }
 
   function persistFilter(value: string | null) {
-    try { localStorage.setItem('anivault-library-filter', value ?? ''); }
+    try { setPref('anivault-library-filter', value ?? ''); }
     catch {}
   }
 
   function loadPref(key: string, fallback: string): string {
-    try { return localStorage.getItem(key) ?? fallback; }
+    try { return getPref(key) ?? fallback; }
     catch { return fallback; }
   }
   function persistPref(key: string, value: string) {
-    try { localStorage.setItem(key, value); } catch {}
+    try { setPref(key, value); } catch {}
   }
 
   let query = loadPref('anivault-library-query', '');
@@ -101,7 +102,7 @@
 
   function loadCategorySort(): Record<string, Sort> {
     try {
-      const raw = localStorage.getItem(SORT_STORE_KEY);
+      const raw = getPref(SORT_STORE_KEY);
       if (raw) return JSON.parse(raw) as Record<string, Sort>;
     } catch { /* fall through to migration */ }
     // Migrate a pre-existing single global sort into the current category so the
@@ -138,7 +139,7 @@
   // announced season never arrives hidden.
   function loadCollapsed(): Record<string, boolean> {
     try {
-      const raw = localStorage.getItem(COLLAPSE_KEY);
+      const raw = getPref(COLLAPSE_KEY);
       return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
     } catch { return {}; }
   }
@@ -146,7 +147,7 @@
 
   function toggleGroup(key: string) {
     collapsedSeasons = { ...collapsedSeasons, [key]: !collapsedSeasons[key] };
-    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsedSeasons)); } catch { /* ignore */ }
+    try { setPref(COLLAPSE_KEY, JSON.stringify(collapsedSeasons)); } catch { /* ignore */ }
   }
 
   $: persistPref('anivault-library-viewmode', viewMode);
@@ -314,7 +315,7 @@
   // Remember the active sort for the current category and persist the whole map.
   function saveCurrentSort() {
     categorySort = { ...categorySort, [categoryKey(statusFilter)]: { key: sortKey, dir: sortDir } };
-    try { localStorage.setItem(SORT_STORE_KEY, JSON.stringify(categorySort)); } catch { /* ignore */ }
+    try { setPref(SORT_STORE_KEY, JSON.stringify(categorySort)); } catch { /* ignore */ }
   }
 
   // Switch category and restore that category's own remembered sort.

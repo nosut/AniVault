@@ -24,6 +24,7 @@ vi.mock('./api', () => ({
 
 import { getFutureAnime, getSeasonAnime, diffSeason, importAnilistAnime } from './api';
 import SeasonView from './SeasonView.svelte';
+import { resetPrefs, setPref } from './prefs';
 
 // The season 4 ahead of the real current one — the last normally browsable page.
 function lastBrowsableSeason(): { season: string; year: number } {
@@ -37,7 +38,7 @@ function headerText(): string {
   return document.querySelector('.season-nav h2')?.textContent ?? '';
 }
 
-// The season the component starts on when localStorage holds no saved state.
+// The season the component starts on when no saved state exists.
 function currentSeasonKey(): { season: string; year: number } {
   const now = new Date();
   const m = now.getMonth();
@@ -69,11 +70,11 @@ describe('SeasonView startup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
+    resetPrefs();
   });
 
   it('opens on the current season even when the last session ended on Future Seasons', async () => {
-    localStorage.setItem('anivault-season-state', JSON.stringify({ future: true, season: 'FALL', year: 2030, genre: '' }));
+    setPref('anivault-season-state', JSON.stringify({ future: true, season: 'FALL', year: 2030, genre: '' }));
     const app = mount(SeasonView, { target: document.getElementById('app')! });
     await settle();
 
@@ -84,7 +85,7 @@ describe('SeasonView startup', () => {
 
   it('opens on the current season even when the last session ended on another season', async () => {
     const last = lastBrowsableSeason();
-    localStorage.setItem('anivault-season-state', JSON.stringify({ season: last.season, year: last.year, genre: '' }));
+    setPref('anivault-season-state', JSON.stringify({ season: last.season, year: last.year, genre: '' }));
     const app = mount(SeasonView, { target: document.getElementById('app')! });
     await settle();
 
@@ -93,7 +94,7 @@ describe('SeasonView startup', () => {
   });
 
   it('keeps the saved genre filter', async () => {
-    localStorage.setItem('anivault-season-state', JSON.stringify({ genre: 'Mecha' }));
+    setPref('anivault-season-state', JSON.stringify({ genre: 'Mecha' }));
     const app = mount(SeasonView, { target: document.getElementById('app')! });
     await settle();
 
@@ -108,7 +109,7 @@ describe('SeasonView future mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
+    resetPrefs();
   });
 
   it('switches to Future Seasons after the last browsable season and back', async () => {
@@ -174,7 +175,7 @@ describe('SeasonView new-releases band', () => {
     vi.clearAllMocks();
     vi.mocked(getSeasonAnime).mockResolvedValue(entries as never);
     vi.mocked(diffSeason).mockResolvedValue({ first_visit: false, new_ids: [7] });
-    localStorage.clear();
+    resetPrefs();
     document.body.innerHTML = '';
   });
 

@@ -47,6 +47,7 @@ vi.mock('./api', () => ({
 import { createClassComponent } from 'svelte/legacy';
 import LibraryView from './LibraryView.svelte';
 import { searchLibrary } from './api';
+import { resetPrefs, setPref } from './prefs';
 
 async function settle() {
   await tick();
@@ -69,8 +70,8 @@ describe('LibraryView plan-to-watch airing marker', () => {
 
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
-    localStorage.setItem('anivault-library-filter', 'plan_to_watch');
+    resetPrefs();
+    setPref('anivault-library-filter', 'plan_to_watch');
   });
 
   afterEach(() => {
@@ -99,7 +100,7 @@ describe('LibraryView plan-to-watch airing marker', () => {
   });
 
   it('shows the chip on grid poster cards too', async () => {
-    localStorage.setItem('anivault-library-viewmode', 'grid');
+    setPref('anivault-library-viewmode', 'grid');
     component = createClassComponent({ component: LibraryView, target: document.getElementById('app')! });
     await settle();
 
@@ -135,8 +136,8 @@ describe('LibraryView selection', () => {
 
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
-    localStorage.setItem('anivault-library-filter', 'plan_to_watch');
+    resetPrefs();
+    setPref('anivault-library-filter', 'plan_to_watch');
     vi.mocked(searchLibrary).mockResolvedValue([
       fall(1, 'Fall One'), fall(2, 'Fall Two'), winter(3, 'Winter One'),
     ] as never);
@@ -181,7 +182,7 @@ describe('LibraryView selection', () => {
   });
 
   it('selects a collapsed season without expanding it', async () => {
-    localStorage.setItem('anivault-library-season-collapsed', JSON.stringify({ fall2026: true }));
+    setPref('anivault-library-season-collapsed', JSON.stringify({ fall2026: true }));
     mount();
     await settle();
 
@@ -195,7 +196,7 @@ describe('LibraryView selection', () => {
   });
 
   it('offers the season checkbox on the poster grid too', async () => {
-    localStorage.setItem('anivault-library-viewmode', 'grid');
+    setPref('anivault-library-viewmode', 'grid');
     mount();
     await settle();
 

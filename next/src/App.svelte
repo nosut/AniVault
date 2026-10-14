@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getPref, setPref, prefsError } from './lib/prefs';
   import { onMount, onDestroy, tick } from 'svelte';
   import { drainEngineEvents, onEngineEventsReady, checkForUpdate, openEpisodeFile, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
   import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -221,12 +222,12 @@
   const RAIL_COLLAPSED_KEY = 'anivault-rail-collapsed';
 
   function loadCollapsed(): boolean {
-    try { return localStorage.getItem(RAIL_COLLAPSED_KEY) === 'true'; }
+    try { return getPref(RAIL_COLLAPSED_KEY) === 'true'; }
     catch { return false; }
   }
 
   function persistCollapsed(value: boolean) {
-    try { localStorage.setItem(RAIL_COLLAPSED_KEY, String(value)); } catch {}
+    try { setPref(RAIL_COLLAPSED_KEY, String(value)); } catch {}
   }
 
   let collapsed = loadCollapsed();
@@ -424,6 +425,12 @@
         <span>AniVault {update.latest} is available</span>
         <button class="update-link" on:click={openUpdate}>View release</button>
         <button class="update-dismiss" aria-label="Dismiss update notice" on:click={hideUpdate}>×</button>
+      </div>
+    {/if}
+    {#if $prefsError}
+      <div class="prefs-banner" role="alert">
+        <span>{$prefsError}</span>
+        <button class="update-dismiss" aria-label="Dismiss settings warning" on:click={() => prefsError.set(null)}>×</button>
       </div>
     {/if}
     <!--
@@ -728,6 +735,19 @@
     border: 1px solid rgba(var(--color-accent-rgb), 0.35);
     border-radius: 10px;
     background: rgba(var(--color-accent-rgb), 0.1);
+    font-size: 0.85rem;
+    color: var(--color-text);
+  }
+
+  .prefs-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0.9rem;
+    border: 1px solid rgba(var(--color-warning-rgb), 0.45);
+    border-radius: 10px;
+    background: rgba(var(--color-warning-rgb), 0.12);
     font-size: 0.85rem;
     color: var(--color-text);
   }

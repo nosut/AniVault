@@ -35,6 +35,7 @@ vi.mock('./api', () => ({
 }));
 
 import CalendarView from './CalendarView.svelte';
+import { resetPrefs, setPref } from './prefs';
 
 function renderedEpisodes(): string[] {
   return [...document.querySelectorAll('.cal-day-entry .cal-entry-ep')].map(
@@ -56,9 +57,9 @@ async function settle() {
 describe('CalendarView month paging', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
+    resetPrefs();
     sessionStorage.clear();
-    localStorage.setItem('anivault-calendar-view', 'month');
+    setPref('anivault-calendar-view', 'month');
     // Fix the clock to July 2026 so the calendar opens on that month
     // regardless of the real date. Timers stay real for settle().
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -140,9 +141,9 @@ describe('CalendarView month paging', () => {
 describe('CalendarView startup month', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
+    resetPrefs();
     sessionStorage.clear();
-    localStorage.setItem('anivault-calendar-view', 'month');
+    setPref('anivault-calendar-view', 'month');
     vi.useFakeTimers({ toFake: ['Date'] });
     // Mon Aug 3 2026: a month on from the July session below.
     vi.setSystemTime(new Date(2026, 7, 3, 9, 0, 0));
@@ -183,8 +184,8 @@ describe('CalendarView startup month', () => {
 describe('CalendarView agenda view', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
-    localStorage.setItem('anivault-calendar-view', 'agenda');
+    resetPrefs();
+    setPref('anivault-calendar-view', 'agenda');
     // Fake only Date so the agenda's from-today-onward filter is deterministic;
     // timers stay real (settle() below relies on a genuine setTimeout tick).
     vi.useFakeTimers({ toFake: ['Date'] });

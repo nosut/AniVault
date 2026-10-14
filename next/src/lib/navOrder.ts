@@ -1,5 +1,6 @@
 // Sidebar navigation order. A plain UI preference, so it lives in
-// localStorage like the other view state (rail collapse, start page).
+// the prefs store like the other view state (rail collapse, start page).
+import { getPref, setPref, removePref } from './prefs';
 
 export type NavId =
   | 'dashboard' | 'library' | 'collection' | 'season'
@@ -31,7 +32,7 @@ function isNavId(value: unknown): value is NavId {
 // users who already have a saved order.
 //
 // Nav ids are a persistence format, not just an internal identifier: they are
-// written to localStorage verbatim and read back through isNavId. Renaming an
+// written to the prefs store verbatim and read back through isNavId. Renaming an
 // existing id here would make every stored order fail isNavId for that entry,
 // silently discarding the user's chosen position for it (it would just be
 // re-appended at the end as if new). A rename must instead go through an
@@ -54,7 +55,7 @@ export function reconcile(stored: unknown): NavId[] {
 
 export function loadNavOrder(): NavId[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = getPref(KEY);
     if (!raw) return [...DEFAULT_ORDER];
     return reconcile(JSON.parse(raw));
   } catch {
@@ -63,11 +64,11 @@ export function loadNavOrder(): NavId[] {
 }
 
 export function saveNavOrder(order: NavId[]) {
-  try { localStorage.setItem(KEY, JSON.stringify(order)); } catch {}
+  try { setPref(KEY, JSON.stringify(order)); } catch {}
 }
 
 export function clearNavOrder() {
-  try { localStorage.removeItem(KEY); } catch {}
+  try { removePref(KEY); } catch {}
 }
 
 // `to` is the index the item should end up at in the returned array, not an

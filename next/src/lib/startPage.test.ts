@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach } from 'vitest';
 import { loadStartPage, saveStartPage, START_PAGE_OPTIONS } from './startPage';
+import { resetPrefs, setPref } from './prefs';
 
 describe('start page preference', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => resetPrefs());
 
   it('defaults to the dashboard', () => {
     expect(loadStartPage()).toBe('dashboard');
@@ -15,9 +16,9 @@ describe('start page preference', () => {
   });
 
   it('falls back to dashboard for unknown saved values', () => {
-    localStorage.setItem('anivault-start-page', 'detail');
+    setPref('anivault-start-page', 'detail');
     expect(loadStartPage()).toBe('dashboard');
-    localStorage.setItem('anivault-start-page', 'garbage');
+    setPref('anivault-start-page', 'garbage');
     expect(loadStartPage()).toBe('dashboard');
   });
 

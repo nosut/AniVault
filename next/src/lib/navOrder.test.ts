@@ -9,11 +9,12 @@ import {
   saveNavOrder,
   type NavId,
 } from './navOrder';
+import { resetPrefs, setPref } from './prefs';
 
 const DEFAULT_ORDER = DEFAULT_NAV_ITEMS.map((i) => i.id);
 
 describe('sidebar nav order', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => resetPrefs());
 
   it('defaults to the shipped order when nothing is stored', () => {
     expect(loadNavOrder()).toEqual(DEFAULT_ORDER);
@@ -53,7 +54,7 @@ describe('sidebar nav order', () => {
   });
 
   it('falls back to defaults for corrupt or non-array values', () => {
-    localStorage.setItem('anivault-nav-order', 'not json{');
+    setPref('anivault-nav-order', 'not json{');
     expect(loadNavOrder()).toEqual(DEFAULT_ORDER);
     expect(reconcile('library')).toEqual(DEFAULT_ORDER);
     expect(reconcile(null)).toEqual(DEFAULT_ORDER);

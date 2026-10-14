@@ -247,6 +247,73 @@ pub async fn delete_setting_inner(key: &str, state: &EngineState) -> Result<bool
         .map_err(command_error)
 }
 
+/// Frontend view preferences (tabs, sorts, layout) live under this prefix in
+/// the settings table rather than in WebView2 localStorage, whose LevelDB can
+/// corrupt and silently drop every later write.
+const UI_PREF_PREFIX: &str = "ui.";
+/// Set once the old localStorage values have been copied in, so the import
+/// runs a single time even if the user later clears every preference.
+const UI_PREFS_IMPORTED_KEY: &str = "ui_prefs.imported";
+
+#[derive(Debug, serde::Serialize)]
+pub struct UiPrefs {
+    pub prefs: std::collections::HashMap<String, String>,
+    pub imported: bool,
+}
+
+pub async fn get_ui_prefs_inner(state: &EngineState) -> Result<UiPrefs, String> {
+    let rows = state
+        .storage
+        .settings_with_prefix(UI_PREF_PREFIX)
+        .await
+        .map_err(command_error)?;
+    let mut prefs = std::collections::HashMap::with_capacity(rows.len());
+    for (key, value_json) in rows {
+        let value: String = serde_json::from_str(&value_json).map_err(|error| error.to_string())?;
+        prefs.insert(key[UI_PREF_PREFIX.len()..].to_string(), value);
+    }
+    let imported = state
+        .storage
+        .get_setting(UI_PREFS_IMPORTED_KEY)
+        .await
+        .map_err(command_error)?
+        .is_some();
+    Ok(UiPrefs { prefs, imported })
+}
+
+/// Store one preference, or remove it when `value` is None.
+pub async fn set_ui_pref_inner(
+    key: &str,
+    value: Option<String>,
+    state: &EngineState,
+) -> Result<(), String> {
+    let full_key = format!("{UI_PREF_PREFIX}{key}");
+    match value {
+        Some(value) => set_setting_inner(&full_key, serde_json::Value::String(value), state).await,
+        None => delete_setting_inner(&full_key, state).await.map(|_| ()),
+    }
+}
+
+/// One-time copy of the old localStorage preferences. Values already in the
+/// database are kept, and the imported marker is written in the same
+/// transaction so a failed import is retried on the next launch.
+pub async fn import_ui_prefs_inner(
+    prefs: std::collections::HashMap<String, String>,
+    state: &EngineState,
+) -> Result<(), String> {
+    let mut entries = Vec::with_capacity(prefs.len() + 1);
+    for (key, value) in prefs {
+        let value_json = serde_json::to_string(&value).map_err(|error| error.to_string())?;
+        entries.push((format!("{UI_PREF_PREFIX}{key}"), value_json));
+    }
+    entries.push((UI_PREFS_IMPORTED_KEY.to_string(), "true".to_string()));
+    state
+        .storage
+        .insert_settings_if_absent(&entries, unix_now()?)
+        .await
+        .map_err(command_error)
+}
+
 pub async fn get_session_state_inner(state: &EngineState) -> anyhow::Result<SessionState> {
     Ok(SessionState {
         paused: state
@@ -2702,6 +2769,28 @@ pub async fn set_setting(
     state: tauri::State<'_, EngineState>,
 ) -> Result<(), String> {
     set_setting_inner(&key, value, &state).await
+}
+
+#[tauri::command]
+pub async fn get_ui_prefs(state: tauri::State<'_, EngineState>) -> Result<UiPrefs, String> {
+    get_ui_prefs_inner(&state).await
+}
+
+#[tauri::command]
+pub async fn set_ui_pref(
+    key: String,
+    value: Option<String>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    set_ui_pref_inner(&key, value, &state).await
+}
+
+#[tauri::command]
+pub async fn import_ui_prefs(
+    prefs: std::collections::HashMap<String, String>,
+    state: tauri::State<'_, EngineState>,
+) -> Result<(), String> {
+    import_ui_prefs_inner(prefs, &state).await
 }
 
 #[tauri::command]

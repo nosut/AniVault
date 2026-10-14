@@ -491,6 +491,43 @@ impl Storage {
         Ok(())
     }
 
+    /// Every setting whose key starts with `prefix`, as (key, value_json).
+    pub async fn settings_with_prefix(&self, prefix: &str) -> anyhow::Result<Vec<(String, String)>> {
+        let rows = sqlx::query(
+            "SELECT key, value_json FROM settings WHERE substr(key, 1, length(?1)) = ?1",
+        )
+        .bind(prefix)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| (row.get::<String, _>(0), row.get::<String, _>(1)))
+            .collect())
+    }
+
+    /// Insert each (key, value_json) that has no row yet, all or nothing.
+    /// Existing rows win, so an import never overwrites a newer value.
+    pub async fn insert_settings_if_absent(
+        &self,
+        entries: &[(String, String)],
+        updated_at: i64,
+    ) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        for (key, value_json) in entries {
+            sqlx::query(
+                "INSERT INTO settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO NOTHING",
+            )
+            .bind(key)
+            .bind(value_json)
+            .bind(updated_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn delete_setting(&self, key: &str) -> anyhow::Result<bool> {
         let result = sqlx::query("DELETE FROM settings WHERE key = ?1")
             .bind(key)

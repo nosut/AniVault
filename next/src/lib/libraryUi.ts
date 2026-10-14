@@ -9,7 +9,7 @@ export const DEFAULT_STATUS_FILTER = 'watching';
 
 /// A persisted status filter is only trusted if it still corresponds to a tab.
 /// Nothing saved yet, or a category that has since been removed, opens on
-/// Watching, so a stale localStorage value cannot leave the view with no tab
+/// Watching, so a stale saved value cannot leave the view with no tab
 /// selected. An empty string is a saved choice of All.
 export function normalizeStatusFilter(
   value: string | null,
@@ -40,7 +40,7 @@ export function seasonSortVal(e: SeasonGrouped): number {
   return e.season_year * 10 + (SEASON_ORDER[e.season ?? ''] ?? 0);
 }
 
-/// Stable identity for a season group, used as the localStorage collapse key.
+/// Stable identity for a season group, used as the saved collapse key.
 export function seasonGroupKey(e: SeasonGrouped): string {
   if (!e.season || e.season_year == null) return 'tba';
   return `${e.season.toLowerCase()}${e.season_year}`;

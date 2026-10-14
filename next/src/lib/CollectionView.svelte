@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
   import { cleanupApplied } from './dropCleanup';
@@ -26,8 +27,8 @@
   // restore the scroll position once the list is back.
   const dispatch = createEventDispatcher<{ select: { anime_id: number }; loaded: null }>();
 
-  function loadPref(k: string, f: string) { try { return localStorage.getItem(k) ?? f; } catch { return f; } }
-  function persistPref(k: string, v: string) { try { localStorage.setItem(k, v); } catch {} }
+  function loadPref(k: string, f: string) { try { return getPref(k) ?? f; } catch { return f; } }
+  function persistPref(k: string, v: string) { try { setPref(k, v); } catch {} }
 
   let entries: CollectionEntry[] = [];
   let loading = false;

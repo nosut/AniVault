@@ -32,6 +32,7 @@ vi.mock('./lib/api', async (importOriginal) => {
 
 import { getSeasonAnime, diffSeason, getLibraryIds, fetchAnimeDetail, getTrackingStatus, searchLibrary, getCalendar, getCollection } from './lib/api';
 import App from './App.svelte';
+import { resetPrefs, setPref } from './lib/prefs';
 
 async function settle() {
   await tick();
@@ -44,8 +45,8 @@ describe('App keeps the Seasons view mounted across a detail round trip', () => 
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
-    localStorage.setItem('anivault-start-page', 'season');
+    resetPrefs();
+    setPref('anivault-start-page', 'season');
     // jsdom has no matchMedia implementation; App.svelte's onMount uses it to
     // track the desktop-vs-mobile rail layout.
     window.matchMedia = window.matchMedia ?? ((query: string) => ({
@@ -150,8 +151,8 @@ describe('App does not mount the Seasons view before it has ever been opened', (
   beforeEach(() => {
     vi.clearAllMocks();
     document.body.innerHTML = '<div id="app"></div>';
-    localStorage.clear();
-    localStorage.setItem('anivault-start-page', 'library');
+    resetPrefs();
+    setPref('anivault-start-page', 'library');
     window.matchMedia = window.matchMedia ?? ((query: string) => ({
       matches: true,
       media: query,

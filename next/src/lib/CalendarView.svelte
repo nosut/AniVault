@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { getCalendar, getLibraryStats, type CalendarEntry, type LibraryStats } from './api';
@@ -52,11 +53,11 @@
 
   // Month grid | Agenda list, remembered across restarts.
   function loadView(): 'month' | 'agenda' {
-    try { return (localStorage.getItem('anivault-calendar-view') as 'month' | 'agenda') || 'month'; }
+    try { return (getPref('anivault-calendar-view') as 'month' | 'agenda') || 'month'; }
     catch { return 'month'; }
   }
   let viewMode: 'month' | 'agenda' = loadView();
-  $: try { localStorage.setItem('anivault-calendar-view', viewMode); } catch {}
+  $: try { setPref('anivault-calendar-view', viewMode); } catch {}
   $: saveViewDate(viewDate);
 
   // Live clock (seconds) driving the countdowns; ticks once a second.

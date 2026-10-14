@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getPref, setPref } from './prefs';
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import { getSeasonAnime, getFutureAnime, getLibraryIds, updateListEntry, importAnilistAnime, diffSeason, FUTURE_SEASON_KEY, type SeasonAnimeEntry, type FutureAnimeEntry } from './api';
@@ -21,14 +22,14 @@
   // only the genre filter carries over between launches.
   function loadSavedGenre(): string {
     try {
-      const saved = localStorage.getItem('anivault-season-state');
+      const saved = getPref('anivault-season-state');
       if (saved) return JSON.parse(saved).genre ?? '';
     } catch {}
     return '';
   }
 
   function saveGenre(g: string) {
-    try { localStorage.setItem('anivault-season-state', JSON.stringify({ genre: g })); }
+    try { setPref('anivault-season-state', JSON.stringify({ genre: g })); }
     catch {}
   }
 
