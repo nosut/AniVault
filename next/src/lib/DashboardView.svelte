@@ -35,6 +35,8 @@
   // empty), and failures of buttons on this page.
   type ActionError = ExplainedError & { items?: string[]; retry?: () => void };
   let loadError: ActionError | null = null;
+  // Sections whose source failed: they must not claim to be empty.
+  let failedParts = { continue: false, calendar: false, ready: false };
   let actionError: ActionError | null = null;
   $: notInSonarr = coverage?.reachable ? missingRows(coverage.rows) : [];
   $: ignoredShows = coverage?.reachable ? ignoredRows(coverage.rows) : [];
@@ -137,6 +139,11 @@
     for (const [result, label] of parts) {
       if (result.status === 'rejected') failed.push({ what: `${label} couldn't be loaded.`, error: result.reason });
     }
+    failedParts = {
+      continue: contR.status === 'rejected',
+      calendar: calR.status === 'rejected',
+      ready: readyR.status === 'rejected',
+    };
     loadError = failed.length > 0
       ? { ...explainFailures("Part of your dashboard couldn't be loaded, so some sections may be empty or out of date.", failed), retry: () => load() }
       : null;
@@ -223,7 +230,7 @@
     <h3>Jump back in</h3>
     {#if loading}
       <div class="skeleton-row"></div>
-    {:else if continueEntries.length === 0}
+    {:else if continueEntries.length === 0 && !failedParts.continue}
       <p class="muted">No anime in progress. Start watching to see them here.</p>
     {:else}
       <div class="cw-grid">
@@ -255,7 +262,7 @@
     <h3>Airing today <span class="count">{dayFmt.format(new Date(now * 1000))}</span></h3>
     {#if loading}
       <div class="skeleton-row"></div>
-    {:else if todayEntries.length === 0}
+    {:else if todayEntries.length === 0 && !failedParts.calendar}
       <p class="muted">
         Nothing airs today{#if nextUpcoming} — next: {nextUpcoming.title}, {shortDayFmt.format(new Date((nextUpcoming.airing_at ?? 0) * 1000))}{/if}
       </p>
@@ -281,7 +288,7 @@
       <h3>Ready to watch <span class="count">unwatched episodes in your library</span></h3>
       {#if loading}
         <div class="skeleton-row"></div>
-      {:else if readyEntries.length === 0}
+      {:else if readyEntries.length === 0 && !failedParts.ready}
         <p class="muted">Nothing queued up — new downloads show here when the next unwatched episode is on disk.</p>
       {:else}
         <div class="ready-grid">
@@ -309,7 +316,7 @@
       <h3>Missing downloads <span class="count">aired, not in library</span></h3>
       {#if loading}
         <div class="skeleton-row"></div>
-      {:else if missingEntries.length === 0}
+      {:else if missingEntries.length === 0 && !failedParts.calendar}
         <p class="muted">All caught up — every aired episode is in your library.</p>
       {:else}
         <div class="missing-list">

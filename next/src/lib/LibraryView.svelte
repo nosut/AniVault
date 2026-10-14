@@ -1048,7 +1048,7 @@
                 <td><div class="skeleton-line short"></div></td>
               </tr>
             {/each}
-          {:else if sortedEntries.length === 0}
+          {:else if sortedEntries.length === 0 && !error}
             <tr class="empty-row">
               <td colspan={columnCount}>
                 <p class="empty">No anime found.</p>

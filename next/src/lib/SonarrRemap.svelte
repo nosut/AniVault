@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorNotice from './ErrorNotice.svelte';
+  import { explainError, type ExplainedError } from './errors';
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { remapSonarr, searchLibrary, type LibraryEntry } from './api';
   import { Pencil } from 'lucide-svelte';
@@ -14,6 +16,7 @@
   let loading = false;
   let selectedId: number | null = null;
   let saving = false;
+  let error: (ExplainedError & { retry: () => void }) | null = null;
 
   function toggle() {
     open = !open;
@@ -24,8 +27,11 @@
 
   async function search(q: string) {
     loading = true;
+    error = null;
     try {
       results = await searchLibrary(q, null, 10, 0);
+    } catch (e) {
+      error = { ...explainError("Your library couldn't be searched.", e), retry: () => search(q) };
     } finally {
       loading = false;
     }
@@ -39,11 +45,14 @@
   async function confirm() {
     if (selectedId === null) return;
     saving = true;
+    error = null;
     try {
       await remapSonarr(sonarrId, selectedId);
       const title = results.find((r) => r.anime_id === selectedId)?.title ?? null;
       open = false;
       dispatch('changed', { animeId: selectedId, title });
+    } catch (e) {
+      error = { ...explainError("This series couldn't be mapped to that show.", e), retry: confirm };
     } finally {
       saving = false;
     }
@@ -64,10 +73,13 @@
     confirmingUnmap = false;
     if (confirmUnmapTimer) clearTimeout(confirmUnmapTimer);
     saving = true;
+    error = null;
     try {
       await remapSonarr(sonarrId, null);
       open = false;
       dispatch('changed', { animeId: null, title: null });
+    } catch (e) {
+      error = { ...explainError("This series couldn't be unmapped.", e), retry: unmap };
     } finally {
       saving = false;
     }
@@ -93,6 +105,9 @@
         on:input={onInput}
       />
 
+      {#if error}
+        <ErrorNotice compact {...error} on:dismiss={() => (error = null)} />
+      {/if}
       {#if loading}
         <p class="remap-hint muted">Searching…</p>
       {:else if results.length === 0 && query}
