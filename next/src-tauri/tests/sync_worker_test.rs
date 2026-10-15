@@ -62,8 +62,9 @@ fn http_error_display_keeps_the_status_and_body() {
 #[tokio::test]
 async fn an_unreadable_saved_login_is_reported_and_clears_once_fixed() {
     let state = anivault_core::engine::runtime::fresh_test_state().await;
-    // Valid base64, but not something this Windows account encrypted.
-    state.storage.set_setting("anilist_access_token", "bm90IGEgYmxvYg==", 1).await.unwrap();
+    // Not something this Windows account encrypted (and plain text, so
+    // secret scanners don't mistake it for a real token).
+    state.storage.set_setting("anilist_access_token", "not-encrypted-on-this-account", 1).await.unwrap();
 
     let err = anivault_core::engine::sync_worker::drain_and_report(&state).await.unwrap_err();
     assert!(err.to_string().contains("saved login couldn't be read"));

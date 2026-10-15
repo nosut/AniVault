@@ -49,7 +49,7 @@ async fn add_without_sonarr_connected_is_an_error_and_links_nothing() {
 async fn an_unreadable_sonarr_key_is_an_error_not_not_connected() {
     let state = fresh_test_state().await;
     state.storage.set_setting("sonarr.url", "\"http://127.0.0.1:1/\"", 1).await.unwrap();
-    state.storage.set_setting("sonarr.api_key", "bm90IGEgYmxvYg==", 1).await.unwrap();
+    state.storage.set_setting("sonarr.api_key", "not-encrypted-on-this-account", 1).await.unwrap();
 
     let err = anivault_core::commands::list_sonarr_tags_inner(&state).await.unwrap_err();
     assert!(err.to_string().contains("saved login couldn't be read"), "{err}");
