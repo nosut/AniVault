@@ -682,6 +682,11 @@ export function lookupSonarrCandidates(animeId: number, invokeFn: InvokeFn = tau
   return invokeFn<SonarrCandidate[]>('lookup_sonarr_candidates', { animeId });
 }
 
+/** The series behind a pasted TVDB ID or thetvdb.com link, for when the name search misses it. */
+export function lookupSonarrByTvdb(input: string, invokeFn: InvokeFn = tauriInvoke): Promise<SonarrCandidate[]> {
+  return invokeFn<SonarrCandidate[]>('lookup_sonarr_by_tvdb', { input });
+}
+
 export function linkSonarrCoverage(animeId: number, sonarrId: number, invokeFn: InvokeFn = tauriInvoke): Promise<void> {
   return invokeFn<void>('link_sonarr_coverage', { animeId, sonarrId });
 }

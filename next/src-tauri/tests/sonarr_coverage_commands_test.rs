@@ -69,3 +69,17 @@ async fn a_calendar_with_a_failed_source_raises_a_problem() {
     assert_eq!(problems[0].area, "calendar");
     assert!(problems[0].detail.starts_with("Sonarr: "));
 }
+
+#[tokio::test]
+async fn tvdb_lookup_names_input_that_is_not_an_id_or_link() {
+    let state = state_with_dead_sonarr().await;
+    let err = anivault_core::commands::lookup_sonarr_by_tvdb_inner(&state, "Frieren").await.unwrap_err();
+    assert!(err.to_string().contains("isn't a TVDB ID or thetvdb.com link"), "{err}");
+}
+
+#[tokio::test]
+async fn tvdb_lookup_without_sonarr_connected_is_an_error() {
+    let state = fresh_test_state().await;
+    let err = anivault_core::commands::lookup_sonarr_by_tvdb_inner(&state, "480598").await.unwrap_err();
+    assert!(err.to_string().contains("not connected"), "{err}");
+}

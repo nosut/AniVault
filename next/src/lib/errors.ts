@@ -30,6 +30,7 @@ export type ErrorCause =
   | 'not-active'
   | 'sonarr-episode-missing'
   | 'sonarr-show-unknown'
+  | 'tvdb-input'
   | 'sonarr-already-has'
   | 'folder-offline'
   | 'browser-not-opened'
@@ -93,6 +94,7 @@ export function errorCause(raw: string): ErrorCause {
   if (/not Watching or Planning/i.test(raw)) return 'not-active';
   if (/Episode \d+ not found in Sonarr/i.test(raw)) return 'sonarr-episode-missing';
   if (/could not find TVDB id/i.test(raw)) return 'sonarr-show-unknown';
+  if (/isn't a TVDB ID or thetvdb\.com link|TheTVDB has no series at|didn't show a series ID/i.test(raw)) return 'tvdb-input';
   if (sonarr && /already (?:been added|configured|exists)/i.test(raw)) return 'sonarr-already-has';
   if (/does not look like a SQLite database|too small to be a SQLite database/i.test(raw)) return 'not-a-backup';
   if (/No v1 data found/i.test(raw)) return 'no-old-data';
@@ -141,6 +143,7 @@ const ADVICE: Record<ErrorCause, string> = {
   'not-active': "Only shows you're Watching or Planning can be added to Sonarr. Change its status first.",
   'sonarr-episode-missing': "Sonarr doesn't list that episode yet. Refresh the series in Sonarr, then try again.",
   'sonarr-show-unknown': "Sonarr couldn't find this show. It may not be listed on TheTVDB yet.",
+  'tvdb-input': "Check the TVDB ID or link. Copy the link from the show's page on thetvdb.com, or the series ID shown on that page.",
   'sonarr-already-has': 'Sonarr already has this series. Link it instead of adding it.',
   'folder-offline': "A library folder couldn't be reached. Check that its drive or network share is connected, or remove it in Settings.",
   'browser-not-opened': "Your web browser couldn't be opened to sign in. Check that Windows has a default browser set, then try again.",

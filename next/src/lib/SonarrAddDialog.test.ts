@@ -7,11 +7,14 @@ vi.mock('./api', () => ({
     { tvdb_id: 100, title: 'Overgeared', year: 2025, season_count: 1, poster_url: null, overview: null, in_sonarr: false, sonarr_id: null },
     { tvdb_id: 200, title: 'Overlord', year: 2015, season_count: 4, poster_url: null, overview: null, in_sonarr: true, sonarr_id: 12 },
   ]),
+  lookupSonarrByTvdb: vi.fn(async () => [
+    { tvdb_id: 480598, title: 'Because I, the True Saint, was Banished', year: 2026, season_count: 1, poster_url: null, overview: null, in_sonarr: false, sonarr_id: null },
+  ]),
   addToSonarr: vi.fn(async () => 55),
   linkSonarrCoverage: vi.fn(async () => {}),
 }));
 
-import { addToSonarr, linkSonarrCoverage, lookupSonarrCandidates } from './api';
+import { addToSonarr, linkSonarrCoverage, lookupSonarrByTvdb, lookupSonarrCandidates } from './api';
 import { createClassComponent } from 'svelte/legacy';
 import SonarrAddDialog from './SonarrAddDialog.svelte';
 
@@ -111,5 +114,65 @@ describe('SonarrAddDialog', () => {
     buttons()[0]!.click();
     await settle();
     expect(addToSonarr).toHaveBeenCalledWith(8, 300);
+  });
+
+  it('finds a show the name search missed from a pasted TVDB link, and adds it', async () => {
+    vi.mocked(lookupSonarrCandidates).mockResolvedValueOnce([]);
+    createClassComponent({
+      component: SonarrAddDialog,
+      target: document.getElementById('app')!,
+      props: { animeId: 7, title: 'True Saint' },
+    });
+    await settle();
+    expect(document.body.textContent).toContain('Sonarr found no match by name.');
+
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="TVDB ID or link"]')!;
+    input.value = ' https://thetvdb.com/series/shinnoseijo-anime ';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await settle();
+
+    expect(lookupSonarrByTvdb).toHaveBeenCalledWith('https://thetvdb.com/series/shinnoseijo-anime');
+    expect(input.value).toBe('');
+    buttons()[0]!.click();
+    await settle();
+    expect(addToSonarr).toHaveBeenCalledWith(7, 480598);
+  });
+
+  it('puts the pasted series first without listing it twice', async () => {
+    vi.mocked(lookupSonarrByTvdb).mockResolvedValueOnce([
+      { tvdb_id: 200, title: 'Overlord', year: 2015, season_count: 4, poster_url: null, overview: null, in_sonarr: true, sonarr_id: 12 },
+    ]);
+    createClassComponent({
+      component: SonarrAddDialog,
+      target: document.getElementById('app')!,
+      props: { animeId: 7, title: 'Overgeared' },
+    });
+    await settle();
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="TVDB ID or link"]')!;
+    input.value = '200';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await settle();
+    expect(buttons().map((b) => b.textContent?.trim())).toEqual(['Link', 'Add']);
+  });
+
+  it('explains input that is not a TVDB ID or link', async () => {
+    vi.mocked(lookupSonarrByTvdb).mockRejectedValueOnce(`"Frieren" isn't a TVDB ID or thetvdb.com link`);
+    createClassComponent({
+      component: SonarrAddDialog,
+      target: document.getElementById('app')!,
+      props: { animeId: 7, title: 'Overgeared' },
+    });
+    await settle();
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="TVDB ID or link"]')!;
+    input.value = 'Frieren';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+    document.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await settle();
+    expect(document.body.textContent).toContain(`AniVault couldn't find "Frieren" in Sonarr. Check the TVDB ID or link.`);
   });
 });

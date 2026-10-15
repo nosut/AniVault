@@ -262,6 +262,7 @@ pub fn run() {
             commands::get_sonarr_coverage,
             commands::get_sonarr_coverage_for,
             commands::lookup_sonarr_candidates,
+            commands::lookup_sonarr_by_tvdb,
             commands::link_sonarr_coverage,
             commands::ignore_sonarr_coverage,
             commands::unignore_sonarr_coverage,

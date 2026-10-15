@@ -2448,6 +2448,29 @@ pub async fn lookup_sonarr_candidates_inner(
     Ok(crate::engine::sonarr::coverage::rank_candidates(&titles_json, found, 5))
 }
 
+/// The series behind a TVDB ID or thetvdb.com link the user pasted, for when
+/// Sonarr's name search misses it.
+pub async fn lookup_sonarr_by_tvdb_inner(
+    state: &EngineState,
+    input: &str,
+) -> anyhow::Result<Vec<crate::engine::sonarr::client::SonarrCandidate>> {
+    use crate::engine::sonarr::tvdb::{parse_tvdb_ref, resolve_slug, TvdbRef};
+    let client = sonarr_client_from_settings(state)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
+    let tvdb_id = match parse_tvdb_ref(input) {
+        Some(TvdbRef::Id(id)) => id,
+        Some(TvdbRef::Slug(slug)) => resolve_slug(&slug).await?,
+        None => anyhow::bail!("{:?} isn't a TVDB ID or thetvdb.com link", input.trim()),
+    };
+    let found = client.lookup_series(&format!("tvdb:{tvdb_id}")).await?;
+    let candidates = crate::engine::sonarr::client::lookup_candidates(found, 1);
+    if candidates.is_empty() {
+        anyhow::bail!("Sonarr could not find TVDB id {tvdb_id}");
+    }
+    Ok(candidates)
+}
+
 pub async fn add_to_sonarr_inner(state: &EngineState, anime_id: i64, tvdb_id: i64) -> anyhow::Result<i64> {
     let client = sonarr_client_from_settings(state)
         .await?
@@ -2492,6 +2515,14 @@ pub async fn lookup_sonarr_candidates(
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<crate::engine::sonarr::client::SonarrCandidate>, String> {
     lookup_sonarr_candidates_inner(&state, anime_id).await.map_err(command_error)
+}
+
+#[tauri::command]
+pub async fn lookup_sonarr_by_tvdb(
+    input: String,
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<crate::engine::sonarr::client::SonarrCandidate>, String> {
+    lookup_sonarr_by_tvdb_inner(&state, &input).await.map_err(command_error)
 }
 
 #[tauri::command]

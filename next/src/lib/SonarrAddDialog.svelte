@@ -2,7 +2,7 @@
   import ErrorNotice from './ErrorNotice.svelte';
   import { explainError, type ExplainedError } from './errors';
   import { createEventDispatcher } from 'svelte';
-  import { addToSonarr, linkSonarrCoverage, lookupSonarrCandidates, type SonarrCandidate } from './api';
+  import { addToSonarr, linkSonarrCoverage, lookupSonarrByTvdb, lookupSonarrCandidates, type SonarrCandidate } from './api';
   import { candidateAction, candidateLabel } from './sonarrCoverageUi';
 
   export let animeId: number;
@@ -14,6 +14,9 @@
   let loading = true;
   let busyTvdb: number | null = null;
   let error: (ExplainedError & { retry: () => void }) | null = null;
+  // A TVDB ID or link typed in when the name search misses the show.
+  let tvdbInput = '';
+  let findingTvdb = false;
 
   // The show the candidates were looked up for. The parent can reuse this
   // component for another show, so re-search whenever animeId changes and
@@ -24,6 +27,7 @@
   async function search(id: number) {
     candidatesFor = id;
     candidates = [];
+    tvdbInput = '';
     loading = true;
     error = null;
     try {
@@ -33,6 +37,26 @@
       if (id === candidatesFor) error = { ...explainError("AniVault couldn't look this show up in Sonarr.", e), retry: () => search(id) };
     } finally {
       if (id === candidatesFor) loading = false;
+    }
+  }
+
+  async function findByTvdb() {
+    const id = candidatesFor;
+    const input = tvdbInput.trim();
+    if (id === null || !input) return;
+    findingTvdb = true;
+    error = null;
+    try {
+      const found = await lookupSonarrByTvdb(input);
+      if (id !== candidatesFor) return;
+      // The pasted series goes first; drop its copy from the name search.
+      const ids = new Set(found.map((c) => c.tvdb_id));
+      candidates = [...found, ...candidates.filter((c) => !ids.has(c.tvdb_id))];
+      tvdbInput = '';
+    } catch (e) {
+      if (id === candidatesFor) error = { ...explainError(`AniVault couldn't find "${input}" in Sonarr.`, e), retry: findByTvdb };
+    } finally {
+      if (id === candidatesFor) findingTvdb = false;
     }
   }
 
@@ -67,7 +91,7 @@
   {#if loading}
     <p class="muted">Searching Sonarr…</p>
   {:else if candidates.length === 0 && !error}
-    <p class="muted">Sonarr found no match. Add it in Sonarr directly.</p>
+    <p class="muted">Sonarr found no match by name.</p>
   {:else}
     <ul>
       {#each candidates as c (c.tvdb_id)}
@@ -86,6 +110,17 @@
       {/each}
     </ul>
   {/if}
+  {#if !loading}
+    <form class="tvdb" on:submit|preventDefault={findByTvdb}>
+      <input
+        bind:value={tvdbInput}
+        placeholder="Not listed? Paste a TVDB ID or thetvdb.com link"
+        aria-label="TVDB ID or link"
+        disabled={findingTvdb}
+      />
+      <button type="submit" disabled={findingTvdb || !tvdbInput.trim()}>{findingTvdb ? '…' : 'Find'}</button>
+    </form>
+  {/if}
   {#if error}
     <ErrorNotice compact message={error.message} details={error.details} actionLabel="Try again" on:action={error.retry} on:dismiss={() => (error = null)} />
   {/if}
@@ -100,5 +135,7 @@
   img { width: 32px; height: 48px; object-fit: cover; border-radius: 3px; }
   .label { flex: 1; font-size: 0.85rem; }
   .badge { margin-left: 0.4rem; font-size: 0.7rem; color: var(--color-success); }
+  .tvdb { display: flex; gap: 0.4rem; }
+  .tvdb input { flex: 1; min-width: 0; border: 1px solid rgba(var(--color-accent-rgb),0.25); border-radius: 6px; padding: 0.35rem 0.55rem; background: rgba(255,255,255,0.06); color: var(--color-text); font-size: 0.8rem; }
   .muted { color: var(--color-muted); font-size: 0.85rem; margin: 0; }
 </style>
