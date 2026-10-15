@@ -283,7 +283,10 @@
     catch (e) {
       upNextMinMinutes = previous;
       input.value = String(previous);
-      upNextError = fail(`The minimum watch time couldn't be saved, so it's back to ${previous} minutes. Enter it again to retry.`, e);
+      upNextError = fail(`The minimum watch time couldn't be saved, so it's back to ${previous} minutes.`, e, () => {
+        input.value = String(clamped);
+        void commitUpNextMinMinutes(input);
+      });
     }
   }
 

@@ -623,6 +623,11 @@ export function getCalendar(invokeFn: InvokeFn = tauriInvoke): Promise<CalendarE
   return invokeFn<CalendarEntry[]>('get_calendar');
 }
 
+/** Rebuild the calendar now instead of serving the cached one. */
+export function refreshCalendar(invokeFn: InvokeFn = tauriInvoke): Promise<CalendarEntry[]> {
+  return invokeFn<CalendarEntry[]>('refresh_calendar');
+}
+
 export interface ContinueWatchingEntry {
   anime_id: number;
   anime_title: string;

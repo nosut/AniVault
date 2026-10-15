@@ -25,12 +25,58 @@ pub fn message(raw: &str, log_dir: Option<&std::path::Path>) -> String {
     } else {
         "Start AniVault again. If this keeps happening, the details below explain what went wrong."
     };
-    let mut text = format!("AniVault couldn't start because it couldn't open its database.\n\n{advice}");
+    let database = ["database", "sqlite", "migration", "disk is full"].iter().any(|w| lower.contains(w));
+    let headline = if database {
+        "AniVault couldn't start because it couldn't open its database."
+    } else {
+        "AniVault couldn't start."
+    };
+    let mut text = format!("{headline}\n\n{advice}");
     if let Some(dir) = log_dir {
         text.push_str(&format!("\n\nThe log is in:\n{}", dir.display()));
     }
     text.push_str(&format!("\n\nDetails: {raw}"));
     text
+}
+
+/// Set once setup has finished; the panic hook only speaks up before that.
+static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The result of a startup step, or the message box and exit. Setup errors
+/// must be handled here: Tauri turns an `Err` returned from `setup` into a
+/// panic ("Failed to setup app"), never into an error `run` returns, so
+/// nothing after `run` would see it.
+pub fn require<T, E: std::fmt::Display>(result: Result<T, E>) -> T {
+    match result {
+        Ok(value) => value,
+        Err(e) => {
+            report(&e.to_string());
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Setup finished: from here on a panic is not a failure to start.
+pub fn mark_started() {
+    STARTED.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Backstop for anything else that panics before setup finishes. Release
+/// builds have no console, so the panic text alone reaches no one. After
+/// startup it only chains to the default hook; workers have their own
+/// supervisor.
+pub fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if !STARTED.load(std::sync::atomic::Ordering::SeqCst) {
+            let text = match info.payload().downcast_ref::<String>() {
+                Some(s) => s.clone(),
+                None => info.payload().downcast_ref::<&str>().map(|s| s.to_string()).unwrap_or_default(),
+            };
+            report(&text);
+        }
+        previous(info);
+    }));
 }
 
 /// Log the failure and show it in a native message box. Uses the Win32 API
@@ -74,6 +120,12 @@ mod tests {
         assert!(message("(code: 8) attempt to write a readonly database", None).contains("didn't allow"));
         assert!(message("migration 20260101 was previously applied but has been modified", None).contains("different version"));
         assert!(message("something else", None).contains("Start AniVault again"));
+    }
+
+    #[test]
+    fn a_failure_unrelated_to_the_database_does_not_blame_it() {
+        let text = message("failed to create webview: something", None);
+        assert!(text.starts_with("AniVault couldn't start.\n\n"));
     }
 
     #[test]

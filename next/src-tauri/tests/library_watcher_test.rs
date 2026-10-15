@@ -149,3 +149,20 @@ async fn a_damaged_folder_list_pauses_auto_scans_with_a_problem() {
     assert_eq!(problems.len(), 1);
     assert_eq!(problems[0].area, "library_folders");
 }
+
+#[tokio::test]
+async fn setting_the_folders_again_clears_a_damaged_list_problem() {
+    let state = fresh_test_state().await;
+    state.storage.set_setting("library.folders", "not json", 1).await.unwrap();
+    run_auto_scan(&state).await;
+    assert_eq!(state.problems.current().len(), 1);
+
+    // The manual scan fails on the same cause without adding a second notice.
+    let _ = anivault_core::commands::scan_library_folders_inner(&state).await;
+    let problems = state.problems.current();
+    assert_eq!(problems.len(), 1);
+    assert_eq!(problems[0].area, "library_folders");
+
+    anivault_core::commands::set_library_folders_inner(&state, vec![]).await.unwrap();
+    assert!(state.problems.current().is_empty());
+}

@@ -95,3 +95,15 @@ async fn a_failed_history_write_still_saves_progress_and_says_so() {
     assert_eq!(problems.len(), 1);
     assert!(problems[0].summary.contains("couldn't be added to your watch history"));
 }
+
+#[tokio::test]
+async fn a_failed_confirm_is_left_to_the_screen_that_asked() {
+    let state = fresh_test_state().await;
+    show(&state, 1, "watching", 1).await;
+    anivault_core::engine::storage::Tests::exec(&state.storage, "ALTER TABLE list_entry RENAME TO list_entry_gone").await;
+
+    let result = anivault_core::engine::session::record_progress(&state, 1, 2, None, None, "confirmed").await;
+
+    assert!(result.is_err());
+    assert!(state.problems.current().is_empty());
+}

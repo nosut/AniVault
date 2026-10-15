@@ -577,6 +577,8 @@ pub async fn set_tracking_enabled_inner(
     state: &EngineState,
 ) -> Result<TrackingStatus, String> {
     set_setting_inner("tracking.enabled", serde_json::json!(enabled), state).await?;
+    // Saved again, so an earlier unreadable value no longer matters.
+    state.problems.resolve(crate::engine::problems::area::TRACKING_SETTING);
     if enabled {
         start_tracking_inner(state).await
     } else {
@@ -1003,6 +1005,8 @@ pub async fn set_library_folders_inner(
     folders: Vec<String>,
 ) -> anyhow::Result<()> {
     library_scanner::set_library_folders(&state.storage, folders).await?;
+    // Saving a fresh list replaces a damaged one.
+    state.problems.resolve(crate::engine::problems::area::LIBRARY_FOLDERS);
     // Wake the filesystem watcher so it re-watches the new folder set.
     // notify_one() stores a permit when no task is waiting, ensuring a signal
     // is not lost while the watcher is busy scanning or rebuilding. Multiple
@@ -1015,7 +1019,7 @@ pub async fn scan_library_folders_inner(
     state: &EngineState,
 ) -> anyhow::Result<library_scanner::LibraryScanReport> {
     let result = library_scanner::scan_library_folders(&state.storage).await;
-    crate::engine::library_watcher::note_scan_result(state, &result);
+    crate::engine::library_watcher::note_scan_result(state, &result, false);
     result
 }
 
@@ -2757,6 +2761,23 @@ pub async fn get_calendar(
     state: tauri::State<'_, EngineState>,
 ) -> Result<Vec<CalendarEntry>, String> {
     get_calendar_inner(&state).await.map_err(command_error)
+}
+
+/// Rebuild the calendar now, for "Try again" on a calendar problem. The
+/// cache is marked expired rather than deleted, so a source that still fails
+/// falls back to the last schedule instead of a blank one.
+pub async fn refresh_calendar_inner(state: &EngineState) -> anyhow::Result<Vec<CalendarEntry>> {
+    if let Some(cache) = load_calendar_cache(state).await {
+        save_calendar_cache(state, 0, &cache.entries).await;
+    }
+    get_calendar_inner(state).await
+}
+
+#[tauri::command]
+pub async fn refresh_calendar(
+    state: tauri::State<'_, EngineState>,
+) -> Result<Vec<CalendarEntry>, String> {
+    refresh_calendar_inner(&state).await.map_err(command_error)
 }
 
 pub async fn get_watch_history_inner(

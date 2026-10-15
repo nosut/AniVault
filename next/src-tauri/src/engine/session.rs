@@ -320,7 +320,9 @@ pub async fn record_progress(
 ) -> anyhow::Result<bool> {
     use crate::engine::problems::area;
     let result = record_progress_inner(state, anime_id, episode, player, path, source).await;
-    if let Err(e) = &result {
+    // A confirm the user just clicked shows its own error; only automatic
+    // tracking, which no one is watching, needs the board.
+    if let (Err(e), false) = (&result, source == "confirmed") {
         state.problems.report(area::PROGRESS, "Your watch progress couldn't be saved.", e);
     }
     result

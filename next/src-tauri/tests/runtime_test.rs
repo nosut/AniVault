@@ -61,3 +61,21 @@ async fn initialize_engine_creates_parent_dir_and_migrates_database() {
     state.storage.close().await;
     remove_dir_all_retry(root);
 }
+
+#[tokio::test]
+async fn a_database_that_cannot_be_opened_gets_a_plain_startup_message() {
+    // A folder where the database file should be: SQLite can't open it.
+    let dir = std::env::temp_dir().join(format!("anivault-unopenable-{}", std::process::id()));
+    let db_path = dir.join("anivault.db");
+    std::fs::create_dir_all(&db_path).unwrap();
+
+    let err = match anivault_core::engine::runtime::initialize_engine_at(db_path, None).await {
+        Ok(_) => panic!("opening a folder as the database must fail"),
+        Err(e) => e.to_string(),
+    };
+    let text = anivault_core::startup_failure::message(&err, None);
+    assert!(text.starts_with("AniVault couldn't start because it couldn't open its database."), "{text}");
+    assert!(text.contains(&format!("Details: {err}")));
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}

@@ -3,7 +3,7 @@
   import ErrorNotice from './lib/ErrorNotice.svelte';
   import { explainError, type ExplainedError } from './lib/errors';
   import { appProblem, playFile, openLink, reportProblem } from './lib/notify';
-  import { backgroundProblems, dismissedProblems, dismissProblem, refreshBackgroundProblems, visibleNotices } from './lib/backgroundProblems';
+  import { backgroundProblems, dismissedProblems, dismissProblem, failedRetries, refreshBackgroundProblems, visibleNotices } from './lib/backgroundProblems';
   import { onMount, onDestroy, tick } from 'svelte';
   import { drainEngineEvents, onEngineEventsReady, checkForUpdate, getUpNext, notifyUpNext, getSetting, type EngineEvent, type SeasonAnimeEntry, type UpdateInfo, type WatchHistoryEntry, type UpNext } from './lib/api';
   import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -275,7 +275,7 @@
     isDesktopRail = railMediaQuery ? railMediaQuery.matches : true;
   }
 
-  $: backgroundNotices = visibleNotices($backgroundProblems, $dismissedProblems, () => void refreshBackgroundProblems());
+  $: backgroundNotices = visibleNotices($backgroundProblems, $dismissedProblems, $failedRetries, () => void refreshBackgroundProblems());
 
   async function pollEvents() {
     void refreshBackgroundProblems();
@@ -541,7 +541,7 @@
     {/if}
     {#snippet failed(_error, reset)}
       {#if pageCrash}
-        <ErrorNotice {...pageCrash} retry={() => { pageCrash = null; reset(); }} on:dismiss={() => (pageCrash = null)} />
+        <ErrorNotice {...pageCrash} retry={() => { pageCrash = null; crashReset = null; crashedView = null; reset(); }} on:dismiss={() => (pageCrash = null)} />
       {/if}
     {/snippet}
     </svelte:boundary>

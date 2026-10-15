@@ -227,7 +227,7 @@ pub async fn enqueue_anilist_sync(state: &EngineState, anime_id: i64) {
     let report = |e: &dyn std::fmt::Display| {
         state.problems.report(
             area::SYNC_QUEUE,
-            "A list change couldn't be queued for AniList, so AniList may not show it. Make the change again to resend it.",
+            "A list change couldn't be queued for AniList, so AniList may not show it.",
             e,
         )
     };

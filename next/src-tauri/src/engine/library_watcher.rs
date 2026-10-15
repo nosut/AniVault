@@ -36,7 +36,7 @@ pub async fn run_auto_scan(state: &EngineState) {
         return;
     }
     let result = library_scanner::scan_library_folders(&state.storage).await;
-    note_scan_result(state, &result);
+    note_scan_result(state, &result, true);
     if let Ok(r) = result {
         if r.indexed > 0 || r.removed > 0 {
             tracing::info!(indexed = r.indexed, removed = r.removed, "auto-scan changed the index");
@@ -48,15 +48,33 @@ pub async fn run_auto_scan(state: &EngineState) {
     }
 }
 
-/// Put a full library scan's outcome on the problem board. Shared by the
-/// automatic scan and the Scan button, so either one clears what the other
-/// reported once the folders are back.
+/// Put a full library scan's outcome on the problem board. The automatic scan
+/// reports and clears; the Scan button (`report: false`) only clears, since
+/// its own failures are already shown where it was pressed.
 pub fn note_scan_result(
     state: &EngineState,
     result: &anyhow::Result<library_scanner::LibraryScanReport>,
+    report: bool,
 ) {
     use crate::engine::problems::area;
+    // A scan that ran at all read the folder list, so that problem is over.
+    if result.is_ok() {
+        state.problems.resolve(area::LIBRARY_FOLDERS);
+    }
+    if !report {
+        if matches!(result, Ok(r) if r.errors.is_empty()) {
+            state.problems.resolve(area::LIBRARY_SCAN);
+        }
+        return;
+    }
     match result {
+        // The folder list itself is unreadable: that is the folder-list
+        // problem, not a second "scan didn't finish" notice for one cause.
+        Err(e) if e.to_string().contains("library folder list is damaged") => state.problems.report(
+            area::LIBRARY_FOLDERS,
+            "Your library folders couldn't be read, so automatic scans are paused.",
+            e,
+        ),
         Ok(r) if r.errors.is_empty() => state.problems.resolve(area::LIBRARY_SCAN),
         Ok(r) => state.problems.report(
             area::LIBRARY_SCAN,

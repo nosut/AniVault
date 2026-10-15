@@ -137,27 +137,51 @@ where
     F: Fn(EngineState) -> Fut + Send + 'static,
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
-    supervise_with_delay(state, name, make, std::time::Duration::from_secs(30))
+    supervise_with_delay(
+        state,
+        name,
+        make,
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_secs(600),
+    )
 }
 
+/// `delay` before a restart; once a restarted run has lasted `stable`, its
+/// notice is cleared.
 fn supervise_with_delay<F, Fut>(
     state: &EngineState,
     name: &'static str,
     make: F,
     delay: std::time::Duration,
+    stable: std::time::Duration,
 ) -> tauri::async_runtime::JoinHandle<()>
 where
     F: Fn(EngineState) -> Fut + Send + 'static,
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
     let state = state.clone();
+    // One area per worker, so a crash in one doesn't overwrite another's.
+    let area = format!("{}:{name}", crate::engine::problems::area::WORKER);
     tauri::async_runtime::spawn(async move {
         loop {
-            match tauri::async_runtime::spawn(make(state.clone())).await {
+            let mut run = tauri::async_runtime::spawn(make(state.clone()));
+            let finished = tokio::select! {
+                result = &mut run => Some(result),
+                _ = tokio::time::sleep(stable) => None,
+            };
+            let result = match finished {
+                Some(result) => result,
+                None => {
+                    // Survived long enough: the restart worked.
+                    state.problems.resolve(&area);
+                    run.await
+                }
+            };
+            match result {
                 Ok(()) => return,
                 Err(e) => {
                     state.problems.report(
-                        crate::engine::problems::area::WORKER,
+                        &area,
                         format!("{name} stopped unexpectedly and was restarted."),
                         e,
                     );
@@ -190,6 +214,7 @@ mod supervisor_tests {
                 }
             },
             std::time::Duration::ZERO,
+            std::time::Duration::from_secs(600),
         );
         handle.await.unwrap();
 
@@ -197,5 +222,31 @@ mod supervisor_tests {
         let problems = state.problems.current();
         assert_eq!(problems.len(), 1);
         assert_eq!(problems[0].summary, "Test worker stopped unexpectedly and was restarted.");
+    }
+
+    #[tokio::test]
+    async fn a_restarted_worker_that_keeps_running_clears_its_notice() {
+        let state = fresh_test_state().await;
+        let runs = Arc::new(AtomicUsize::new(0));
+        let counter = runs.clone();
+        let _handle = supervise_with_delay(
+            &state,
+            "Test worker",
+            move |_state| {
+                let counter = counter.clone();
+                async move {
+                    if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                        panic!("first run fails");
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                }
+            },
+            std::time::Duration::ZERO,
+            std::time::Duration::from_millis(50),
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert_eq!(state.problems.current()[0].area, "worker:Test worker");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(state.problems.current().is_empty());
     }
 }

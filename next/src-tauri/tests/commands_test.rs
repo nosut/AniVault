@@ -263,3 +263,23 @@ async fn a_show_not_stored_locally_reports_why_it_couldnt_be_fetched() {
     let err = anivault_core::commands::fetch_anime_detail_inner(999, &state).await.unwrap_err();
     assert_eq!(err.to_string(), "not connected to AniList");
 }
+
+#[tokio::test]
+async fn retrying_the_calendar_rebuilds_it_instead_of_serving_the_cache() {
+    let state = test_state("calendar-refresh").await;
+    let now = unix_now();
+    state
+        .storage
+        .set_setting("calendar.cache", &calendar_cache_json(now - 60, now + 3600), now)
+        .await
+        .unwrap();
+    state.problems.report("calendar", "Airing times couldn't be updated, so the calendar may be missing episodes.", "Sonarr: down");
+
+    // A normal read serves the fresh cache and doesn't re-check the sources.
+    anivault_core::commands::get_calendar_inner(&state).await.unwrap();
+    assert_eq!(state.problems.current().len(), 1);
+
+    // The retry rebuilds; with no source failing, the problem clears.
+    anivault_core::commands::refresh_calendar_inner(&state).await.unwrap();
+    assert!(state.problems.current().is_empty());
+}

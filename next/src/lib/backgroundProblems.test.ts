@@ -5,7 +5,7 @@ vi.mock('./api', () => ({
   scanLibraryFolders: vi.fn(async () => ({})),
   triggerSync: vi.fn(async () => ({})),
   setTrackingEnabled: vi.fn(async () => ({})),
-  getCalendar: vi.fn(async () => []),
+  refreshCalendar: vi.fn(async () => []),
 }));
 
 import { triggerSync } from './api';
@@ -32,11 +32,32 @@ describe('visibleNotices', () => {
 
   it('offers a retry only where one makes sense, and it runs the fix', async () => {
     const onRetried = vi.fn();
-    const [sync, watcher] = visibleNotices([problem('sync'), problem('library_watcher')], {}, onRetried);
+    const [sync, watcher] = visibleNotices([problem('sync'), problem('library_watcher')], {}, {}, onRetried);
     expect(watcher!.retry).toBeUndefined();
     sync!.retry!();
     await new Promise((r) => setTimeout(r, 0));
     expect(triggerSync).toHaveBeenCalled();
     expect(onRetried).toHaveBeenCalled();
+  });
+
+  it("uses the area's own next step instead of competing cause advice", () => {
+    const [n] = visibleNotices([{
+      area: 'sync_queue',
+      summary: "A list change couldn't be queued for AniList, so AniList may not show it.",
+      detail: 'error returned from database: (code: 5) database is locked',
+      since: 1,
+    }], {});
+    expect(n!.message).toBe("A list change couldn't be queued for AniList, so AniList may not show it. Make the change again to resend it.");
+  });
+
+  it('does not say Try again when there is no button and the cause is unknown', () => {
+    const [n] = visibleNotices([{ area: 'worker', summary: 'AniList sync stopped unexpectedly and was restarted.', detail: 'panic', since: 1 }], {});
+    expect(n!.message).toBe('AniList sync stopped unexpectedly and was restarted. Show details has the technical information to report.');
+    expect(n!.retry).toBeUndefined();
+  });
+
+  it('says when a retry still failed', () => {
+    const [n] = visibleNotices([problem('sync')], {}, { sync: true });
+    expect(n!.message).toMatch(/^Still not working\. Changes aren't reaching AniList\./);
   });
 });

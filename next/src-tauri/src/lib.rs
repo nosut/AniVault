@@ -37,6 +37,7 @@ pub fn window_state_flags() -> StateFlags {
 }
 
 pub fn run() {
+    crate::startup_failure::install_panic_hook();
     let result = tauri::Builder::default()
         // Single-instance MUST be the first plugin registered. When a second
         // launch is attempted, this callback runs in the already-running instance
@@ -81,16 +82,13 @@ pub fn run() {
                 Err(e) => eprintln!("[AniVault] could not resolve a log directory: {e}"),
             }
 
-            let database_path = app
-                .path()
-                .app_data_dir()
-                .map_err(|error| Box::<dyn std::error::Error>::from(error))?
-                .join("anivault.db");
+            // Handled here, not returned: see `startup_failure::require`.
+            let database_path =
+                crate::startup_failure::require(app.path().app_data_dir()).join("anivault.db");
 
-            let state = tauri::async_runtime::block_on(
+            let state = crate::startup_failure::require(tauri::async_runtime::block_on(
                 initialize_engine_at(database_path.clone(), Some(app.handle().clone())),
-            )
-            .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
+            ));
             sync_worker::spawn_sync_worker(&state);
             engine::library_watcher::spawn_library_scan_worker(&state);
             engine::library_watcher::spawn_library_watcher(&state);
@@ -118,8 +116,10 @@ pub fn run() {
                     let enabled = match s.storage.get_setting("tracking.enabled").await {
                         Ok(v) => v.map(|v| v != "false").unwrap_or(true),
                         Err(e) => {
+                            // Its own area: a successful start resolves TRACKING
+                            // and would otherwise wipe this straight away.
                             s.problems.report(
-                                area::TRACKING,
+                                area::TRACKING_SETTING,
                                 "Your tracking setting couldn't be read, so tracking was started as usual.",
                                 e,
                             );
@@ -130,7 +130,7 @@ pub fn run() {
                         if let Err(e) = commands::start_tracking_inner(&s).await {
                             s.problems.report(
                                 area::TRACKING,
-                                "Automatic tracking couldn't be started. Use Start tracking in the sidebar to try again.",
+                                "Automatic tracking couldn't be started.",
                                 e,
                             );
                         }
@@ -229,6 +229,7 @@ pub fn run() {
                 }
             }
 
+            crate::startup_failure::mark_started();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -281,6 +282,7 @@ pub fn run() {
             commands::get_setting,
             commands::get_ui_prefs,
             commands::get_background_problems,
+            commands::refresh_calendar,
             commands::import_ui_prefs,
             commands::get_sync_status,
             commands::get_anilist_token_invalid,
@@ -340,8 +342,8 @@ pub fn run() {
             commands::update_list_entry,
         ])
         .run(tauri::generate_context!());
-    // A setup failure (most often the database not opening) would otherwise
-    // end the process with no window and no message.
+    // `run` returns an error only when the app can't be built at all (setup
+    // failures panic instead and are handled in `setup` and the panic hook).
     if let Err(error) = result {
         crate::startup_failure::report(&error.to_string());
         std::process::exit(1);
