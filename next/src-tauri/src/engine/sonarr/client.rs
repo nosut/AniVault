@@ -509,6 +509,62 @@ pub struct SonarrEpisode {
     #[serde(rename = "absoluteEpisodeNumber")]
     #[serde(default)]
     pub absolute_episode_number: Option<i32>,
+    /// Local air date, `YYYY-MM-DD`.
+    #[serde(rename = "airDate")]
+    #[serde(default)]
+    pub air_date: Option<String>,
+    #[serde(rename = "airDateUtc")]
+    #[serde(default)]
+    pub air_date_utc: Option<String>,
+}
+
+/// When an AniList entry's first episode aired, to find where the entry starts
+/// in a Sonarr series that also holds other entries (a 2nd cour, a sequel).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FirstAiring {
+    /// AniList's airing time for episode 1, unix seconds.
+    At(i64),
+    /// AniList's start date, when it has no airing schedule.
+    Date(chrono::NaiveDate),
+}
+
+/// The regular-season Sonarr episode that aired closest to `first`, within two
+/// days. Ties go to the earliest episode, so a double premiere anchors on its
+/// first half.
+pub fn anchor_episode(episodes: &[SonarrEpisode], first: FirstAiring) -> Option<&SonarrEpisode> {
+    const WINDOW_SECS: i64 = 2 * 86_400;
+    let distance = |e: &SonarrEpisode| -> Option<i64> {
+        match first {
+            FirstAiring::At(at) => {
+                let utc = chrono::DateTime::parse_from_rfc3339(e.air_date_utc.as_deref()?).ok()?;
+                Some((utc.timestamp() - at).abs())
+            }
+            FirstAiring::Date(day) => {
+                let aired = chrono::NaiveDate::parse_from_str(e.air_date.as_deref()?, "%Y-%m-%d").ok()?;
+                Some((aired - day).num_days().abs() * 86_400)
+            }
+        }
+    };
+    episodes
+        .iter()
+        .filter(|e| e.season_number > 0)
+        .filter_map(|e| distance(e).filter(|&d| d <= WINDOW_SECS).map(|d| (d, e)))
+        .min_by_key(|&(d, e)| (d, e.season_number, e.episode_number))
+        .map(|(_, e)| e)
+}
+
+/// Sonarr episode id for episode `target` of an entry that starts at `anchor`:
+/// counted on in absolute numbering when the series has it, else within the
+/// anchor's season.
+pub fn find_episode_from_anchor(episodes: &[SonarrEpisode], anchor: &SonarrEpisode, target: i32) -> Option<i64> {
+    let step = target - 1;
+    match anchor.absolute_episode_number {
+        Some(a) => episodes.iter().find(|e| e.absolute_episode_number == Some(a + step)),
+        None => episodes
+            .iter()
+            .find(|e| e.season_number == anchor.season_number && e.episode_number == anchor.episode_number + step),
+    }
+    .map(|e| e.id)
 }
 
 /// Sonarr episode id for an AniList (absolute) episode number: prefer the

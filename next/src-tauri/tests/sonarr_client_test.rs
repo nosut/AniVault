@@ -1,7 +1,88 @@
-use anivault_core::engine::sonarr::client::{find_episode_id, SonarrClient, SonarrEpisode};
+use anivault_core::engine::sonarr::client::{
+    anchor_episode, find_episode_from_anchor, find_episode_id, FirstAiring, SonarrClient, SonarrEpisode,
+};
 
 fn ep(id: i64, season: i32, number: i32, absolute: Option<i32>) -> SonarrEpisode {
-    SonarrEpisode { id, season_number: season, episode_number: number, absolute_episode_number: absolute }
+    SonarrEpisode { id, season_number: season, episode_number: number, absolute_episode_number: absolute, air_date: None, air_date_utc: None }
+}
+
+/// An episode that aired on `date` at 15:30 UTC (00:30 JST the next day).
+fn aired(id: i64, season: i32, number: i32, absolute: Option<i32>, date: &str) -> SonarrEpisode {
+    SonarrEpisode {
+        air_date: Some(date.into()),
+        air_date_utc: Some(format!("{date}T15:30:00Z")),
+        ..ep(id, season, number, absolute)
+    }
+}
+
+fn unix(rfc3339: &str) -> i64 {
+    chrono::DateTime::parse_from_rfc3339(rfc3339).unwrap().timestamp()
+}
+
+/// Chitose Is in the Ramune Bottle on TheTVDB: both cours in one season 1,
+/// with episodes 12 and 13 on the same day and a recap among the specials.
+fn chitose() -> Vec<SonarrEpisode> {
+    let mut eps = vec![aired(9015, 0, 15, None, "2026-10-06")];
+    let dates = [
+        "2025-10-07", "2025-10-14", "2025-10-21", "2025-10-28", "2025-11-04", "2025-12-02", "2025-12-09",
+        "2025-12-16", "2025-12-23", "2025-12-30", "2026-03-30", "2026-03-31", "2026-03-31", "2026-10-13",
+        "2026-10-20", "2026-10-27",
+    ];
+    for (i, d) in dates.iter().enumerate() {
+        let n = i as i32 + 1;
+        eps.push(aired(1000 + n as i64, 1, n, Some(n), d));
+    }
+    eps
+}
+
+#[test]
+fn a_second_cour_counts_on_from_where_it_starts_in_the_series() {
+    let eps = chitose();
+    // AniList: the 2nd cour's episode 1 airs 2026-10-14 00:30 JST.
+    let anchor = anchor_episode(&eps, FirstAiring::At(unix("2026-10-13T15:30:00Z"))).unwrap();
+    assert_eq!(anchor.id, 1014);
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 1), Some(1014));
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 3), Some(1016));
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 13), None);
+}
+
+#[test]
+fn the_first_cour_anchors_on_the_series_first_episode() {
+    let eps = chitose();
+    let anchor = anchor_episode(&eps, FirstAiring::At(unix("2025-10-07T15:30:00Z"))).unwrap();
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 12), Some(1012));
+}
+
+#[test]
+fn a_start_date_anchors_within_a_day_and_ignores_specials() {
+    let eps = chitose();
+    // AniList's start date is the JST day, a day after TVDB's.
+    let day = chrono::NaiveDate::from_ymd_opt(2026, 10, 14).unwrap();
+    assert_eq!(anchor_episode(&eps, FirstAiring::Date(day)).map(|e| e.id), Some(1014));
+}
+
+#[test]
+fn a_same_day_pair_anchors_on_the_earlier_episode() {
+    let eps = chitose();
+    let day = chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
+    assert_eq!(anchor_episode(&eps, FirstAiring::Date(day)).map(|e| e.id), Some(1012));
+}
+
+#[test]
+fn no_episode_near_the_first_airing_gives_no_anchor() {
+    let eps = chitose();
+    assert!(anchor_episode(&eps, FirstAiring::At(unix("2024-01-01T00:00:00Z"))).is_none());
+}
+
+#[test]
+fn without_absolute_numbers_the_anchor_counts_within_its_season() {
+    let eps = vec![
+        aired(1, 1, 12, None, "2024-03-25"),
+        aired(2, 2, 1, None, "2025-01-06"),
+        aired(3, 2, 2, None, "2025-01-13"),
+    ];
+    let anchor = anchor_episode(&eps, FirstAiring::At(unix("2025-01-06T15:30:00Z"))).unwrap();
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 2), Some(3));
 }
 
 #[test]

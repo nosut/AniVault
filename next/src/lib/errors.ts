@@ -29,6 +29,7 @@ export type ErrorCause =
   | 'database-unavailable'
   | 'not-active'
   | 'sonarr-episode-missing'
+  | 'sonarr-episode-unplaced'
   | 'sonarr-show-unknown'
   | 'tvdb-input'
   | 'sonarr-already-has'
@@ -93,6 +94,7 @@ export function errorCause(raw: string): ErrorCause {
   if (/not linked to a Sonarr series/i.test(raw)) return 'sonarr-not-linked';
   if (/not Watching or Planning/i.test(raw)) return 'not-active';
   if (/Episode \d+ not found in Sonarr/i.test(raw)) return 'sonarr-episode-missing';
+  if (/Couldn't tell which Sonarr episode/i.test(raw)) return 'sonarr-episode-unplaced';
   if (/could not find TVDB id/i.test(raw)) return 'sonarr-show-unknown';
   if (/isn't a TVDB ID or thetvdb\.com link|TheTVDB has no series at|didn't show a series ID/i.test(raw)) return 'tvdb-input';
   if (sonarr && /already (?:been added|configured|exists)/i.test(raw)) return 'sonarr-already-has';
@@ -142,6 +144,7 @@ const ADVICE: Record<ErrorCause, string> = {
   'database-unavailable': "AniVault couldn't write to its database. Check that the AniVault folder in AppData isn't read-only, then restart AniVault.",
   'not-active': "Only shows you're Watching or Planning can be added to Sonarr. Change its status first.",
   'sonarr-episode-missing': "Sonarr doesn't list that episode yet. Refresh the series in Sonarr, then try again.",
+  'sonarr-episode-unplaced': "Sonarr keeps this show together with its other seasons, and AniVault couldn't tell which of its episodes this is. Search for it in Sonarr directly.",
   'sonarr-show-unknown': "Sonarr couldn't find this show. It may not be listed on TheTVDB yet.",
   'tvdb-input': "Check the TVDB ID or link. Copy the link from the show's page on thetvdb.com, or the series ID shown on that page.",
   'sonarr-already-has': 'Sonarr already has this series. Link it instead of adding it.',

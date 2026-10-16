@@ -44,6 +44,7 @@ describe('errorCause', () => {
     ['error sending request for url (http://localhost:8989/api/v3/system/status)', 'sonarr-unreachable'],
     ['This show is not Watching or Planning', 'not-active'],
     ['Episode 4 not found in Sonarr', 'sonarr-episode-missing'],
+    ["Couldn't tell which Sonarr episode is episode 1: the Sonarr series also holds other seasons and AniList has no air date to place this one", 'sonarr-episode-unplaced'],
     ['Sonarr could not find TVDB id 12345', 'sonarr-show-unknown'],
     [`"Frieren" isn't a TVDB ID or thetvdb.com link`, 'tvdb-input'],
     ['TheTVDB has no series at that link (no-such-show)', 'tvdb-input'],
@@ -92,7 +93,7 @@ describe('explainError', () => {
       'sonarr-not-linked', 'anilist-login', 'anilist-busy', 'oauth-timeout', 'port-in-use', 'service-down',
       'file-missing', 'file-locked', 'no-permission', 'disk-full', 'database-busy', 'not-a-backup',
       'no-old-data', 'drive-root', 'startup-setting', 'damaged-setting', 'saved-login-unreadable', 'database-unavailable',
-      'not-active', 'sonarr-episode-missing', 'sonarr-show-unknown', 'tvdb-input', 'sonarr-already-has', 'folder-offline', 'browser-not-opened', 'notifications-off', 'unknown',
+      'not-active', 'sonarr-episode-missing', 'sonarr-episode-unplaced', 'sonarr-show-unknown', 'tvdb-input', 'sonarr-already-has', 'folder-offline', 'browser-not-opened', 'notifications-off', 'unknown',
     ];
     for (const cause of causes) {
       expect(causeAdvice(cause)).not.toMatch(/os error|HTTP|\d{3}|sqlite|oauth|registry|exception|null/i);

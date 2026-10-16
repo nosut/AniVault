@@ -2351,22 +2351,77 @@ pub async fn list_sonarr_tags(
     list_sonarr_tags_inner(&state).await.map_err(command_error)
 }
 
+/// When the entry's episode 1 aired, from AniList: its airing time, else its
+/// start date. `None` when AniList isn't connected or has neither.
+async fn first_airing(
+    state: &EngineState,
+    anime_id: i64,
+) -> anyhow::Result<Option<crate::engine::sonarr::client::FirstAiring>> {
+    use crate::engine::sonarr::client::FirstAiring;
+    let Some(token) = auth::load_token(&state.storage).await? else {
+        return Ok(None);
+    };
+    let query_str = format!(
+        "query {{ Media(id: {anime_id}, type: ANIME) {{ startDate {{ year month day }}          airingSchedule(perPage: 1) {{ nodes {{ episode airingAt }} }} }} }}"
+    );
+    let raw: serde_json::Value = AniListClient::new(token).query(&query_str, serde_json::json!({})).await?;
+    let media = &raw["data"]["Media"];
+    let first = &media["airingSchedule"]["nodes"][0];
+    if first["episode"].as_i64() == Some(1) {
+        if let Some(at) = first["airingAt"].as_i64() {
+            return Ok(Some(FirstAiring::At(at)));
+        }
+    }
+    let d = &media["startDate"];
+    Ok(match (d["year"].as_i64(), d["month"].as_i64(), d["day"].as_i64()) {
+        (Some(y), Some(m), Some(day)) => {
+            chrono::NaiveDate::from_ymd_opt(y as i32, m as u32, day as u32).map(FirstAiring::Date)
+        }
+        _ => None,
+    })
+}
+
 pub async fn search_sonarr_episode_inner(
     state: &EngineState,
     anime_id: i64,
     episode: i32,
 ) -> anyhow::Result<String> {
-    let mapping = state
-        .storage
-        .sonarr_mapping_by_anime(anime_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("This show is not linked to a Sonarr series"))?;
+    use crate::engine::sonarr::client::{anchor_episode, find_episode_from_anchor, find_episode_id};
+    use crate::engine::sonarr::coverage::CoverageState;
     let client = sonarr_client_from_settings(state)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;
-    let episodes = client.list_episodes(mapping.sonarr_id).await?;
-    let episode_id = crate::engine::sonarr::client::find_episode_id(&episodes, episode)
-        .ok_or_else(|| anyhow::anyhow!("Episode {episode} not found in Sonarr"))?;
+    // The series: this entry's own mapping, else the series that covers it by
+    // link or title. Sonarr often keeps a later cour or season under the first
+    // one's series, which is mapped to that first entry.
+    let mapped = state.storage.sonarr_mapping_by_anime(anime_id).await?.map(|m| m.sonarr_id);
+    let sonarr_id = match mapped {
+        Some(id) => id,
+        None => match get_sonarr_coverage_for_inner(state, anime_id).await?.map(|r| r.state) {
+            Some(CoverageState::Covered { sonarr_id, .. }) => sonarr_id,
+            _ => anyhow::bail!("This show is not linked to a Sonarr series"),
+        },
+    };
+    let episodes = client.list_episodes(sonarr_id).await?;
+    // Find where this entry starts in the series by when its episode 1 aired.
+    // A missing air date only falls back to plain numbering for the entry's
+    // own series, where episode 1 is the series' episode 1.
+    let first = match first_airing(state, anime_id).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::warn!("AniList air date for {anime_id} failed: {e}");
+            None
+        }
+    };
+    let anchor = first.and_then(|f| anchor_episode(&episodes, f));
+    let episode_id = match (anchor, mapped) {
+        (Some(a), _) => find_episode_from_anchor(&episodes, a, episode),
+        (None, Some(_)) => find_episode_id(&episodes, episode),
+        (None, None) => anyhow::bail!(
+            "Couldn't tell which Sonarr episode is episode {episode}: the Sonarr series also holds other seasons and AniList has no air date to place this one"
+        ),
+    }
+    .ok_or_else(|| anyhow::anyhow!("Episode {episode} not found in Sonarr"))?;
     client.search_episodes(&[episode_id]).await?;
     Ok(format!("Search started for episode {episode}"))
 }
