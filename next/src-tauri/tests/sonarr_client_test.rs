@@ -275,3 +275,62 @@ async fn lookup_across_terms_searches_every_term_and_dedupes() {
     let ids: Vec<i64> = got.iter().map(|c| c.tvdb_id).collect();
     assert_eq!(ids, vec![1, 2, 3, 4, 5, 6, 99]);
 }
+
+/// Mushoku Tensei on TheTVDB: two specials take absolute numbers inside the
+/// run (S00E01 is absolute 17, S00E02 "Guardian Fitz" is absolute 25 and is
+/// AniList's episode 1 of season 2).
+fn mushoku() -> Vec<SonarrEpisode> {
+    let mut eps = Vec::new();
+    let mut abs = 0;
+    for n in 1..=23 {
+        abs += 1;
+        if n == 17 {
+            eps.push(aired(9001, 0, 1, Some(abs), "2021-11-01"));
+            abs += 1;
+        }
+        let date = if n == 12 { "2021-10-03" } else { "2021-01-01" };
+        eps.push(aired(1000 + n as i64, 1, n, Some(abs), date));
+    }
+    eps.push(aired(9002, 0, 2, Some(25), "2023-07-02"));
+    eps.push(aired(2001, 2, 1, Some(26), "2023-07-09"));
+    eps.push(aired(2002, 2, 2, Some(27), "2023-07-16"));
+    // Newly listed: no absolute number yet.
+    eps.push(aired(2003, 2, 3, None, "2023-07-23"));
+    eps
+}
+
+#[test]
+fn counting_on_steps_over_specials_numbered_into_the_run() {
+    let eps = mushoku();
+    // Part 2 starts at S01E12; its episode 6 is S01E17, not the S00E01 OVA.
+    let anchor = anchor_episode(&eps, FirstAiring::At(unix("2021-10-03T15:30:00Z"))).unwrap();
+    assert_eq!(anchor.id, 1012);
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 6), Some(1017));
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 12), Some(1023));
+    // And on across the season boundary.
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 13), Some(2001));
+}
+
+#[test]
+fn a_special_premiere_anchors_and_the_run_continues_after_it() {
+    let eps = mushoku();
+    let anchor = anchor_episode(&eps, FirstAiring::At(unix("2023-07-02T15:30:00Z"))).unwrap();
+    assert_eq!(anchor.id, 9002);
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 1), Some(9002));
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 2), Some(2001));
+    // An episode with no absolute number yet is still found.
+    assert_eq!(find_episode_from_anchor(&eps, anchor, 4), Some(2003));
+}
+
+#[test]
+fn a_regular_episode_wins_a_tie_with_a_special() {
+    let eps = vec![aired(1, 0, 1, Some(1), "2024-01-06"), aired(2, 1, 1, Some(1), "2024-01-06")];
+    let anchor = anchor_episode(&eps, FirstAiring::At(unix("2024-01-06T15:30:00Z"))).unwrap();
+    assert_eq!(anchor.id, 2);
+}
+
+#[test]
+fn unnumbered_specials_never_anchor() {
+    let eps = vec![aired(1, 0, 1, None, "2024-01-06"), aired(2, 1, 1, Some(1), "2024-01-13")];
+    assert!(anchor_episode(&eps, FirstAiring::At(unix("2024-01-06T15:30:00Z"))).is_none());
+}

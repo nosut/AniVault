@@ -2397,19 +2397,31 @@ pub async fn search_sonarr_episode_inner(
     let mapped = state.storage.sonarr_mapping_by_anime(anime_id).await?.map(|m| m.sonarr_id);
     let sonarr_id = match mapped {
         Some(id) => id,
-        None => match get_sonarr_coverage_for_inner(state, anime_id).await?.map(|r| r.state) {
-            Some(CoverageState::Covered { sonarr_id, .. }) => sonarr_id,
-            _ => anyhow::bail!("This show is not linked to a Sonarr series"),
-        },
+        None => {
+            let coverage = get_sonarr_coverage_inner(state).await?;
+            if !coverage.reachable {
+                anyhow::bail!("Sonarr couldn't be reached: {}", coverage.error.unwrap_or_default());
+            }
+            match coverage.rows.into_iter().find(|r| r.anime_id == anime_id).map(|r| r.state) {
+                Some(CoverageState::Covered { sonarr_id, .. }) => sonarr_id,
+                _ => anyhow::bail!("This show is not linked to a Sonarr series"),
+            }
+        }
     };
     let episodes = client.list_episodes(sonarr_id).await?;
     // Find where this entry starts in the series by when its episode 1 aired.
     // A missing air date only falls back to plain numbering for the entry's
     // own series, where episode 1 is the series' episode 1.
-    let first = match first_airing(state, anime_id).await {
-        Ok(f) => f,
-        Err(e) => {
+    // Bounded: AniList's client waits out rate limits for minutes, and this is
+    // a button click. Without the date, a mapped show uses plain numbering.
+    let first = match tokio::time::timeout(std::time::Duration::from_secs(8), first_airing(state, anime_id)).await {
+        Ok(Ok(f)) => f,
+        Ok(Err(e)) => {
             tracing::warn!("AniList air date for {anime_id} failed: {e}");
+            None
+        }
+        Err(_) => {
+            tracing::warn!("AniList air date for {anime_id} timed out");
             None
         }
     };
@@ -2418,7 +2430,7 @@ pub async fn search_sonarr_episode_inner(
         (Some(a), _) => find_episode_from_anchor(&episodes, a, episode),
         (None, Some(_)) => find_episode_id(&episodes, episode),
         (None, None) => anyhow::bail!(
-            "Couldn't tell which Sonarr episode is episode {episode}: the Sonarr series also holds other seasons and AniList has no air date to place this one"
+            "Couldn't tell which Sonarr episode is episode {episode}: the Sonarr series also holds other seasons, and no episode in it aired when AniList says this one started"
         ),
     }
     .ok_or_else(|| anyhow::anyhow!("Episode {episode} not found in Sonarr"))?;

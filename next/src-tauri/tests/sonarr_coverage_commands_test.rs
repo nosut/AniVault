@@ -83,3 +83,12 @@ async fn tvdb_lookup_without_sonarr_connected_is_an_error() {
     let err = anivault_core::commands::lookup_sonarr_by_tvdb_inner(&state, "480598").await.unwrap_err();
     assert!(err.to_string().contains("not connected"), "{err}");
 }
+
+#[tokio::test]
+async fn episode_search_with_sonarr_down_says_unreachable_not_unlinked() {
+    let state = state_with_dead_sonarr().await;
+    state.storage.upsert_anime_full(1, r#"{"romaji":"X"}"#, 12, None, None, None, None, 1).await.unwrap();
+    state.storage.upsert_list_entry_full(1, "watching", 0, None, "", 1, 1).await.unwrap();
+    let err = anivault_core::commands::search_sonarr_episode_inner(&state, 1, 1).await.unwrap_err();
+    assert!(err.to_string().contains("Sonarr couldn't be reached"), "{err}");
+}

@@ -44,7 +44,7 @@ describe('errorCause', () => {
     ['error sending request for url (http://localhost:8989/api/v3/system/status)', 'sonarr-unreachable'],
     ['This show is not Watching or Planning', 'not-active'],
     ['Episode 4 not found in Sonarr', 'sonarr-episode-missing'],
-    ["Couldn't tell which Sonarr episode is episode 1: the Sonarr series also holds other seasons and AniList has no air date to place this one", 'sonarr-episode-unplaced'],
+    ["Couldn't tell which Sonarr episode is episode 1: the Sonarr series also holds other seasons, and no episode in it aired when AniList says this one started", 'sonarr-episode-unplaced'],
     ['Sonarr could not find TVDB id 12345', 'sonarr-show-unknown'],
     [`"Frieren" isn't a TVDB ID or thetvdb.com link`, 'tvdb-input'],
     ['TheTVDB has no series at that link (no-such-show)', 'tvdb-input'],

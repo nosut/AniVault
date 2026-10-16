@@ -528,9 +528,10 @@ pub enum FirstAiring {
     Date(chrono::NaiveDate),
 }
 
-/// The regular-season Sonarr episode that aired closest to `first`, within two
-/// days. Ties go to the earliest episode, so a double premiere anchors on its
-/// first half.
+/// The Sonarr episode that aired closest to `first`, within two days: a
+/// regular episode, or a special TVDB numbers into the run (an "episode 0"
+/// premiere). Ties go to regular episodes, then the earliest, so a double
+/// premiere anchors on its first half.
 pub fn anchor_episode(episodes: &[SonarrEpisode], first: FirstAiring) -> Option<&SonarrEpisode> {
     const WINDOW_SECS: i64 = 2 * 86_400;
     let distance = |e: &SonarrEpisode| -> Option<i64> {
@@ -547,24 +548,34 @@ pub fn anchor_episode(episodes: &[SonarrEpisode], first: FirstAiring) -> Option<
     };
     episodes
         .iter()
-        .filter(|e| e.season_number > 0)
+        .filter(|e| e.season_number > 0 || e.absolute_episode_number.is_some())
         .filter_map(|e| distance(e).filter(|&d| d <= WINDOW_SECS).map(|d| (d, e)))
-        .min_by_key(|&(d, e)| (d, e.season_number, e.episode_number))
+        .min_by_key(|&(d, e)| (d, e.season_number == 0, e.season_number, e.episode_number))
         .map(|(_, e)| e)
 }
 
-/// Sonarr episode id for episode `target` of an entry that starts at `anchor`:
-/// counted on in absolute numbering when the series has it, else within the
-/// anchor's season.
+/// Sonarr episode id for episode `target` of an entry that starts at `anchor`,
+/// counted on through the regular episodes in season order. Counting by
+/// position rather than absolute number steps over specials TVDB numbers into
+/// the run, and works when newer episodes have no absolute number yet.
 pub fn find_episode_from_anchor(episodes: &[SonarrEpisode], anchor: &SonarrEpisode, target: i32) -> Option<i64> {
-    let step = target - 1;
-    match anchor.absolute_episode_number {
-        Some(a) => episodes.iter().find(|e| e.absolute_episode_number == Some(a + step)),
-        None => episodes
-            .iter()
-            .find(|e| e.season_number == anchor.season_number && e.episode_number == anchor.episode_number + step),
+    if target < 1 {
+        return None;
     }
-    .map(|e| e.id)
+    if target == 1 {
+        return Some(anchor.id);
+    }
+    let mut regular: Vec<&SonarrEpisode> = episodes.iter().filter(|e| e.season_number > 0).collect();
+    regular.sort_by_key(|e| (e.season_number, e.episode_number));
+    // Index of the entry's episode 2 in `regular`.
+    let second = if anchor.season_number > 0 {
+        regular.iter().position(|e| e.id == anchor.id)? + 1
+    } else {
+        // A special premiere: the run goes on with the next regular episode.
+        let a = anchor.absolute_episode_number?;
+        regular.iter().position(|e| e.absolute_episode_number.is_some_and(|n| n > a))?
+    };
+    regular.get(second + target as usize - 2).map(|e| e.id)
 }
 
 /// Sonarr episode id for an AniList (absolute) episode number: prefer the
