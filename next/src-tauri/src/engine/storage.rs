@@ -11,6 +11,18 @@ pub struct AnimeRow {
     pub episode_count: Option<i32>,
 }
 
+/// An entry with what it takes to place it among a show's cours and seasons.
+#[derive(Debug, Clone)]
+pub struct SeriesPart {
+    pub id: i64,
+    pub titles_json: String,
+    pub episode_count: Option<i32>,
+    pub format: Option<String>,
+    pub status: Option<String>,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
+}
+
 pub struct ListEntryRow {
     pub anime_id: i64,
     pub status: String,
@@ -545,6 +557,25 @@ impl Storage {
             id: row.get("id"),
             titles_json: row.get("titles_json"),
             episode_count: row.get("episode_count"),
+        }))
+    }
+
+    pub async fn fetch_series_part(&self, id: i64) -> anyhow::Result<Option<SeriesPart>> {
+        let row = sqlx::query(
+            "SELECT id, titles_json, episode_count, format, status, season, season_year
+             FROM anime WHERE id = ?1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|row| SeriesPart {
+            id: row.get("id"),
+            titles_json: row.get("titles_json"),
+            episode_count: row.get("episode_count"),
+            format: row.get("format"),
+            status: row.get("status"),
+            season: row.get("season"),
+            season_year: row.get("season_year"),
         }))
     }
 

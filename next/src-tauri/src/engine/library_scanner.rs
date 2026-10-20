@@ -1,6 +1,6 @@
 use crate::engine::parser::parse_filename;
-use crate::engine::storage::{FileIndexRow, MappingSource, Storage};
-use std::collections::HashMap;
+use crate::engine::storage::{FileIndexRow, MappingSource, SeriesPart, Storage};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 const LIBRARY_FOLDERS_KEY: &str = "library.folders";
@@ -55,6 +55,8 @@ pub struct FileMatch {
 /// conflict detection so both rank candidates identically.
 struct FileQueries {
     episode: Option<i32>,
+    /// Season from an `S02E05` marker, when the name has one.
+    season: Option<i32>,
     filename_title: Option<String>,
     all: Vec<String>,
 }
@@ -87,6 +89,7 @@ fn file_queries(file_path: &Path) -> FileQueries {
             None
         }
     });
+    let season = parsed.as_ref().and_then(|p| p.season_number);
     let filename_title = parsed
         .as_ref()
         .map(|p| p.cleaned_title.trim().to_string())
@@ -119,6 +122,7 @@ fn file_queries(file_path: &Path) -> FileQueries {
 
     FileQueries {
         episode,
+        season,
         filename_title,
         all,
     }
@@ -154,7 +158,10 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
         let prefix = dir_prefix(dir);
         let mut rows = storage.mapped_files_under(&prefix).await?;
         rows.retain(|(p, _)| p != &file_path_str);
-        unanimous_dir_anime(&rows, &prefix)
+        match unanimous_dir_anime(&rows, &prefix) {
+            Some(id) => Some(id),
+            None => split_dir_anime(storage, &rows, &prefix).await?,
+        }
     } else {
         None
     };
@@ -216,7 +223,7 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
         None => 0,
     };
 
-    let (anime_id, confidence, mapping_source) = if let Some(id) =
+    let (mut anime_id, confidence, mapping_source) = if let Some(id) =
         folder_anime.filter(|_| best_score < MATCH_THRESHOLD || folder_score >= MATCH_THRESHOLD)
     {
         (Some(id), INHERITED_CONFIDENCE, MappingSource::Inherited)
@@ -225,6 +232,16 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
     } else {
         (None, 0, MappingSource::Automatic)
     };
+
+    // Past the end of the matched entry: the episode belongs to the cour or
+    // season that carries it on, numbered from there.
+    let mut episode = episode;
+    if let (Some(id), Some(ep)) = (anime_id, episode) {
+        if let Some((next_id, next_ep)) = place_overflow(storage, id, ep).await? {
+            anime_id = Some(next_id);
+            episode = Some(next_ep);
+        }
+    }
 
     tracing::debug!(
         file = %file_path_str,
@@ -241,6 +258,184 @@ pub async fn match_file(storage: &Storage, file_path: &Path) -> anyhow::Result<F
         episode,
         mapping_source,
     })
+}
+
+/// Formats that never carry on a TV run's episode numbering.
+const NOT_A_CONTINUATION: &[&str] = &["MOVIE", "SPECIAL", "OVA", "MUSIC"];
+
+/// When an entry started, as a sortable season count. `None` without both a
+/// season and a year.
+fn start_key(part: &SeriesPart) -> Option<i32> {
+    let index = match part.season.as_deref()? {
+        "WINTER" => 0,
+        "SPRING" => 1,
+        "SUMMER" => 2,
+        "FALL" => 3,
+        _ => return None,
+    };
+    Some(part.season_year? * 4 + index)
+}
+
+/// An entry's main titles (English, derived English, romaji).
+fn main_titles(titles_json: &str) -> Vec<String> {
+    let titles: serde_json::Value = serde_json::from_str(titles_json).unwrap_or_default();
+    ["english", "english_derived", "romaji"]
+        .iter()
+        .filter_map(|k| titles[*k].as_str())
+        .filter(|t| !t.trim().is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The series name behind each main title: normalized, with season and cour
+/// markers stripped, so "… 2nd Cour" and "… Part 2" give the first cour's name.
+fn series_keys(titles_json: &str) -> HashSet<String> {
+    main_titles(titles_json)
+        .iter()
+        .map(|t| {
+            crate::engine::sonarr::coverage::strip_season_markers(
+                &crate::engine::matcher::normalize_title(t),
+            )
+        })
+        .filter(|k| !k.is_empty())
+        .collect()
+}
+
+/// The entry that carries on `base`'s run: the earliest later TV or ONA
+/// entry with the same series name once season markers are stripped. Only
+/// the next one: further hops would compound a missing entry or a wrong
+/// episode count.
+pub async fn next_part(storage: &Storage, base: &SeriesPart) -> anyhow::Result<Option<SeriesPart>> {
+    let Some(base_start) = start_key(base) else {
+        return Ok(None);
+    };
+    let keys = series_keys(&base.titles_json);
+    let mut seen = HashSet::new();
+    let mut best: Option<(i32, SeriesPart)> = None;
+    for title in main_titles(&base.titles_json) {
+        for row in storage.search_anime_by_title(&title, 50).await? {
+            if row.id == base.id || !seen.insert(row.id) {
+                continue;
+            }
+            if series_keys(&row.titles_json).is_disjoint(&keys) {
+                continue;
+            }
+            let Some(part) = storage.fetch_series_part(row.id).await? else {
+                continue;
+            };
+            if part
+                .format
+                .as_deref()
+                .is_some_and(|f| NOT_A_CONTINUATION.contains(&f))
+                || part.status.as_deref() == Some("NOT_YET_RELEASED")
+            {
+                continue;
+            }
+            let Some(start) = start_key(&part).filter(|s| *s > base_start) else {
+                continue;
+            };
+            if best.as_ref().is_none_or(|(b, _)| start < *b) {
+                best = Some((start, part));
+            }
+        }
+    }
+    Ok(best.map(|(_, part)| part))
+}
+
+/// The entry `target` carries on from, if any: the inverse of [`next_part`].
+pub async fn previous_part(
+    storage: &Storage,
+    target: &SeriesPart,
+) -> anyhow::Result<Option<SeriesPart>> {
+    let Some(target_start) = start_key(target) else {
+        return Ok(None);
+    };
+    let mut seen = HashSet::new();
+    for key in series_keys(&target.titles_json) {
+        for row in storage.search_anime_by_title(&key, 50).await? {
+            if row.id == target.id || !seen.insert(row.id) {
+                continue;
+            }
+            if !series_keys(&row.titles_json).contains(&key) {
+                continue;
+            }
+            let Some(part) = storage.fetch_series_part(row.id).await? else {
+                continue;
+            };
+            if !start_key(&part).is_some_and(|s| s < target_start) {
+                continue;
+            }
+            if next_part(storage, &part).await?.is_some_and(|n| n.id == target.id) {
+                return Ok(Some(part));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Where episode `episode` of `anime_id` belongs when it runs past the
+/// entry's episode count: the next part, numbered from 1. Sonarr often keeps
+/// a 2nd cour as episodes 14+ of season 1, where AniList lists the cour as
+/// its own entry. `None` when the episode is within the entry, the count is
+/// unknown, or the next part can't hold it.
+pub async fn place_overflow(
+    storage: &Storage,
+    anime_id: i64,
+    episode: i32,
+) -> anyhow::Result<Option<(i64, i32)>> {
+    let Some(base) = storage.fetch_series_part(anime_id).await? else {
+        return Ok(None);
+    };
+    let Some(count) = base.episode_count.filter(|c| *c > 0) else {
+        return Ok(None);
+    };
+    if episode <= count {
+        return Ok(None);
+    }
+    let Some(next) = next_part(storage, &base).await? else {
+        return Ok(None);
+    };
+    let remaining = episode - count;
+    let fits = match next.episode_count.filter(|c| *c > 0) {
+        Some(next_count) => remaining <= next_count,
+        // Still airing, with no count yet.
+        None => true,
+    };
+    Ok(fits.then_some((next.id, remaining)))
+}
+
+/// A folder split between an entry and the part that carries it on (episodes
+/// 1-13 on the first cour, 14+ on the second) still holds one show, the
+/// first: its files inherit it and [`place_overflow`] sends the later ones on.
+async fn split_dir_anime(
+    storage: &Storage,
+    rows: &[(String, i64)],
+    prefix: &str,
+) -> anyhow::Result<Option<i64>> {
+    let mut ids: Vec<i64> = Vec::new();
+    for (path, anime_id) in rows {
+        let Some(rest) = path.strip_prefix(prefix) else {
+            continue;
+        };
+        if rest.contains(['\\', '/']) || ids.contains(anime_id) {
+            continue;
+        }
+        ids.push(*anime_id);
+        if ids.len() > 2 {
+            return Ok(None);
+        }
+    }
+    let [a, b] = ids[..] else {
+        return Ok(None);
+    };
+    for (first, second) in [(a, b), (b, a)] {
+        if let Some(part) = storage.fetch_series_part(first).await? {
+            if next_part(storage, &part).await?.is_some_and(|n| n.id == second) {
+                return Ok(Some(first));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Distinct parent directories of a set of file paths, in first-seen order.
@@ -453,9 +648,13 @@ pub async fn detect_mapping_conflicts(
     anime_id: i64,
     dirs: &[String],
 ) -> anyhow::Result<Vec<FileMappingConflict>> {
-    let Some(target) = storage.fetch_anime(anime_id).await? else {
+    let Some(target) = storage.fetch_series_part(anime_id).await? else {
         return Ok(Vec::new());
     };
+    // A later cour Sonarr keeps in its first cour's season shares that
+    // cour's folder and title, so the first cour's own files look like
+    // conflicts unless set apart by episode.
+    let previous = previous_part(storage, &target).await?;
 
     let mut conflicts = Vec::new();
     let mut seen_paths = std::collections::HashSet::new();
@@ -494,14 +693,32 @@ pub async fn detect_mapping_conflicts(
                 continue;
             }
 
-            let current_anime_title = match storage.fetch_anime(current_anime_id).await? {
-                Some(current) => anime_display_title(&current.titles_json, current_anime_id),
+            // Past the target's end, on the part that carries it on.
+            if let Some(ep) = fq.episode {
+                if place_overflow(storage, anime_id, ep).await?.is_some() {
+                    continue;
+                }
+            }
+            // Numbered as one season with the part before the target: within
+            // that part it belongs there, past it it's the target's, renumbered.
+            let mut episode = fq.episode;
+            if let (Some(prev), Some(ep)) = (&previous, fq.episode) {
+                if fq.season.is_none_or(|s| s <= 1) {
+                    match prev.episode_count.filter(|c| *c > 0) {
+                        Some(count) if ep > count => episode = Some(ep - count),
+                        _ if current_anime_id == prev.id => continue,
+                        _ => {}
+                    }
+                }
+            }
+
+            let current_anime_title = match storage.fetch_anime(current_anime_id).await? {                Some(current) => anime_display_title(&current.titles_json, current_anime_id),
                 None => format!("#{current_anime_id}"),
             };
 
             conflicts.push(FileMappingConflict {
                 file_path: path_str,
-                episode: fq.episode,
+                episode,
                 current_anime_id,
                 current_anime_title,
                 mapping_source: row.mapping_source,
@@ -582,6 +799,8 @@ async fn index_new_files_in_dir(
     {
         known.entry(row.file_path.to_lowercase()).or_default().push(row);
     }
+    // Episode counts of the entries rows here are mapped to, looked up once.
+    let mut counts: HashMap<i64, Option<i32>> = HashMap::new();
 
     for file_path in &video_files {
         let file_path_str = file_path.to_string_lossy().to_string();
@@ -609,13 +828,39 @@ async fn index_new_files_in_dir(
                     .update_file_index_path(&ex.file_path, &file_path_str)
                     .await?;
             }
-            if ex.ignored || ex.confidence > 0 {
+            let overflows = !ex.ignored
+                && ex.confidence > 0
+                && ex.mapping_source.is_repairable()
+                && match (ex.anime_id, ex.episode) {
+                    (Some(id), Some(ep)) => {
+                        let count = match counts.get(&id) {
+                            Some(c) => *c,
+                            None => {
+                                let c = storage.fetch_anime(id).await?.and_then(|a| a.episode_count);
+                                counts.insert(id, c);
+                                c
+                            }
+                        };
+                        count.is_some_and(|c| c > 0 && ep > c)
+                    }
+                    _ => false,
+                };
+            if (ex.ignored || ex.confidence > 0) && !overflows {
                 report.skipped += 1;
                 continue;
             }
         }
 
         let matched = match_file(storage, file_path).await?;
+
+        // An episode past its entry's end that still has nowhere better to
+        // go stays as it was.
+        if let Some(ref ex) = existing {
+            if ex.confidence > 0 && (matched.anime_id, matched.episode) == (ex.anime_id, ex.episode) {
+                report.skipped += 1;
+                continue;
+            }
+        }
 
         // An already-indexed unmatched file that stays unmatched isn't a change —
         // don't rewrite it, so `indexed` reports only real changes and periodic

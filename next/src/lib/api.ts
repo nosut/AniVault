@@ -64,6 +64,7 @@ export interface RecognitionResult {
   known_file: boolean;
   parsed: ParsedFilename | null;
   candidates: MatchCandidate[];
+  known_episode?: number | null;
 }
 
 export type MappingSource = 'automatic' | 'inherited' | 'manual' | 'legacy';

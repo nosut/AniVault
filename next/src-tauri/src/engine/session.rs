@@ -202,11 +202,11 @@ pub async fn process_scan_result(
         .map(|c| (c.anime_id, c.confidence));
 
     if let Some((anime_id, confidence)) = confident {
-        // Episode number: prefer the parsed value, else parse the filename/title.
+        // Episode number: the file index's for a known file, else the parsed
+        // value, else parse the filename/title.
         let episode = recognition
-            .parsed
-            .as_ref()
-            .map(|p| p.episode_number)
+            .known_episode
+            .or_else(|| recognition.parsed.as_ref().map(|p| p.episode_number))
             .filter(|e| *e > 0)
             .or_else(|| {
                 let name = std::path::Path::new(fp)
@@ -283,9 +283,8 @@ pub async fn process_scan_result(
     }
 
     let episode_guess = recognition
-        .parsed
-        .as_ref()
-        .map(|p| p.episode_number)
+        .known_episode
+        .or_else(|| recognition.parsed.as_ref().map(|p| p.episode_number))
         .or_else(|| recognition.candidates.first().map(|_| 0_i32));
 
     state.events.publish(EngineEvent::PlaybackDetected {

@@ -8,6 +8,11 @@ pub struct RecognitionResult {
     pub known_file: bool,
     pub parsed: Option<ParsedFilename>,
     pub candidates: Vec<MatchCandidate>,
+    /// The episode the file index records for a known file. It can differ
+    /// from the filename's: S01E14 of a 2nd cour Sonarr keeps in season 1 is
+    /// the cour's episode 1, and a manual mapping sets its own.
+    #[serde(default)]
+    pub known_episode: Option<i32>,
 }
 
 /// Score a query against every title variant stored in an anime row's `titles_json`
@@ -115,6 +120,7 @@ async fn known_result(
     storage: &Storage,
     anime_id: i64,
     confidence: i32,
+    episode: Option<i32>,
 ) -> anyhow::Result<Option<RecognitionResult>> {
     let Some(anime) = storage.fetch_anime(anime_id).await? else { return Ok(None) };
     let titles: serde_json::Value = serde_json::from_str(&anime.titles_json).unwrap_or_default();
@@ -128,6 +134,7 @@ async fn known_result(
             confidence: confidence as u8,
             match_source: "file_index".to_string(),
         }],
+        known_episode: episode.filter(|e| *e > 0),
     }))
 }
 
@@ -141,7 +148,7 @@ pub async fn recognize_file(
     if looks_like_path(file_path) {
         if let Some(existing) = storage.get_file_index(file_path).await? {
             if let Some(anime_id) = existing.anime_id {
-                if let Some(res) = known_result(storage, anime_id, existing.confidence).await? {
+                if let Some(res) = known_result(storage, anime_id, existing.confidence, existing.episode).await? {
                     return Ok(res);
                 }
             }
@@ -156,7 +163,7 @@ pub async fn recognize_file(
     if let Some(fname) = extract_video_filename(fname_source) {
         if let Some(existing) = storage.get_file_index_by_filename(&fname).await? {
             if let Some(anime_id) = existing.anime_id {
-                if let Some(res) = known_result(storage, anime_id, existing.confidence).await? {
+                if let Some(res) = known_result(storage, anime_id, existing.confidence, existing.episode).await? {
                     return Ok(res);
                 }
             }
@@ -172,6 +179,7 @@ pub async fn recognize_file(
                 known_file: false,
                 parsed: None,
                 candidates: vec![],
+                known_episode: None,
             })
         }
     };
@@ -220,6 +228,7 @@ pub async fn recognize_file(
         known_file: false,
         parsed: Some(parsed),
         candidates,
+        known_episode: None,
     })
 }
 
