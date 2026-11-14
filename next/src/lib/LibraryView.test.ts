@@ -44,9 +44,15 @@ vi.mock('./api', () => ({
   scanLibraryFolders: vi.fn(async () => {}),
 }));
 
+vi.mock('./dropCleanup', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./dropCleanup')>()),
+  offerRemovalCleanup: vi.fn(async () => true),
+}));
+
 import { createClassComponent } from 'svelte/legacy';
 import LibraryView from './LibraryView.svelte';
 import { searchLibrary, deleteAnime } from './api';
+import { offerRemovalCleanup } from './dropCleanup';
 import { resetPrefs, setPref } from './prefs';
 
 async function settle() {
@@ -254,5 +260,23 @@ describe('LibraryView selection', () => {
     expect(notice.textContent).toContain('"Fall Two" couldn\'t be removed.');
     expect(notice.textContent).not.toContain('code: 5');
     vi.mocked(deleteAnime).mockReset().mockResolvedValue(undefined);
+  });
+  it('offers Sonarr and file clean-up first, and removes nothing if that is cancelled', async () => {
+    vi.mocked(offerRemovalCleanup).mockResolvedValueOnce(false);
+    vi.mocked(deleteAnime).mockClear();
+    mount();
+    await settle();
+    await click(groupCheck('Fall 2026'));
+
+    const button = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim().startsWith(label))!;
+    await click(button('Delete'));
+    await click(button('Confirm delete'));
+
+    expect(vi.mocked(offerRemovalCleanup).mock.calls.at(-1)![0].map((s) => s.title).sort()).toEqual(['Fall One', 'Fall Two']);
+    expect(deleteAnime).not.toHaveBeenCalled();
+    const titles = [...document.querySelectorAll('tr.data-row .title-text')].map((n) => n.textContent?.trim());
+    expect(titles).toEqual(expect.arrayContaining(['Fall One', 'Fall Two']));
+    expect(checkedTitles().sort()).toEqual(['Fall One', 'Fall Two']);
   });
 });

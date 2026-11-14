@@ -1,6 +1,7 @@
 // When a show moves to Dropped (or another chosen status), offer to stop or
 // remove it in Sonarr and to delete its episode files. When it moves back to
 // Watching or Planning, offer the reverse: monitor it again, or add it back.
+// Removing a show from the library offers the same clean-up as a drop first.
 // The settings decide whether each offer appears; the dialogs in App.svelte
 // do the asking.
 
@@ -64,7 +65,7 @@ export async function loadCleanupSettings(): Promise<CleanupSettings> {
   };
 }
 
-export type PromptKind = 'drop' | 'resume';
+export type PromptKind = 'drop' | 'resume' | 'remove';
 
 /// Which prompt, if any, moving a show from `from` to `to` should raise.
 export function promptFor(settings: CleanupSettings, from: string | null | undefined, to: string | null | undefined): PromptKind | null {
@@ -148,6 +149,8 @@ export interface CleanupRequest {
   kind: PromptKind;
   status: string;
   shows: CleanupShow[];
+  /// Removal only: told whether to go ahead and remove the shows.
+  settle?: (proceed: boolean) => void;
 }
 
 /// One status transition, as the engine's `StatusChanged` event reports it.
@@ -182,6 +185,18 @@ export function requestsFor(settings: CleanupSettings, changes: StatusChange[]):
 /// Prompts waiting to be shown; App.svelte renders the first and shifts it
 /// off when it closes.
 export const cleanupQueue = writable<CleanupRequest[]>([]);
+
+/// Before shows leave the library, offer the clean-up a drop offers. Once a
+/// show is gone AniVault can no longer find its Sonarr series or files, and an
+/// untouched series keeps downloading. Resolves true to go ahead with the
+/// removal, false if the user backed out. With nothing to clean up the dialog
+/// never shows and this resolves true.
+export function offerRemovalCleanup(shows: CleanupShow[]): Promise<boolean> {
+  if (shows.length === 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    cleanupQueue.update((q) => [...q, { kind: 'remove', status: 'removed', shows, settle: resolve }]);
+  });
+}
 
 /// Bumped with the affected show ids after a dialog applies, so open views
 /// can reload Sonarr and file state.

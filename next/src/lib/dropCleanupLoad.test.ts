@@ -8,7 +8,7 @@ vi.mock('./api', () => ({
 }));
 
 import { getSetting } from './api';
-import { cleanupQueue, loadCleanupSettings, noteStatusChanges } from './dropCleanup';
+import { cleanupQueue, loadCleanupSettings, noteStatusChanges, offerRemovalCleanup } from './dropCleanup';
 import { appProblem } from './notify';
 
 describe('loading clean-up settings', () => {
@@ -36,5 +36,24 @@ describe('loading clean-up settings', () => {
 
     expect(get(cleanupQueue)).toEqual([]);
     expect(get(appProblem)?.message).toMatch(/^Your clean-up settings couldn't be read, so no clean-up prompt was shown/);
+  });
+});
+
+describe('offering clean-up before a removal', () => {
+  beforeEach(() => cleanupQueue.set([]));
+
+  it('queues a removal prompt and resolves with the choice it settles on', async () => {
+    const answer = offerRemovalCleanup([{ animeId: 7, title: 'Show' }]);
+    const [req] = get(cleanupQueue);
+    expect(req).toMatchObject({ kind: 'remove', shows: [{ animeId: 7, title: 'Show' }] });
+    req!.settle!(false);
+    // A later settle (the App's close handler) cannot change the answer.
+    req!.settle!(true);
+    expect(await answer).toBe(false);
+  });
+
+  it('goes ahead without a prompt when there is nothing to remove', async () => {
+    expect(await offerRemovalCleanup([])).toBe(true);
+    expect(get(cleanupQueue)).toEqual([]);
   });
 });

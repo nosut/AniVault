@@ -18,6 +18,9 @@
   let loadError: ExplainedError | null = null;
   let failures: (ExplainedError & { items: string[] }) | null = null;
   let finished = false;
+  // Set once loading decides the dialog has something to ask. Dismissing a
+  // notice inside it must not hide it, or the queue would wait on it forever.
+  let shown = false;
 
   let sonarrAction: SonarrAction = 'unmonitor';
   let deleteSonarrFiles = false;
@@ -30,6 +33,7 @@
   async function load(req: CleanupRequest) {
     loadedFor = req;
     loading = true;
+    shown = false;
     loadError = null;
     failures = null;
     finished = false;
@@ -46,13 +50,27 @@
       items = cleanupItems(req.shows, previews, settings);
       const sonarrRaw = settings.offerSonarr ? (previews.find((p) => p.sonarr_error)?.sonarr_error ?? null) : null;
       sonarrError = sonarrRaw ? explainError("Sonarr options aren't shown because AniVault couldn't check this show in Sonarr.", sonarrRaw) : null;
-      // Nothing linked to Sonarr and no files: there is nothing to offer.
-      if (items.length === 0) dispatch('close');
+      // Nothing linked to Sonarr and no files: there is nothing to offer. A
+      // removal still asks when Sonarr couldn't be checked, since the series
+      // may keep downloading once the show is gone.
+      if (items.length === 0 && !(req.kind === 'remove' && sonarrError)) finish(true);
+      else shown = true;
     } catch (e) {
-      if (req === loadedFor) loadError = explainError("The clean-up options couldn't be loaded.", e);
+      if (req === loadedFor) {
+        loadError = explainError("The clean-up options couldn't be loaded.", e);
+        shown = true;
+      }
     } finally {
       if (req === loadedFor) loading = false;
     }
+  }
+
+  $: removing = request.kind === 'remove';
+
+  /// Close the dialog; a removal also learns whether to go ahead.
+  function finish(proceed: boolean) {
+    request.settle?.(proceed);
+    dispatch('close');
   }
 
   $: inSonarr = items.filter((i) => i.sonarr !== null);
@@ -61,7 +79,8 @@
   $: fileBytes = withFiles.reduce((n, i) => n + i.totalBytes, 0);
   $: shared = sharedWarnings(items);
   $: nothingChosen = (inSonarr.length === 0 || sonarrAction === 'keep') && (withFiles.length === 0 || !deleteLocalFiles);
-  $: heading = items.length === 1 ? items[0]!.title : `${items.length} shows`;
+  $: named = items.length > 0 ? items : request.shows;
+  $: heading = named.length === 1 ? named[0]!.title : `${named.length} shows`;
   $: sonarrLegend = items.length === 1 && inSonarr[0]?.sonarr ? `Sonarr: ${inSonarr[0].sonarr.title}` : 'Sonarr';
 
   async function apply() {
@@ -94,7 +113,7 @@
     }
     busy = false;
     dispatch('done', { animeIds: items.map((i) => i.animeId) });
-    if (failed.length === 0) dispatch('close');
+    if (failed.length === 0) finish(true);
     else {
       failures = explainFailures("Some of the clean-up didn't finish.", failed);
       finished = true;
@@ -102,18 +121,26 @@
   }
 </script>
 
-{#if !loading && (items.length > 0 || loadError)}
+{#if !loading && shown}
   <PromptDialog
-    eyebrow={`Moved to ${STATUS_LABELS[request.status] ?? request.status}`}
-    heading={`Clean up ${heading}?`}
+    eyebrow={removing ? 'Removing from library' : `Moved to ${STATUS_LABELS[request.status] ?? request.status}`}
+    heading={removing ? `Clean up before removing ${heading}?` : `Clean up ${heading}?`}
     {busy}
-    on:close={() => dispatch('close')}
+    on:close={() => finish(false)}
   >
     {#if finished && failures}
-      <ErrorNotice compact message={failures.message} items={failures.items} details={failures.details} on:dismiss={() => dispatch('close')} />
-      <div class="actions">
-        <button class="primary" on:click={() => dispatch('close')}>Close</button>
-      </div>
+      {#if removing}
+        <ErrorNotice compact message={failures.message} items={failures.items} details={failures.details} />
+        <div class="actions">
+          <button on:click={() => finish(false)}>Keep in library</button>
+          <button class="primary" on:click={() => finish(true)}>Remove anyway</button>
+        </div>
+      {:else}
+        <ErrorNotice compact message={failures.message} items={failures.items} details={failures.details} on:dismiss={() => finish(false)} />
+        <div class="actions">
+          <button class="primary" on:click={() => finish(false)}>Close</button>
+        </div>
+      {/if}
     {:else}
       {#if items.length > 1}
         <ul class="shows">
@@ -139,6 +166,9 @@
           {#if sonarrAction === 'remove'}
             <label class="nested"><input type="checkbox" bind:checked={deleteSonarrFiles} /> Also have Sonarr delete its files</label>
           {/if}
+          {#if removing}
+            <p class="hint">Once the show is gone, AniVault can't find this series for you, and Sonarr keeps downloading it unless you stop it here.</p>
+          {/if}
           {#if shared.length > 0}
             <p class="warning">This series also covers {shared.join(', ')}, which you're still watching or planning. Unmonitoring or removing it affects {shared.length === 1 ? 'that show' : 'those shows'} too.</p>
           {/if}
@@ -162,10 +192,21 @@
         <ErrorNotice compact message={loadError.message} details={loadError.details} actionLabel="Try again" on:action={() => load(request)} on:dismiss={() => (loadError = null)} />
       {/if}
 
-      <div class="actions">
-        <button on:click={() => dispatch('close')} disabled={busy}>Skip</button>
-        <button class="primary" on:click={apply} disabled={busy || nothingChosen}>{busy ? 'Working…' : 'Apply'}</button>
-      </div>
+      {#if removing}
+        <div class="actions">
+          <button on:click={() => finish(false)} disabled={busy}>Cancel</button>
+          {#if nothingChosen}
+            <button class="primary" on:click={() => finish(true)} disabled={busy}>Remove</button>
+          {:else}
+            <button class="primary" on:click={apply} disabled={busy}>{busy ? 'Working…' : 'Clean up and remove'}</button>
+          {/if}
+        </div>
+      {:else}
+        <div class="actions">
+          <button on:click={() => finish(false)} disabled={busy}>Skip</button>
+          <button class="primary" on:click={apply} disabled={busy || nothingChosen}>{busy ? 'Working…' : 'Apply'}</button>
+        </div>
+      {/if}
     {/if}
   </PromptDialog>
 {/if}

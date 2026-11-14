@@ -12,7 +12,7 @@
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
-  import { cleanupApplied } from './dropCleanup';
+  import { cleanupApplied, offerRemovalCleanup } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
   import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
   import {
@@ -531,6 +531,10 @@
     batchUpdating = true;
     actionError = null;
     const ids = [...selectedIds];
+    if (!(await offerRemovalCleanup(ids.map((id) => ({ animeId: id, title: titleOf(id) }))))) {
+      batchUpdating = false;
+      return;
+    }
     const deleted = new Set<number>();
     const failed: StepFailure[] = [];
     for (const id of ids) {
@@ -625,6 +629,7 @@
     closeContextMenu();
     actionError = null;
     try {
+      if (!(await offerRemovalCleanup([{ animeId: entry.anime_id, title: entry.title }]))) return;
       await deleteAnime(entry.anime_id);
       entries = entries.filter(e => e.anime_id !== entry.anime_id);
       void loadStats();

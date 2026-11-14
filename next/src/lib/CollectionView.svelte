@@ -5,7 +5,7 @@
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
-  import { cleanupApplied } from './dropCleanup';
+  import { cleanupApplied, offerRemovalCleanup } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
   import {
     getCollection,
@@ -215,6 +215,7 @@
     closeContextMenu();
     actionError = null;
     try {
+      if (!(await offerRemovalCleanup([{ animeId: entry.anime_id, title: entry.title }]))) return;
       await deleteAnime(entry.anime_id);
       entries = entries.filter((e) => e.anime_id !== entry.anime_id);
     } catch (e) {

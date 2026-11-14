@@ -7,7 +7,7 @@
   import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, getSonarrCoverageFor, unignoreSonarrCoverage, type CoverageRow, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { formatBytes } from './fileSize';
   import { onDestroy } from 'svelte';
-  import { cleanupApplied } from './dropCleanup';
+  import { cleanupApplied, offerRemovalCleanup } from './dropCleanup';
   import SonarrRemap from './SonarrRemap.svelte';
   import SonarrAddDialog from './SonarrAddDialog.svelte';
   import { mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
@@ -152,6 +152,8 @@
     if (confirmDeleteTimer) clearTimeout(confirmDeleteTimer);
     deleting = true;
     try {
+      const title = detail ? pickTitle(detail) : `Anime #${animeId}`;
+      if (!(await offerRemovalCleanup([{ animeId, title }]))) return;
       await deleteAnime(animeId);
       dispatch('back');
     } catch (e) {

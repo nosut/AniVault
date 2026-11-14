@@ -576,11 +576,15 @@
     </div>
   {/if}
 
-  {#if $cleanupQueue[0]?.kind === 'drop'}
+  {#if $cleanupQueue[0]?.kind === 'drop' || $cleanupQueue[0]?.kind === 'remove'}
     <DropCleanupDialog
       request={$cleanupQueue[0]}
       on:done={(e) => { cleanupApplied.set(e.detail); cleanupApplied.set(null); }}
-      on:close={() => cleanupQueue.update((q) => q.slice(1))}
+      on:close={() => {
+        // A removal closed without a decision (Escape, backdrop) is a cancel.
+        $cleanupQueue[0]?.settle?.(false);
+        cleanupQueue.update((q) => q.slice(1));
+      }}
     />
   {:else if $cleanupQueue[0]?.kind === 'resume'}
     <ResumeSonarrDialog

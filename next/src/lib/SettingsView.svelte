@@ -763,7 +763,7 @@
 
         <section class="card">
           <div class="section-header"><h3>Dropping and Resuming Shows</h3></div>
-          <p class="hint">Moving a show to one of the statuses below asks what to clean up, and moving it back to Watching or Planning asks what to restore. Nothing changes until you choose.</p>
+          <p class="hint">Moving a show to one of the statuses below, or removing it from your library, asks what to clean up, and moving it back to Watching or Planning asks what to restore. Nothing changes until you choose.</p>
           <div class="toggle-row">
             <span class="label">Offer to unmonitor or remove the show in Sonarr</span>
             <button type="button" role="switch" aria-checked={cleanup.offerSonarr} aria-label="Offer to unmonitor or remove the show in Sonarr" class="switch" on:click={toggleCleanupSonarr}>
