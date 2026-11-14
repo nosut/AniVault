@@ -88,7 +88,12 @@
   onDestroy(unsubCleanup);
 
   async function load() {
-    loading = true; error = null;
+    // Only the first load shows placeholders. Swapping a list already on screen
+    // for them collapses the page and throws the scroll back to the top, so
+    // later reloads (after a clean-up, a scan, progress) update it in place
+    // and a show that left the collection just drops out.
+    loading = entries.length === 0;
+    error = null;
     episodeFilesMap = new Map();
     try {
       entries = await getCollection();
