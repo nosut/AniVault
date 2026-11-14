@@ -1,7 +1,8 @@
 // When a show moves to Dropped (or another chosen status), offer to stop or
 // remove it in Sonarr and to delete its episode files. When it moves back to
 // Watching or Planning, offer the reverse: monitor it again, or add it back.
-// Removing a show from the library offers the same clean-up as a drop first.
+// Removing a show from the library offers the same clean-up as a drop first,
+// and the Clean up action offers it on its own, keeping the show and its stats.
 // The settings decide whether each offer appears; the dialogs in App.svelte
 // do the asking.
 
@@ -65,7 +66,7 @@ export async function loadCleanupSettings(): Promise<CleanupSettings> {
   };
 }
 
-export type PromptKind = 'drop' | 'resume' | 'remove';
+export type PromptKind = 'drop' | 'resume' | 'remove' | 'cleanup' | 'remonitor';
 
 /// Which prompt, if any, moving a show from `from` to `to` should raise.
 export function promptFor(settings: CleanupSettings, from: string | null | undefined, to: string | null | undefined): PromptKind | null {
@@ -196,6 +197,21 @@ export function offerRemovalCleanup(shows: CleanupShow[]): Promise<boolean> {
   return new Promise((resolve) => {
     cleanupQueue.update((q) => [...q, { kind: 'remove', status: 'removed', shows, settle: resolve }]);
   });
+}
+
+/// Ask to unmonitor or remove the shows' Sonarr series and delete their files,
+/// keeping them in the library with their progress, score and history. The
+/// user asked for this, so both offers show whatever the settings say.
+export function requestCleanup(shows: CleanupShow[]): void {
+  if (shows.length === 0) return;
+  cleanupQueue.update((q) => [...q, { kind: 'cleanup', status: '', shows }]);
+}
+
+/// Ask to monitor the shows' Sonarr series again and search for their
+/// episodes, or add a series back if it was removed. The reverse of Clean up.
+export function requestRemonitor(shows: CleanupShow[]): void {
+  if (shows.length === 0) return;
+  cleanupQueue.update((q) => [...q, { kind: 'remonitor', status: '', shows }]);
 }
 
 /// Bumped with the affected show ids after a dialog applies, so open views

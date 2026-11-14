@@ -7,11 +7,11 @@
   import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, getSonarrCoverageFor, unignoreSonarrCoverage, type CoverageRow, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { formatBytes } from './fileSize';
   import { onDestroy } from 'svelte';
-  import { cleanupApplied, offerRemovalCleanup } from './dropCleanup';
+  import { cleanupApplied, offerRemovalCleanup, requestCleanup, requestRemonitor } from './dropCleanup';
   import SonarrRemap from './SonarrRemap.svelte';
   import SonarrAddDialog from './SonarrAddDialog.svelte';
   import { mappingSourceLabel, partitionMappingConflicts } from './fileMappingUi';
-  import { ArrowLeft, ExternalLink, FolderOpen, FolderInput, RotateCw, Play, Trash2 } from 'lucide-svelte';
+  import { ArrowLeft, ExternalLink, FolderOpen, FolderInput, RotateCw, Play, Trash2, Eraser } from 'lucide-svelte';
 
   export let animeId: number;
   export let events: EngineEvent[] = [];
@@ -548,6 +548,15 @@
     >
       <ArrowLeft size={15} /> Back
     </button>
+    <div class="topbar-actions">
+    <button
+      class="cancel-btn cleanup-btn"
+      type="button"
+      on:click={() => requestCleanup([{ animeId, title: detail ? pickTitle(detail) : `Anime #${animeId}` }])}
+      title="Unmonitor or remove it in Sonarr and delete its episode files, keeping it in your library"
+    >
+      <Eraser size={14} /> Clean up
+    </button>
     {#if confirmingDelete}
       <div class="delete-confirm-group">
         <button class="delete-btn" type="button" on:click={handleDelete} disabled={deleting} aria-label="Confirm delete from library">
@@ -565,6 +574,7 @@
         <Trash2 size={14} /> Delete from library
       </button>
     {/if}
+    </div>
   </div>
 
   {#if loading && !detail}
@@ -800,7 +810,9 @@
                 <span class="field-label">Status</span>
                 <span class="field-value">
                   {sonarrAvail.sonarr_status ? sonarrAvail.sonarr_status : 'Unknown'}
-                  {#if sonarrAvail.monitored} · Monitored ✓{/if}
+                  {#if sonarrAvail.monitored} · Monitored ✓{:else} · Unmonitored
+                    <button class="cancel-btn inline-btn" type="button" on:click={() => requestRemonitor([{ animeId, title: detail ? pickTitle(detail) : `Anime #${animeId}` }])}>Monitor and search</button>
+                  {/if}
                   {#if sonarrAvail.next_airing} · Next airing: {new Date(sonarrAvail.next_airing * 1000).toLocaleDateString()}{/if}
                 </span>
               </div>
@@ -999,6 +1011,24 @@
 
   .back-btn:hover {
     background: rgba(var(--color-accent-rgb), 0.22);
+  }
+
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .inline-btn {
+    margin-left: 0.4rem;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.75rem;
+  }
+
+  .cleanup-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
   }
 
   .delete-confirm-group {

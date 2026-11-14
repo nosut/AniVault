@@ -23,6 +23,9 @@
   let search = true;
   let addingFor: number | null = null;
   let added = new Set<number>();
+  // An explicit Monitor request says why there's nothing to do instead of
+  // closing silently.
+  let nothingReason: string | null = null;
 
   let loadedFor: CleanupRequest | null = null;
   $: if (request !== loadedFor) load(request);
@@ -36,14 +39,23 @@
     addingFor = null;
     monitor = true;
     search = true;
+    nothingReason = null;
+    const manual = req.kind === 'remonitor';
     try {
       const previews = await getStatusChangePreview(req.shows.map((s) => s.animeId));
       if (req !== loadedFor) return;
       items = resumeItems(req.shows, previews);
       // Already monitored, or Sonarr unreachable: nothing to offer.
-      if (items.length === 0) dispatch('close');
-    } catch {
-      if (req === loadedFor) dispatch('close');
+      if (items.length === 0) {
+        const unreachable = previews.find((p) => p.sonarr_error)?.sonarr_error;
+        if (!manual) dispatch('close');
+        else if (unreachable) nothingReason = `Sonarr couldn't be checked: ${unreachable}`;
+        else nothingReason = req.shows.length === 1 ? 'Sonarr is already monitoring it.' : 'Sonarr is already monitoring them.';
+      }
+    } catch (e) {
+      if (req !== loadedFor) return;
+      if (!manual) dispatch('close');
+      else nothingReason = `Sonarr couldn't be checked: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
       if (req === loadedFor) loading = false;
     }
@@ -51,7 +63,8 @@
 
   $: unmonitored = items.filter((i): i is Extract<ResumeItem, { kind: 'unmonitored' }> => i.kind === 'unmonitored');
   $: missing = items.filter((i) => i.kind === 'missing');
-  $: heading = items.length === 1 ? items[0]!.title : `${items.length} shows`;
+  $: named = items.length > 0 ? items : request.shows;
+  $: heading = named.length === 1 ? named[0]!.title : `${named.length} shows`;
   $: monitorLabel = unmonitored.length === 1 && unmonitored[0]
     ? `Monitor “${unmonitored[0].sonarr.title}” again`
     : `Monitor ${unmonitored.length} series again`;
@@ -87,14 +100,19 @@
   }
 </script>
 
-{#if !loading && items.length > 0}
+{#if !loading && (items.length > 0 || nothingReason)}
   <PromptDialog
-    eyebrow={`Moved to ${STATUS_LABELS[request.status] ?? request.status}`}
+    eyebrow={request.kind === 'remonitor' ? 'Sonarr' : `Moved to ${STATUS_LABELS[request.status] ?? request.status}`}
     heading={`Pick ${heading} back up in Sonarr?`}
     {busy}
     on:close={() => dispatch('close')}
   >
-    {#if finished}
+    {#if nothingReason && items.length === 0}
+      <p class="hint">{nothingReason}</p>
+      <div class="actions">
+        <button class="primary" on:click={() => dispatch('close')}>Close</button>
+      </div>
+    {:else if finished}
       {#if failures}
         <ErrorNotice compact message={failures.message} items={failures.items} details={failures.details} on:dismiss={() => dispatch('close')} />
       {/if}

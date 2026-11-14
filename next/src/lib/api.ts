@@ -584,6 +584,11 @@ export function getSonarrAvailability(
   return invokeFn<SonarrAvailability | null>('get_sonarr_availability', { animeId: animeId });
 }
 
+/// Library shows whose Sonarr series is unmonitored.
+export function getUnmonitoredAnimeIds(invokeFn: InvokeFn = tauriInvoke): Promise<number[]> {
+  return invokeFn<number[]>('get_unmonitored_anime_ids');
+}
+
 export function remapSonarr(
   sonarrId: number,
   animeId: number | null,

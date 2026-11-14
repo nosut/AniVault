@@ -39,6 +39,7 @@ vi.mock('./api', () => ({
   getEpisodeFiles: vi.fn(async () => []),
   updateListEntry: vi.fn(async () => {}),
   deleteAnime: vi.fn(async () => {}),
+  getUnmonitoredAnimeIds: vi.fn(async () => []),
   openEpisodeFile: vi.fn(async () => {}),
   openContainingFolder: vi.fn(async () => {}),
   scanLibraryFolders: vi.fn(async () => {}),
@@ -47,12 +48,13 @@ vi.mock('./api', () => ({
 vi.mock('./dropCleanup', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./dropCleanup')>()),
   offerRemovalCleanup: vi.fn(async () => true),
+  requestRemonitor: vi.fn(),
 }));
 
 import { createClassComponent } from 'svelte/legacy';
 import LibraryView from './LibraryView.svelte';
-import { searchLibrary, deleteAnime } from './api';
-import { offerRemovalCleanup } from './dropCleanup';
+import { searchLibrary, deleteAnime, getUnmonitoredAnimeIds } from './api';
+import { offerRemovalCleanup, requestRemonitor } from './dropCleanup';
 import { resetPrefs, setPref } from './prefs';
 
 async function settle() {
@@ -112,6 +114,55 @@ describe('LibraryView plan-to-watch airing marker', () => {
 
     const chips = [...document.querySelectorAll('.poster-info .airing-chip')].map((n) => n.textContent?.trim());
     expect(chips.sort()).toEqual(['Airing · Ep 5 in 5h 0m', 'Premieres in 3d 4h']);
+  });
+});
+
+describe('LibraryView unmonitored shows', () => {
+  let component: { $destroy: () => void } | undefined;
+
+  beforeEach(() => {
+    document.body.innerHTML = '<div id="app"></div>';
+    resetPrefs();
+    setPref('anivault-library-filter', 'plan_to_watch');
+    vi.mocked(getUnmonitoredAnimeIds).mockResolvedValue([4]);
+    vi.mocked(requestRemonitor).mockClear();
+  });
+
+  afterEach(() => {
+    component?.$destroy();
+    component = undefined;
+    vi.mocked(getUnmonitoredAnimeIds).mockResolvedValue([]);
+  });
+
+  const titles = () => [...document.querySelectorAll('tr.data-row .title-text')].map((n) => n.textContent?.trim());
+
+  it('marks them, and the mark asks Sonarr to monitor and search again', async () => {
+    component = createClassComponent({ component: LibraryView, target: document.getElementById('app')! });
+    await settle();
+
+    const chips = [...document.querySelectorAll<HTMLButtonElement>('.unmonitored-chip')];
+    expect(chips).toHaveLength(1);
+    expect(chips[0]!.closest('tr')!.querySelector('.title-text')!.textContent).toBe('Finished Long Ago');
+
+    chips[0]!.click();
+    await settle();
+    expect(requestRemonitor).toHaveBeenCalledWith([{ animeId: 4, title: 'Finished Long Ago' }]);
+  });
+
+  it('can narrow the list to just them', async () => {
+    component = createClassComponent({ component: LibraryView, target: document.getElementById('app')! });
+    await settle();
+    expect(titles()).toHaveLength(4);
+
+    const tab = document.querySelector<HTMLButtonElement>('.unmonitored-tab')!;
+    expect(tab.textContent).toContain('(1)');
+    tab.click();
+    await settle();
+    expect(titles()).toEqual(['Finished Long Ago']);
+
+    tab.click();
+    await settle();
+    expect(titles()).toHaveLength(4);
   });
 });
 

@@ -5,7 +5,7 @@
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
-  import { cleanupApplied, offerRemovalCleanup } from './dropCleanup';
+  import { cleanupApplied, offerRemovalCleanup, requestCleanup, requestRemonitor } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
   import {
     getCollection,
@@ -21,7 +21,7 @@
     isComplete,
     type CollectionFilter,
   } from './collectionUi';
-  import { Play, FolderOpen, Info, Trash2, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, LayoutGrid, List } from 'lucide-svelte';
+  import { Play, FolderOpen, Info, Trash2, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, LayoutGrid, List, Eraser, Radar } from 'lucide-svelte';
 
   export let events: EngineEvent[] = [];
   // `loaded` fires after every load() settles, success or not, so App can
@@ -206,6 +206,18 @@
       const label = STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
       actionError = { ...explainError(`"${entry.title}" couldn't be moved to ${label}.`, e), retry: () => setStatusFor(entry, status) };
     }
+  }
+  function ctxCleanup() {
+    if (!ctxMenu) return;
+    const { anime_id, title } = ctxMenu.entry;
+    closeContextMenu();
+    requestCleanup([{ animeId: anime_id, title }]);
+  }
+  function ctxRemonitor() {
+    if (!ctxMenu) return;
+    const { anime_id, title } = ctxMenu.entry;
+    closeContextMenu();
+    requestRemonitor([{ animeId: anime_id, title }]);
   }
   async function ctxRemove() {
     if (!ctxMenu) return;
@@ -481,6 +493,12 @@
       </div>
 
       <div class="ctx-sep"></div>
+      <button class="ctx-item" role="menuitem" on:click={ctxRemonitor}>
+        <Radar size={13} /> Monitor and search in Sonarr…
+      </button>
+      <button class="ctx-item" role="menuitem" on:click={ctxCleanup}>
+        <Eraser size={13} /> Clean up Sonarr and files…
+      </button>
       <button class="ctx-item danger" role="menuitem" on:click={ctxRemove}>
         <Trash2 size={13} /> Remove from library
       </button>

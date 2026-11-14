@@ -40,20 +40,24 @@
     // The next queued prompt reuses this component; start it from the defaults.
     sonarrAction = 'unmonitor';
     deleteSonarrFiles = false;
-    deleteLocalFiles = false;
+    // Asking to clean up a show is asking for its files to go, so that one
+    // starts ticked; they still go to the Recycle Bin.
+    deleteLocalFiles = req.kind === 'cleanup';
     try {
-      const [settings, previews] = await Promise.all([
+      const [saved, previews] = await Promise.all([
         loadCleanupSettings(),
         getStatusChangePreview(req.shows.map((s) => s.animeId)),
       ]);
       if (req !== loadedFor) return;
+      const settings = req.kind === 'cleanup' ? { ...saved, offerSonarr: true, offerFiles: true } : saved;
       items = cleanupItems(req.shows, previews, settings);
       const sonarrRaw = settings.offerSonarr ? (previews.find((p) => p.sonarr_error)?.sonarr_error ?? null) : null;
       sonarrError = sonarrRaw ? explainError("Sonarr options aren't shown because AniVault couldn't check this show in Sonarr.", sonarrRaw) : null;
       // Nothing linked to Sonarr and no files: there is nothing to offer. A
       // removal still asks when Sonarr couldn't be checked, since the series
       // may keep downloading once the show is gone.
-      if (items.length === 0 && !(req.kind === 'remove' && sonarrError)) finish(true);
+      // An explicit Clean up always answers, even if only to say there's nothing.
+      if (items.length === 0 && req.kind !== 'cleanup' && !(req.kind === 'remove' && sonarrError)) finish(true);
       else shown = true;
     } catch (e) {
       if (req === loadedFor) {
@@ -66,6 +70,8 @@
   }
 
   $: removing = request.kind === 'remove';
+  $: manual = request.kind === 'cleanup';
+  $: eyebrow = removing ? 'Removing from library' : manual ? 'Clean up' : `Moved to ${STATUS_LABELS[request.status] ?? request.status}`;
 
   /// Close the dialog; a removal also learns whether to go ahead.
   function finish(proceed: boolean) {
@@ -123,7 +129,7 @@
 
 {#if !loading && shown}
   <PromptDialog
-    eyebrow={removing ? 'Removing from library' : `Moved to ${STATUS_LABELS[request.status] ?? request.status}`}
+    {eyebrow}
     heading={removing ? `Clean up before removing ${heading}?` : `Clean up ${heading}?`}
     {busy}
     on:close={() => finish(false)}
@@ -141,7 +147,18 @@
           <button class="primary" on:click={() => finish(false)}>Close</button>
         </div>
       {/if}
+    {:else if manual && items.length === 0 && !loadError}
+      <p class="hint">{named.length === 1 ? "It isn't" : "They aren't"} in Sonarr and {named.length === 1 ? 'has' : 'have'} no episode files, so there's nothing to clean up.</p>
+      {#if sonarrError}
+        <ErrorNotice compact message={sonarrError.message} details={sonarrError.details} on:dismiss={() => (sonarrError = null)} />
+      {/if}
+      <div class="actions">
+        <button class="primary" on:click={() => finish(false)}>Close</button>
+      </div>
     {:else}
+      {#if manual}
+        <p class="hint">{named.length === 1 ? 'The show stays' : 'The shows stay'} in your library with {named.length === 1 ? 'its' : 'their'} progress, score and history.</p>
+      {/if}
       {#if items.length > 1}
         <ul class="shows">
           {#each items as item (item.animeId)}

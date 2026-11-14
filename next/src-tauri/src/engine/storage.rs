@@ -2411,6 +2411,21 @@ impl Storage {
 
     // ── Sonarr availability (join) ──────────────────────────────────────────────
 
+    /// Library shows whose mapped Sonarr series is unmonitored, as of the
+    /// last import or the last monitoring change AniVault made.
+    pub async fn unmonitored_anime_ids(&self) -> anyhow::Result<Vec<i64>> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT m.anime_id
+             FROM sonarr_mapping m
+             JOIN sonarr_series s ON s.sonarr_id = m.sonarr_id
+             JOIN anime a ON a.id = m.anime_id
+             WHERE m.anime_id IS NOT NULL AND s.monitored = 0",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get::<i64, _>("anime_id")).collect())
+    }
+
     pub async fn sonarr_availability(
         &self,
         anime_id: i64,

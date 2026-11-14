@@ -576,7 +576,7 @@
     </div>
   {/if}
 
-  {#if $cleanupQueue[0]?.kind === 'drop' || $cleanupQueue[0]?.kind === 'remove'}
+  {#if $cleanupQueue[0]?.kind === 'drop' || $cleanupQueue[0]?.kind === 'remove' || $cleanupQueue[0]?.kind === 'cleanup'}
     <DropCleanupDialog
       request={$cleanupQueue[0]}
       on:done={(e) => { cleanupApplied.set(e.detail); cleanupApplied.set(null); }}
@@ -586,7 +586,7 @@
         cleanupQueue.update((q) => q.slice(1));
       }}
     />
-  {:else if $cleanupQueue[0]?.kind === 'resume'}
+  {:else if $cleanupQueue[0]?.kind === 'resume' || $cleanupQueue[0]?.kind === 'remonitor'}
     <ResumeSonarrDialog
       request={$cleanupQueue[0]}
       on:done={(e) => { cleanupApplied.set(e.detail); cleanupApplied.set(null); }}

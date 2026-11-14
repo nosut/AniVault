@@ -185,8 +185,10 @@ async fn sonarr_series_unmonitor_and_delete_clear_availability() {
         .await
         .unwrap();
 
+    assert!(storage.unmonitored_anime_ids().await.unwrap().is_empty());
     storage.sonarr_series_set_monitored(9, false).await.unwrap();
     assert!(!storage.sonarr_availability(7).await.unwrap().unwrap().monitored);
+    assert_eq!(storage.unmonitored_anime_ids().await.unwrap(), vec![7]);
 
     storage.sonarr_series_delete(9).await.unwrap();
     assert!(storage.sonarr_availability(7).await.unwrap().is_none());

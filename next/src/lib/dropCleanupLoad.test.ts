@@ -8,7 +8,7 @@ vi.mock('./api', () => ({
 }));
 
 import { getSetting } from './api';
-import { cleanupQueue, loadCleanupSettings, noteStatusChanges, offerRemovalCleanup } from './dropCleanup';
+import { cleanupQueue, loadCleanupSettings, noteStatusChanges, offerRemovalCleanup, requestCleanup, requestRemonitor } from './dropCleanup';
 import { appProblem } from './notify';
 
 describe('loading clean-up settings', () => {
@@ -54,6 +54,23 @@ describe('offering clean-up before a removal', () => {
 
   it('goes ahead without a prompt when there is nothing to remove', async () => {
     expect(await offerRemovalCleanup([])).toBe(true);
+    expect(get(cleanupQueue)).toEqual([]);
+  });
+});
+
+describe('asking for clean-up or monitoring directly', () => {
+  beforeEach(() => cleanupQueue.set([]));
+
+  it('queues a clean-up that keeps the show, and a monitor request', () => {
+    requestCleanup([{ animeId: 1, title: 'Old Show' }]);
+    requestRemonitor([{ animeId: 1, title: 'Old Show' }]);
+    expect(get(cleanupQueue).map((r) => r.kind)).toEqual(['cleanup', 'remonitor']);
+    expect(get(cleanupQueue)[0]!.settle).toBeUndefined();
+  });
+
+  it('queues nothing for an empty selection', () => {
+    requestCleanup([]);
+    requestRemonitor([]);
     expect(get(cleanupQueue)).toEqual([]);
   });
 });

@@ -1525,6 +1525,12 @@ pub async fn get_sonarr_availability_inner(
     }))
 }
 
+/// Library shows whose Sonarr series is unmonitored, such as ones cleaned up.
+#[tauri::command]
+pub async fn get_unmonitored_anime_ids(state: tauri::State<'_, EngineState>) -> Result<Vec<i64>, String> {
+    state.storage.unmonitored_anime_ids().await.map_err(command_error)
+}
+
 pub async fn remap_sonarr_inner(
     sonarr_id: i64,
     anime_id: Option<i64>,

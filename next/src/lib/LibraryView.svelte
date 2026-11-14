@@ -12,16 +12,16 @@
   import { getPref, setPref } from './prefs';
   import { activateOnKey } from './a11y';
   import { onMount, onDestroy } from 'svelte';
-  import { cleanupApplied, offerRemovalCleanup } from './dropCleanup';
+  import { cleanupApplied, offerRemovalCleanup, requestCleanup, requestRemonitor } from './dropCleanup';
   import { createEventDispatcher } from 'svelte';
-  import { searchLibrary, updateListEntry, deleteAnime, getEpisodeFiles, getEpisodeFilesBulk, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
+  import { searchLibrary, updateListEntry, deleteAnime, getUnmonitoredAnimeIds, getEpisodeFiles, getEpisodeFilesBulk, scanLibraryFolders, getLibraryStats, getCalendar, type LibraryEntry, type FileIndexEntry, type LibraryStats, type EngineEvent, type CalendarEntry } from './api';
   import {
     normalizeStatusFilter, DEFAULT_STATUS_FILTER, groupBySeason, flattenGroups, asDisplayRows,
     seasonSortVal, getCurrentSeason,
     groupSelection, toggleGroupSelection, pruneSelection,
     nextAiringByAnime, formatAiringCountdown, nextAiringSortVal, airingSoonMarker,
   } from './libraryUi';
-  import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2 } from 'lucide-svelte';
+  import { LayoutGrid, List, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, Play, FolderOpen, RotateCw, Trash2, Eraser, Radar } from 'lucide-svelte';
 
   export let events: EngineEvent[] = [];
 
@@ -621,6 +621,34 @@
     if (first) showInFolder(first.path);
     closeContextMenu();
   }
+  function ctxCleanup() {
+    if (!ctxMenu) return;
+    const { anime_id, title } = ctxMenu.entry;
+    closeContextMenu();
+    requestCleanup([{ animeId: anime_id, title }]);
+  }
+  function ctxRemonitor() {
+    if (!ctxMenu) return;
+    const { anime_id, title } = ctxMenu.entry;
+    closeContextMenu();
+    requestRemonitor([{ animeId: anime_id, title }]);
+  }
+  function batchRemonitor() {
+    requestRemonitor([...selectedIds].map((id) => ({ animeId: id, title: titleOf(id) })));
+  }
+
+  // Shows whose Sonarr series is unmonitored (cleaned up, or dropped with an
+  // unmonitor), marked in the list so they can be picked back up.
+  let unmonitoredIds = new Set<number>();
+  async function loadUnmonitored() {
+    try { unmonitoredIds = new Set(await getUnmonitoredAnimeIds()); }
+    catch { /* The marker is a convenience; the menu action still works. */ }
+  }
+  let showUnmonitoredOnly = false;
+
+  function batchCleanup() {
+    requestCleanup([...selectedIds].map((id) => ({ animeId: id, title: titleOf(id) })));
+  }
   async function ctxDelete() {
     if (!ctxMenu) return;
     await removeShow(ctxMenu.entry);
@@ -662,7 +690,7 @@
   }
 
   $: sortedEntries = (() => {
-    const list = [...entries];
+    const list = showUnmonitoredOnly ? entries.filter((e) => unmonitoredIds.has(e.anime_id)) : [...entries];
 
     // While searching (results span every category), group by category, then name.
     if (query.trim()) {
@@ -735,6 +763,7 @@
     void load();
     void loadStats();
     void loadCalendar();
+    void loadUnmonitored();
     // The column shows days and hours, so a minute is fine-grained enough.
     clockTimer = setInterval(() => { nowSec = Math.floor(Date.now() / 1000); }, 60_000);
     calendarTimer = setInterval(() => { void loadCalendar(); }, CALENDAR_REFRESH_MS);
@@ -746,6 +775,7 @@
     for (const id of c.animeIds) episodeFilesMap.delete(id);
     const cleaned = entries.filter((e) => c.animeIds.includes(e.anime_id));
     if (cleaned.length > 0) void loadEpisodeFiles(cleaned);
+    void loadUnmonitored();
   });
 
   onDestroy(() => {
@@ -804,6 +834,18 @@
         {opt.label}{#if stats}<span class="tab-count"> ({tabCount(opt.value)})</span>{/if}
       </button>
     {/each}
+    {#if unmonitoredIds.size > 0 || showUnmonitoredOnly}
+      <button
+        type="button"
+        class="status-tab unmonitored-tab"
+        class:active={showUnmonitoredOnly}
+        aria-pressed={showUnmonitoredOnly}
+        title="Show only shows whose Sonarr series is unmonitored"
+        on:click={() => (showUnmonitoredOnly = !showUnmonitoredOnly)}
+      >
+        Unmonitored<span class="tab-count"> ({unmonitoredIds.size})</span>
+      </button>
+    {/if}
   </div>
   </div>
 
@@ -1125,6 +1167,15 @@
                       {#if marker}
                         <span class="airing-chip" class:soon={marker.soon}>{marker.label}</span>
                       {/if}
+                      {#if unmonitoredIds.has(entry.anime_id)}
+                        <button
+                          type="button"
+                          class="airing-chip unmonitored-chip"
+                          title="Unmonitored in Sonarr. Click to monitor it again and search."
+                          on:click|stopPropagation={() => requestRemonitor([{ animeId: entry.anime_id, title: entry.title }])}
+                          on:keydown|stopPropagation
+                        ><Radar size={11} /> Unmonitored</button>
+                      {/if}
                     </span>
                   </td>
                   <td>
@@ -1209,6 +1260,8 @@
         <button class="action-btn" on:click={batchSetStatus('dropped')}>Dropped</button>
         <button class="action-btn" on:click={batchSetStatus('plan_to_watch')}>Plan to Watch</button>
         <button class="action-btn" on:click={batchIncrementProgress}>+1 Ep</button>
+        <button class="action-btn" on:click={batchCleanup} title="Unmonitor in Sonarr and delete files, keeping the shows">Clean up</button>
+        <button class="action-btn" on:click={batchRemonitor} title="Monitor in Sonarr again and search for episodes">Monitor</button>
         {#if confirmingDelete}
           <button class="action-btn danger" on:click={confirmBatchDelete}>Confirm delete {selectedIds.size}</button>
           <button class="action-btn" on:click={cancelBatchDelete}>Cancel</button>
@@ -1243,6 +1296,8 @@
       <div class="ctx-sep"></div>
       <button class="ctx-item" role="menuitem" disabled={ctxFiles().length === 0} on:click={ctxOpenFolder}><FolderOpen size={13} /> Open folder</button>
       <button class="ctx-item" role="menuitem" on:click={ctxRescan}><RotateCw size={13} /> Rescan episodes</button>
+      <button class="ctx-item" role="menuitem" on:click={ctxRemonitor}><Radar size={13} /> Monitor and search in Sonarr…</button>
+      <button class="ctx-item" role="menuitem" on:click={ctxCleanup}><Eraser size={13} /> Clean up Sonarr and files…</button>
       <button class="ctx-item danger" role="menuitem" on:click={ctxDelete}><Trash2 size={13} /> Delete from library</button>
     </div>
   {/if}
@@ -1615,6 +1670,18 @@
     padding: 0.05rem 0.45rem;
   }
   .title-wrap .airing-chip { align-self: center; }
+
+  .unmonitored-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: transparent;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .unmonitored-chip:hover { color: var(--color-accent); border-color: rgba(var(--color-accent-rgb), 0.45); }
+
+  .unmonitored-tab { margin-left: auto; }
 
   .airing-chip.soon {
     color: var(--color-accent);

@@ -279,6 +279,7 @@ pub fn run() {
             commands::delete_anime_files,
             commands::get_session_state,
             commands::get_sonarr_availability,
+            commands::get_unmonitored_anime_ids,
             commands::get_sonarr_status,
             commands::get_setting,
             commands::get_ui_prefs,
