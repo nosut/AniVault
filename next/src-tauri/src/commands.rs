@@ -1484,6 +1484,10 @@ pub async fn get_sonarr_status_inner(state: &EngineState) -> anyhow::Result<Sona
 pub async fn import_sonarr_series_inner(
     state: &EngineState,
 ) -> anyhow::Result<crate::engine::sonarr::import::ImportReport> {
+    // The timer and the Import Series button must not import at once, or
+    // both would write the same mappings.
+    static IMPORT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = IMPORT_LOCK.lock().await;
     let client = sonarr_client_from_settings(state)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Sonarr is not connected"))?;

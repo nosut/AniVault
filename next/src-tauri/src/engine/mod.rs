@@ -13,6 +13,7 @@ pub mod scanner;
 pub mod sonarr;
 pub mod secrets;
 pub mod sync_worker;
+pub mod sonarr_sync_worker;
 pub mod anidb_titles;
 pub mod storage;
 pub mod title_resolver;

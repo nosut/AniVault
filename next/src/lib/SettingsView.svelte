@@ -81,6 +81,39 @@
   let sonarrTesting = false;
   let sonarrTestResult: 'success' | 'failure' | null = null;
 
+  const SONARR_AUTO_SYNC_KEY = 'sonarr.auto_sync_minutes';
+  const SONARR_AUTO_SYNC_OPTIONS = [
+    { value: 0, label: 'Off' },
+    { value: 15, label: 'Every 15 minutes' },
+    { value: 30, label: 'Every 30 minutes' },
+    { value: 60, label: 'Every hour' },
+    { value: 360, label: 'Every 6 hours' },
+  ];
+  let sonarrAutoSync = 30;
+  let sonarrAutoSyncError: ActionError | null = null;
+  async function loadSonarrAutoSync() {
+    try {
+      const saved = await getSetting<number>(SONARR_AUTO_SYNC_KEY);
+      if (typeof saved === 'number') sonarrAutoSync = saved;
+    } catch (e) {
+      sonarrAutoSyncError = fail("The automatic Sonarr check setting couldn't be loaded, so the default is shown.", e, loadSonarrAutoSync);
+    }
+  }
+  async function saveSonarrAutoSync(minutes: number) {
+    try {
+      await setSetting(SONARR_AUTO_SYNC_KEY, minutes);
+      sonarrAutoSyncError = null;
+    } catch (e) {
+      sonarrAutoSyncError = fail("The automatic Sonarr check setting couldn't be saved.", e, () => saveSonarrAutoSync(minutes));
+    }
+  }
+  // An automatic check updated the counts and last-sync time shown here.
+  // Depends only on `events`, so reloading the status doesn't re-trigger it.
+  $: applySonarrSynced(events);
+  function applySonarrSynced(evs: EngineEvent[]) {
+    if (evs?.some((e) => 'SonarrSynced' in e) && sonarrStatus?.connected) void loadSonarrStatus();
+  }
+
   let sonarrImporting = false;
   let sonarrImportReport: SonarrImportReport | null = null;
   let sonarrImportError: ActionError | null = null;
@@ -537,6 +570,7 @@
     loadTracking();
     loadUpNext();
     loadCleanup();
+    loadSonarrAutoSync();
     loadLibraryFolders();
     loadEngineStatus();
     loadSonarrStatus();
@@ -890,6 +924,19 @@
               {/if}
               <p class="hint">Only series carrying at least one checked tag are imported. With nothing checked, every series is imported.</p>
             </fieldset>
+
+            <div class="toggle-row">
+              <span class="label">Check Sonarr automatically</span>
+              <select class="start-page-select" aria-label="Check Sonarr automatically" bind:value={sonarrAutoSync} on:change={() => saveSonarrAutoSync(sonarrAutoSync)}>
+                {#each SONARR_AUTO_SYNC_OPTIONS as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            </div>
+            <p class="hint">Re-imports your Sonarr series in the background, so monitoring changes, new series and new downloads show up without pressing Import Series.</p>
+            {#if sonarrAutoSyncError}
+              <ErrorNotice compact {...sonarrAutoSyncError} on:dismiss={() => (sonarrAutoSyncError = null)} />
+            {/if}
 
             <div class="sonarr-actions">
               <button

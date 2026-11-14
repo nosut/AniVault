@@ -226,6 +226,11 @@
 
   // Refresh stats and episode-file lists when an automatic scan changes the
   // index (new episode downloaded, file deleted, …).
+  $: applySonarrSynced(events);
+  function applySonarrSynced(evs: EngineEvent[]) {
+    if (evs && evs.some((e) => 'SonarrSynced' in e)) void loadUnmonitored();
+  }
+
   $: applyLibraryUpdated(events);
   function applyLibraryUpdated(evs: EngineEvent[]) {
     if (!evs || !evs.some((e) => 'LibraryUpdated' in e)) return;

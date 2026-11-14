@@ -78,4 +78,11 @@ pub enum EngineEvent {
         indexed: i64,
         removed: i64,
     },
+    /// The automatic Sonarr check re-imported the series. Views showing Sonarr
+    /// state (monitoring, files on disk, mappings) should refresh.
+    SonarrSynced {
+        imported: i64,
+        auto_mapped: i64,
+        unmapped: i64,
+    },
 }

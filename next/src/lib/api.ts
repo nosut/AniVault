@@ -199,6 +199,14 @@ export interface LibraryUpdatedEvent {
   };
 }
 
+export interface SonarrSyncedEvent {
+  SonarrSynced: {
+    imported: number;
+    auto_mapped: number;
+    unmapped: number;
+  };
+}
+
 export type EngineEvent =
   | MediaDetectedEvent
   | PlaybackDetectedEvent
@@ -208,6 +216,7 @@ export type EngineEvent =
   | SyncQueuedEvent
   | SyncFailedEvent
   | LibraryUpdatedEvent
+  | SonarrSyncedEvent
   | StatusChangedEvent;
 
 export interface LibraryEntry {

@@ -202,6 +202,11 @@
   // Live-update progress when the engine advances it (auto-detected playback).
   // Depends only on `events` so it won't loop on the writes below.
   $: applyProgressEvents(events);
+  // Depends only on `events`, like the progress handler above.
+  $: applySonarrSynced(events);
+  function applySonarrSynced(evs: EngineEvent[]) {
+    if (detail && evs?.some((e) => 'SonarrSynced' in e)) void loadSonarr();
+  }
   function applyProgressEvents(evs: EngineEvent[]) {
     if (!detail || !evs || evs.length === 0) return;
     for (const ev of evs) {

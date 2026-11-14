@@ -22,6 +22,7 @@ pub mod area {
     pub const TRACKING: &str = "tracking";
     pub const TRACKING_SETTING: &str = "tracking_setting";
     pub const SONARR_SETTINGS: &str = "sonarr_settings";
+    pub const SONARR_SYNC: &str = "sonarr_sync";
     pub const CALENDAR: &str = "calendar";
     pub const STARTUP_ENTRY: &str = "startup_entry";
     pub const WORKER: &str = "worker";
