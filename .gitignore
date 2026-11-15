@@ -1,14 +1,9 @@
 /.cache/
 /.vs/
 /.vscode/
-/bin/
-/build/
 /.worktrees/
 /.superpowers/
 /authorize.json
-/next/src-tauri/target/
-/next/dist/
-/next/node_modules/
 /secret.*
 
 # AI / assistant workflow artifacts — not part of the project
@@ -18,9 +13,6 @@ GEMINI.md
 .claude/
 .cursor/
 .aider*
-
-# Visual brainstorming companion mockups
-.superpowers/
 
 # Plans and specs written by the superpowers workflow; working notes, not project docs
 docs/superpowers/
