@@ -9,6 +9,7 @@
   import EpisodeGrid from './EpisodeGrid.svelte';
   import { buildEpisodeTiles, continueLabel, continueTarget, fileName, neighbours, stateLabel, type EpisodeTile } from './episodePlayback';
   import { currentShow, playingEpisode } from './playback';
+  import { getPref, setPref } from './prefs';
   import { onDestroy } from 'svelte';
   import { cleanupApplied, offerRemovalCleanup, requestCleanup, requestRemonitor } from './dropCleanup';
   import SonarrRemap from './SonarrRemap.svelte';
@@ -454,13 +455,11 @@
   });
   $: multiSeason = episodeSeasons.length > 1;
 
-  const EPISODE_VIEW_KEY = 'anivault.detail.episodeView';
-  let episodeView: 'list' | 'grid' = (() => {
-    try { return localStorage.getItem(EPISODE_VIEW_KEY) === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
-  })();
+  const EPISODE_VIEW_KEY = 'anivault-detail-episode-view';
+  let episodeView: 'list' | 'grid' = getPref(EPISODE_VIEW_KEY) === 'grid' ? 'grid' : 'list';
   function setEpisodeView(v: 'list' | 'grid') {
     episodeView = v;
-    try { localStorage.setItem(EPISODE_VIEW_KEY, v); } catch { /* convenience only */ }
+    setPref(EPISODE_VIEW_KEY, v);
   }
   function playTile(e: CustomEvent<EpisodeTile>) {
     if (e.detail.file) handlePlayFile(e.detail.file.file_path);

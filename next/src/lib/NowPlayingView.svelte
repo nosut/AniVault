@@ -2,7 +2,7 @@
   // The Now Playing page: the show that's playing (or played last), its
   // episodes as one-click tiles, and the facts you'd glance at mid-binge.
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
-  import { Play, FolderOpen, RotateCcw } from 'lucide-svelte';
+  import { ArrowLeft, Play, FolderOpen, RotateCcw } from 'lucide-svelte';
   import EpisodeGrid from './EpisodeGrid.svelte';
   import ErrorNotice from './ErrorNotice.svelte';
   import { formatBytes } from './fileSize';
@@ -19,7 +19,7 @@
     trackingStatus,
   } from './playback';
 
-  const dispatch = createEventDispatcher<{ select: { anime_id: number } }>();
+  const dispatch = createEventDispatcher<{ select: { anime_id: number }; back: void }>();
 
   $: show = $currentShow;
   $: playing = $playingEpisode;
@@ -89,6 +89,9 @@
 </script>
 
 <div class="np-view">
+  <button type="button" class="back-btn" on:click={() => dispatch('back')} aria-label="Back">
+    <ArrowLeft size={15} /> Back
+  </button>
   {#if $showError && !show}
     <ErrorNotice message={$showError.message} details={$showError.details} actionLabel={null} on:dismiss={() => showError.set(null)} />
   {/if}
@@ -197,6 +200,15 @@
 
 <style>
   .np-view { display: grid; gap: 1.1rem; min-width: 0; }
+
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 0.35rem; justify-self: start;
+    border: 1px solid rgba(var(--color-accent-rgb), 0.35); border-radius: 999px;
+    padding: 0.45rem 0.9rem; background: rgba(var(--color-accent-rgb), 0.12);
+    color: var(--color-text); cursor: pointer; font-size: 0.85rem;
+  }
+  .back-btn:hover { background: rgba(var(--color-accent-rgb), 0.22); }
+  .back-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
   .empty { padding: 3rem 1rem; text-align: center; display: grid; gap: 0.5rem; justify-items: center; }
   .empty h2 { font-size: 1.3rem; font-weight: 700; }

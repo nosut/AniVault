@@ -12,6 +12,7 @@ import {
   type TrackingStatus,
 } from './api';
 import { explainError, type ExplainedError } from './errors';
+import { getPref, setPref } from './prefs';
 
 export interface ShowContext {
   animeId: number;
@@ -20,7 +21,9 @@ export interface ShowContext {
 }
 
 export const POLL_MS = 2000;
-const LAST_SHOW_KEY = 'anivault.nowPlaying.lastAnimeId';
+export const LAST_SHOW_KEY = 'anivault-now-playing-last-show';
+/** Settings toggle: open the Now Playing page when an episode starts. Off unless 'true'. */
+export const AUTO_OPEN_KEY = 'anivault-now-playing-auto-open';
 
 export const trackingStatus = writable<TrackingStatus>({ active: false, watching: null });
 export const trackingPollError = writable<ExplainedError | null>(null);
@@ -42,16 +45,30 @@ let loadingId: number | null = null;
 let restored = false;
 
 function readLastShow(): number | null {
-  try {
-    const v = Number(localStorage.getItem(LAST_SHOW_KEY));
-    return Number.isInteger(v) && v > 0 ? v : null;
-  } catch {
-    return null;
-  }
+  const v = Number(getPref(LAST_SHOW_KEY));
+  return Number.isInteger(v) && v > 0 ? v : null;
 }
 
 function writeLastShow(id: number) {
-  try { localStorage.setItem(LAST_SHOW_KEY, String(id)); } catch { /* per-viewer convenience only */ }
+  setPref(LAST_SHOW_KEY, String(id));
+}
+
+/** The identity of what's playing: show and episode, or null when nothing identified plays. */
+export function playbackKey(status: TrackingStatus): string | null {
+  const w = status.watching;
+  return w?.anime_id != null ? `${w.anime_id}:${w.episode_guess ?? '?'}` : null;
+}
+
+/**
+ * Whether a status update should open the Now Playing page: only when the
+ * setting is on and a different episode has started. `lastKey` is the last
+ * identified episode; a gap with nothing identified does not reset it, so a
+ * brief blip in the same episode never reopens the page.
+ */
+export function autoOpenStep(lastKey: string | null, status: TrackingStatus, enabled: boolean): { open: boolean; key: string | null } {
+  const key = playbackKey(status);
+  if (key == null) return { open: false, key: lastKey };
+  return { open: enabled && key !== lastKey, key };
 }
 
 export async function pollTrackingStatus() {

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { getPref, setPref } from './prefs';
+  import { AUTO_OPEN_KEY } from './playback';
   import { getEngineStatus, getLaunchOnStartup, getStartInTray, setStartInTray, getSetting, setLaunchOnStartup, setSetting, setTrackingEnabled, type EngineStatus, connectSonarr, disconnectSonarr, getSonarrStatus, importSonarrSeries, testSonarrConnection, type SonarrStatus, type SonarrImportReport, getLibraryFolders, setLibraryFolders, scanLibraryFolders, type LibraryScanReport, type EngineEvent } from './api';
   import {
     discoverV1Data, previewMigration, runMigration,
@@ -281,6 +283,13 @@
     } catch (e) {
       upNextError = fail("Your Up next settings couldn't be loaded, so the defaults are shown.", e, loadUpNext);
     }
+  }
+
+  // Stored as a view preference: App reads it on every playback change.
+  let nowPlayingAutoOpen = getPref(AUTO_OPEN_KEY) === 'true';
+  function toggleNowPlayingAutoOpen() {
+    nowPlayingAutoOpen = !nowPlayingAutoOpen;
+    setPref(AUTO_OPEN_KEY, String(nowPlayingAutoOpen));
   }
 
   async function toggleUpNextToast() {
@@ -705,6 +714,12 @@
           <div class="toggle-row">
             <span class="label">Show an in-app "Up Next" prompt when the next episode is ready</span>
             <button type="button" role="switch" aria-checked={upNextToast} aria-label={'Show an in-app "Up Next" prompt when the next episode is ready'} class="switch" on:click={toggleUpNextToast}>
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+          <div class="toggle-row">
+            <span class="label">Open the Now Playing page when an episode starts</span>
+            <button type="button" role="switch" aria-checked={nowPlayingAutoOpen} aria-label="Open the Now Playing page when an episode starts" class="switch" on:click={toggleNowPlayingAutoOpen}>
               <span class="switch-thumb"></span>
             </button>
           </div>

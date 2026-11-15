@@ -11,6 +11,7 @@
   import { latestPlaybackEnded, samePrompt, type PromptKey } from './lib/upNext';
   import NowPlaying from './lib/NowPlaying.svelte';
   import NowPlayingView from './lib/NowPlayingView.svelte';
+  import { AUTO_OPEN_KEY, autoOpenStep, trackingStatus } from './lib/playback';
   import DashboardView from './lib/DashboardView.svelte';
   import LibraryView from './lib/LibraryView.svelte';
   import CollectionView from './lib/CollectionView.svelte';
@@ -347,6 +348,36 @@
     currentView = 'detail';
   }
 
+  // Where the Now Playing page's Back button returns to. Kept apart from
+  // previousView, which the series page reuses when opened from Now Playing.
+  let nowPlayingReturn: { view: View; detailAnimeId: number | null; top: number } | null = null;
+
+  function openNowPlaying() {
+    if (currentView === 'nowplaying') return;
+    nowPlayingReturn = { view: currentView, detailAnimeId, top: contentEl?.scrollTop ?? 0 };
+    currentView = 'nowplaying';
+    if (contentEl) contentEl.scrollTop = 0;
+  }
+
+  function handleNowPlayingBack() {
+    const back = nowPlayingReturn ?? { view: loadStartPage() as View, detailAnimeId: null, top: 0 };
+    nowPlayingReturn = null;
+    if (back.view === 'detail' && back.detailAnimeId === null) back.view = loadStartPage() as View;
+    detailAnimeId = back.detailAnimeId;
+    savedScroll = { view: back.view, top: back.top };
+    currentView = back.view;
+    if (INSTANT_VIEWS.includes(back.view) || back.view === 'detail') void restoreScroll(back.view);
+  }
+
+  // Opt-in (Settings): open Now Playing when a new episode starts playing.
+  let lastPlaybackKey: string | null = null;
+  const unsubscribeAutoOpen = trackingStatus.subscribe((status) => {
+    const step = autoOpenStep(lastPlaybackKey, status, getPref(AUTO_OPEN_KEY) === 'true');
+    lastPlaybackKey = step.key;
+    if (step.open) openNowPlaying();
+  });
+  onDestroy(unsubscribeAutoOpen);
+
   function handleDetailBack() {
     currentView = previousView;
     if (INSTANT_VIEWS.includes(currentView)) void restoreScroll(currentView);
@@ -453,7 +484,7 @@
     </nav>
     <div class="sr-only" aria-live="polite">{navAnnouncement}</div>
     <div class="now-playing-sidebar">
-      <NowPlaying events={latestEvents} collapsed={collapsed && isDesktopRail} on:open={() => setView('nowplaying')} />
+      <NowPlaying events={latestEvents} collapsed={collapsed && isDesktopRail} on:open={openNowPlaying} />
     </div>
   </aside>
 
@@ -538,7 +569,7 @@
     {:else if currentView === 'detail' && detailAnimeId !== null}
       <DetailView animeId={detailAnimeId} events={latestEvents} on:back={handleDetailBack} on:select={handleDetailSelect} />
     {:else if currentView === 'nowplaying'}
-      <NowPlayingView on:select={handleSelect} />
+      <NowPlayingView on:select={handleSelect} on:back={handleNowPlayingBack} />
     {:else if currentView === 'settings'}
       <SettingsView events={latestEvents} />
     {/if}

@@ -25,7 +25,8 @@ vi.mock('./api', () => ({
 }));
 
 import { getTrackingStatus, openEpisodeFile, fetchAnimeDetail } from './api';
-import { currentShow, playingEpisode, resetPlaybackForTests, startPlaybackPolling, noteEngineEvents } from './playback';
+import { autoOpenStep, currentShow, playingEpisode, resetPlaybackForTests, startPlaybackPolling, noteEngineEvents } from './playback';
+import { getPref, resetPrefs, setPref } from './prefs';
 import NowPlayingView from './NowPlayingView.svelte';
 
 async function settle() {
@@ -46,7 +47,7 @@ function render() {
 
 beforeEach(() => {
   resetPlaybackForTests();
-  localStorage.clear();
+  resetPrefs();
   vi.mocked(getTrackingStatus).mockReset().mockResolvedValue({ active: true, watching: null });
   vi.mocked(openEpisodeFile).mockClear();
   vi.mocked(fetchAnimeDetail).mockClear();
@@ -68,12 +69,12 @@ describe('playback store', () => {
     await settle();
     expect(get(currentShow)?.animeId).toBe(7);
     expect(get(playingEpisode)).toBe(3);
-    expect(localStorage.getItem('anivault.nowPlaying.lastAnimeId')).toBe('7');
+    expect(getPref('anivault-now-playing-last-show')).toBe('7');
     stop();
   });
 
   it('restores the last show when nothing is playing', async () => {
-    localStorage.setItem('anivault.nowPlaying.lastAnimeId', '7');
+    setPref('anivault-now-playing-last-show', '7');
     const stop = startPlaybackPolling();
     await settle();
     expect(get(currentShow)?.animeId).toBe(7);
@@ -82,7 +83,7 @@ describe('playback store', () => {
   });
 
   it('reloads the show when its progress advances', async () => {
-    localStorage.setItem('anivault.nowPlaying.lastAnimeId', '7');
+    setPref('anivault-now-playing-last-show', '7');
     const stop = startPlaybackPolling();
     await settle();
     vi.mocked(fetchAnimeDetail).mockClear();
@@ -120,11 +121,48 @@ describe('NowPlayingView', () => {
   });
 
   it('plays any episode from its tile', async () => {
-    localStorage.setItem('anivault.nowPlaying.lastAnimeId', '7');
+    setPref('anivault-now-playing-last-show', '7');
     const el = render();
     await settle();
     el.querySelector<HTMLButtonElement>('button[aria-label^="Play episode 1"]')!.click();
     await settle();
     expect(openEpisodeFile).toHaveBeenCalledWith('D:/Anime/Show/Show - 01.mkv');
+  });
+});
+
+describe('autoOpenStep', () => {
+  const playing = (anime_id: number | null, episode: number) => ({
+    active: true,
+    watching: { player_name: 'mpv', file_path: null, window_title: null, episode_guess: episode, anime_id },
+  });
+  const idle = { active: true, watching: null };
+
+  it('opens only when enabled and a new episode starts', () => {
+    expect(autoOpenStep(null, playing(7, 1), true)).toEqual({ open: true, key: '7:1' });
+    expect(autoOpenStep(null, playing(7, 1), false)).toEqual({ open: false, key: '7:1' });
+    expect(autoOpenStep('7:1', playing(7, 1), true).open).toBe(false);
+    expect(autoOpenStep('7:1', playing(7, 2), true).open).toBe(true);
+  });
+
+  it('keeps the last episode across a gap so a blip does not reopen', () => {
+    const gap = autoOpenStep('7:1', idle, true);
+    expect(gap).toEqual({ open: false, key: '7:1' });
+    expect(autoOpenStep(gap.key, playing(7, 1), true).open).toBe(false);
+  });
+
+  it('ignores playback that is not identified as a show', () => {
+    expect(autoOpenStep(null, playing(null, 3), true)).toEqual({ open: false, key: null });
+  });
+});
+
+describe('NowPlayingView back button', () => {
+  it('asks to go back', async () => {
+    const onBack = vi.fn();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    app = mount(NowPlayingView, { target, events: { back: onBack } });
+    await settle();
+    target.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!.click();
+    expect(onBack).toHaveBeenCalled();
   });
 });

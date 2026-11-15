@@ -26,6 +26,7 @@ vi.mock('./api', () => ({
 
 import { getTrackingStatus, openEpisodeFile } from './api';
 import { resetPlaybackForTests } from './playback';
+import { getPref, resetPrefs, setPref } from './prefs';
 import NowPlaying from './NowPlaying.svelte';
 
 async function settle() {
@@ -46,7 +47,7 @@ function render(props: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   resetPlaybackForTests();
-  localStorage.clear();
+  resetPrefs();
   vi.mocked(getTrackingStatus).mockReset().mockResolvedValue({ active: true, watching: null });
   vi.mocked(openEpisodeFile).mockClear();
 });
@@ -65,7 +66,7 @@ describe('NowPlaying card', () => {
   });
 
   it('shows the last show with Next and Replay when idle', async () => {
-    localStorage.setItem('anivault.nowPlaying.lastAnimeId', '7');
+    setPref('anivault-now-playing-last-show', '7');
     const el = render();
     await settle();
     expect(el.textContent).toContain('Frieren');
@@ -89,7 +90,7 @@ describe('NowPlaying card', () => {
   });
 
   it('opens the Now Playing page', async () => {
-    localStorage.setItem('anivault.nowPlaying.lastAnimeId', '7');
+    setPref('anivault-now-playing-last-show', '7');
     const onOpen = vi.fn();
     const target = document.createElement('div');
     document.body.appendChild(target);

@@ -303,3 +303,57 @@ describe('App does not mount the Seasons view before it has ever been opened', (
     unmount(app);
   });
 });
+
+describe('App opens Now Playing on playback when the setting is on', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    document.body.innerHTML = '<div id="app"></div>';
+    resetPrefs();
+    setPref('anivault-start-page', 'season');
+    const { resetPlaybackForTests } = await import('./lib/playback');
+    resetPlaybackForTests();
+    window.matchMedia = window.matchMedia ?? ((query: string) => ({
+      matches: true, media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    vi.mocked(getSeasonAnime).mockResolvedValue(seasonEntries as never);
+    vi.mocked(diffSeason).mockResolvedValue({ first_visit: false, new_ids: [] });
+    vi.mocked(getLibraryIds).mockResolvedValue([]);
+    vi.mocked(fetchAnimeDetail).mockRejectedValue(new Error('not needed for this test'));
+    vi.mocked(getTrackingStatus).mockResolvedValue({
+      active: true,
+      watching: { player_name: 'mpv', file_path: null, window_title: null, episode_guess: 3, anime_id: 7 },
+    });
+  });
+
+  const seasonShown = () =>
+    document.querySelector<HTMLElement>('.season-view-slot')?.getAttribute('style')?.includes('contents') ?? false;
+
+  it('switches to Now Playing when an episode starts, and Back returns to the previous screen', async () => {
+    setPref('anivault-now-playing-auto-open', 'true');
+    const app = mount(App, { target: document.getElementById('app')! });
+    await settle();
+    await settle();
+
+    expect(document.querySelector('.np-view')).not.toBeNull();
+    expect(seasonShown()).toBe(false);
+
+    document.querySelector<HTMLButtonElement>('.np-view button[aria-label="Back"]')!.click();
+    await settle();
+
+    expect(document.querySelector('.np-view')).toBeNull();
+    expect(seasonShown()).toBe(true);
+    unmount(app);
+  });
+
+  it('stays on the current screen when the setting is off', async () => {
+    const app = mount(App, { target: document.getElementById('app')! });
+    await settle();
+    await settle();
+
+    expect(document.querySelector('.np-view')).toBeNull();
+    expect(seasonShown()).toBe(true);
+    unmount(app);
+  });
+});
