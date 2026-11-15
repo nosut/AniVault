@@ -8,8 +8,8 @@
 </h1>
 
 <p align="center">
-  <b>A modern Windows desktop anime library &amp; tracker.</b><br />
-  Watches what you play, keeps your library organized, and syncs it all to AniList — automatically.
+  <b>A Windows anime library and tracker.</b><br />
+  Tracks what you watch, organizes your files, and syncs to AniList and Sonarr.
 </p>
 
 <p align="center">
@@ -24,147 +24,86 @@
 ---
 
 > [!IMPORTANT]
-> **This is an AI-generated project.** AniVault was designed, written, and is maintained with
-> the assistance of AI (Anthropic's Claude). Treat it accordingly — review the code before
-> relying on it, and expect the rough edges that come with automated development.
+> **AI-generated project.** AniVault is written and maintained with Claude (Anthropic).
+> Review the code before relying on it.
 
-## What is AniVault?
-
-AniVault is a lightweight, native Windows app that tracks the anime you watch and manages your
-local collection. Leave it running in the tray and it **detects playback in your media player**,
-recognizes the episode, advances your progress, and pushes the update to **AniList**, with no
-manual logging. It also indexes your local video folders, maps files to their shows, and keeps a
-calendar of upcoming episodes.
-
-It's a clean-room reimagining of the classic [Taiga](https://github.com/erengy/taiga), rebuilt on a
-modern stack (Rust + Tauri 2 + Svelte 5 + SQLite).
+AniVault sits in the tray, notices when you play an episode, and updates your AniList progress
+for you. It also indexes your local anime folders and works with Sonarr to fill the gaps. It's a
+modern take on [Taiga](https://github.com/erengy/taiga).
 
 ## Download
 
-Grab the latest installer (`AniVault_<version>_x64-setup.exe`) from the
-[Releases page](https://github.com/nosut/AniVault/releases/latest) and run it. To upgrade, install
-over the previous version; your library is kept. AniVault shows a notice when a newer release is
-available.
+Get `AniVault_<version>_x64-setup.exe` from the
+[latest release](https://github.com/nosut/AniVault/releases/latest). To upgrade, install over the
+old version; your library is kept. AniVault tells you when an update is out.
 
 ## Features
 
+### ▶️ Watching
+- Detects the episode playing in common players (mpv, VLC, MPC-HC, PotPlayer and more).
+- Progress, history and AniList update automatically.
+- **Continue** on any series page plays the next episode, or carries on a rewatch.
+- **Now Playing** page: click any episode to play it, with Previous / Next / Replay.
+- **Up Next** offers the next episode when one ends.
+
 ### 🏠 Home
-- **Airing today**, with download status for each episode.
-- **Ready to watch**: shows whose next episode is already on disk.
-- **Missing downloads**, with a one-click request to Sonarr.
-- **Jump back in** to the shows you're watching, refreshed live as you watch.
+- Airing today, ready to watch, and missing downloads at a glance.
+- Lists Watching and Planning shows that Sonarr doesn't have yet.
 
-### 🎬 Automatic playback tracking
-- Detects mpv, mpv.net, VLC, MPC-HC, MPC-BE, PotPlayer, SMPlayer, KMPlayer, GOM Player, Kodi,
-  MPlayer and Windows Media Player, and recognizes the playing episode from its filename or window
-  title, including season markers like `S02E05`.
-- Advances progress, completes a series at its final episode, records it in your watch history,
-  and queues the change for AniList.
-- **Up Next**: when an episode ends, offers the next one, with a configurable minimum watch time.
-- Low-confidence matches can be confirmed from Now Playing. Pause tracking any time from the tray.
+### 📚 Library
+- Scans your folders and matches files to shows.
+- Library in table or poster view, grouped by season, with airing countdowns.
+- Plan to Watch marks shows that have started airing or premiere soon.
+- Collection view with disk usage, and a File Manager for fixing matches.
 
-### 📚 Local library
-- Scan your anime folders; AniVault parses filenames (season/episode, release group, `SxxExx` and
-  `1x01` formats) and matches each file to its show with a confidence score.
-- Searchable, sortable **Library** in table or poster-grid layout, grouped by season, with a
-  countdown to the next episode for shows you're watching.
-- **Collection**: a poster wall or table of the series you have on disk, with disk usage per series.
-- **File Manager** for bulk mapping, ignoring and removing indexed files, with a deep AniList match
-  for tricky titles.
-- Files deleted from disk are pruned on rescan, guarded so an offline drive never wipes your data.
-- Readable English titles for entries AniList leaves untranslated, taken from the prequel's English
-  title or AniDB. Nothing is machine-translated.
-<img width="1282" height="852" alt="image" src="https://github.com/user-attachments/assets/01f2b77b-29c9-4b03-8e95-593b914434ce" />
-<img width="1282" height="852" alt="image" src="https://github.com/user-attachments/assets/090d18a8-25cb-44a9-96c9-88153ab2dde6" />
+<img width="1282" height="852" alt="Library" src="https://github.com/user-attachments/assets/01f2b77b-29c9-4b03-8e95-593b914434ce" />
+<img width="1282" height="852" alt="Collection" src="https://github.com/user-attachments/assets/090d18a8-25cb-44a9-96c9-88153ab2dde6" />
 
-### 🔗 AniList integration
-- OAuth sign-in and one-click import of your existing list.
-- Progress, status and score changes sync to AniList in the background, retrying through outages.
-  If your login expires, AniVault asks you to reconnect and syncs the queued changes afterwards.
-- Rich detail pages: cover art, synopsis, progress and score editing, watch history, related
-  entries, and next-airing countdowns.
-- **Seasons** page to browse any season, with shows added since your last visit grouped at the top.
-  <img width="1282" height="852" alt="image" src="https://github.com/user-attachments/assets/7294d339-38f7-4d7e-8d35-bd408ceafffc" />
+### 🔗 AniList
+- Sign in and import your list in one click.
+- Changes sync in the background and retry if AniList is down.
+- Detail pages with progress, score, history and related entries.
+- **Seasons** page for browsing any season.
 
-### 📅 Airing calendar
-- Month grid **and** agenda views of upcoming episodes for the shows you follow, with a Today button.
-- Episodes you've already watched are checked off.
-- Sourced from AniList's airing schedule, with **Sonarr** as a fallback, and cached for offline use.
+<img width="1282" height="852" alt="Seasons" src="https://github.com/user-attachments/assets/7294d339-38f7-4d7e-8d35-bd408ceafffc" />
 
-### 📺 Sonarr integration
-- Connect your Sonarr instance to import series, matched automatically to your library.
-- Choose which Sonarr tags to import from a list of your tags.
-- See episode availability on a show's detail page, and request missing episodes from the home page.
+### 📺 Sonarr
+- Imports and syncs your series every 30 minutes.
+- Add a missing show to Sonarr, or link one it already has.
+- Search for missing episodes from the home page.
+- Dropping or removing a show can unmonitor it and clean up its files.
+  Pick it back up later from the **Unmonitored** tab.
 
-### 📊 History &amp; stats
-- Searchable watch history.
-- Statistics, including your score distribution.
+### 📅 Calendar
+- Month and agenda views of upcoming episodes, with watched ones checked off.
 
-### 🗄️ Data safety
-- Import from a legacy Taiga v1 installation.
-- Back up and restore the database, and export or import your data as a JSON file.
-- Secrets (AniList and Sonarr credentials) are encrypted at rest with Windows DPAPI.
-
-### 🪟 Native desktop behavior
-- System-tray icon, close-to-tray, and quit confirmation.
-- Optional launch-on-startup, which repairs its own registry entry across reinstalls.
-- Remembers the window's size and position, with a collapsible, reorderable sidebar and a
-  choice of start page.
-
-## Tech stack
-
-| Layer | Technology |
-|-------|-----------|
-| Backend / engine | Rust, [Tauri 2](https://tauri.app/), `sqlx` (SQLite), `reqwest`, `tracing` |
-| Frontend | Svelte 5, TypeScript, Vite |
-| Storage | SQLite with versioned migrations |
-| Secrets | Windows DPAPI |
-| Packaging | NSIS installer |
+### 🛡️ Everything else
+- Watch history and stats.
+- Backup, restore, JSON export, and Taiga import.
+- Credentials encrypted with Windows DPAPI.
+- Clear error messages with a Try again button.
+- Tray icon and optional launch on startup.
 
 ## Building from source
 
-Prerequisites: **Windows**, [Node.js](https://nodejs.org/), the
-[Rust toolchain](https://rustup.rs/) with the MSVC build tools, and the Tauri CLI
-(`cargo install tauri-cli --version "^2"`).
+Needs Windows, [Node.js](https://nodejs.org/), [Rust](https://rustup.rs/) with the MSVC build
+tools, and the Tauri CLI (`cargo install tauri-cli --version "^2"`).
 
 ```powershell
 cd next
 npm install
-
-cargo tauri dev   # run the desktop app in development (from next/)
-npm run verify    # full check: type-check, svelte-check, Vitest, cargo check --tests
-npm run bundle    # build the Windows installer (NSIS)
+cargo tauri dev   # run in development
+npm run verify    # typecheck, tests, cargo check
+npm run bundle    # build the installer
 ```
 
-Individual checks:
-
-```powershell
-npm run test      # frontend tests (Vitest)
-npm run check     # TypeScript type-check
-
-cd src-tauri
-cargo test                 # Rust unit and integration tests
-cargo test --test <name>   # one integration test file
-```
-
-## Project structure
-
-```
-next/
-├── src/            # Svelte frontend (TypeScript, Vitest)
-├── src-tauri/      # Rust backend (Tauri 2)
-│   ├── src/engine/ # scanner, parser, matcher, anilist, sonarr, migration, storage
-│   ├── migrations/ # SQLite schema
-│   └── tests/      # Rust integration tests
-└── scripts/        # verify.ps1, bundle.ps1
-```
+Rust tests: `cargo test` in `next/src-tauri`.
 
 ## Credits
 
-Inspired by and based on [Taiga](https://github.com/erengy/taiga) by
-[Eren Okka](https://github.com/erengy). AniVault is an independent reimplementation and is not
-affiliated with the original project.
+Based on [Taiga](https://github.com/erengy/taiga) by [Eren Okka](https://github.com/erengy).
+AniVault is an independent reimplementation, not affiliated with the original.
 
 ## License
 
-[GNU General Public License v3.0](LICENSE) — same license as the original Taiga.
+[GPL v3](LICENSE), the same as Taiga.
