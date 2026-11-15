@@ -58,16 +58,20 @@ release is out.
   Previous / Next / Replay. It can open by itself when an episode starts.
 - **Up Next** offers the next episode when one ends.
 - Pause tracking any time from the tray.
-<img width="1404" height="1082" alt="Now playing" src="https://github.com/user-attachments/assets/2f7790ea-fb69-4414-b9af-95d1f354a8e9" />
 
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/2f7790ea-fb69-4414-b9af-95d1f354a8e9"><img src="https://github.com/user-attachments/assets/2f7790ea-fb69-4414-b9af-95d1f354a8e9" alt="Now playing" width="60%" /></a>
+</p>
 
 ### 🏠 Home
 - **Airing today**, with download status for each episode.
 - **Ready to watch**: shows whose next episode is already on disk.
 - **Missing downloads**, with a one-click Sonarr search.
 - **Not in Sonarr**: Watching and Planning shows Sonarr doesn't have, ready to add or link.
-<img width="1424" height="1049" alt="Dashboard" src="https://github.com/user-attachments/assets/2fef399a-02e8-4694-9d76-b8861a985510" />
 
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/2fef399a-02e8-4694-9d76-b8861a985510"><img src="https://github.com/user-attachments/assets/2fef399a-02e8-4694-9d76-b8861a985510" alt="Dashboard" width="60%" /></a>
+</p>
 
 ### 📚 Local library
 - Scans your anime folders and matches each file to its show, including season markers
@@ -79,8 +83,10 @@ release is out.
 - Files deleted from disk are pruned on rescan, but an offline drive never wipes your data.
 - Readable English titles for entries AniList leaves untranslated (never machine-translated).
 
-<img width="1282" height="852" alt="Library" src="https://github.com/user-attachments/assets/01f2b77b-29c9-4b03-8e95-593b914434ce" />
-<img width="1282" height="852" alt="Collection" src="https://github.com/user-attachments/assets/090d18a8-25cb-44a9-96c9-88153ab2dde6" />
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/01f2b77b-29c9-4b03-8e95-593b914434ce"><img src="https://github.com/user-attachments/assets/01f2b77b-29c9-4b03-8e95-593b914434ce" alt="Library" width="49%" /></a>
+  <a href="https://github.com/user-attachments/assets/090d18a8-25cb-44a9-96c9-88153ab2dde6"><img src="https://github.com/user-attachments/assets/090d18a8-25cb-44a9-96c9-88153ab2dde6" alt="Collection" width="49%" /></a>
+</p>
 
 ### 🔗 AniList
 - Sign in and import your existing list in one click.
@@ -90,7 +96,9 @@ release is out.
   related entries.
 - **Seasons** page to browse any season, with shows added since your last visit at the top.
 
-<img width="1282" height="852" alt="Seasons" src="https://github.com/user-attachments/assets/7294d339-38f7-4d7e-8d35-bd408ceafffc" />
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/7294d339-38f7-4d7e-8d35-bd408ceafffc"><img src="https://github.com/user-attachments/assets/7294d339-38f7-4d7e-8d35-bd408ceafffc" alt="Seasons" width="60%" /></a>
+</p>
 
 ### 📺 Sonarr
 - Imports your series, filtered by the Sonarr tags you choose, and re-syncs every 30 minutes.
