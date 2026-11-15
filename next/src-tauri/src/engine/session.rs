@@ -302,8 +302,9 @@ pub async fn process_scan_result(
 /// Record that `episode` of `anime_id` was watched, if it is past the current
 /// progress: list progress, a history row, auto-complete at the episode cap,
 /// the AniList sync, a `ProgressAdvanced` event and a toast. A no-op for an
-/// episode at or below the recorded progress, so repeated ticks (or a repeated
-/// confirm) write once. Returns whether progress advanced.
+/// episode at or below the recorded progress, beyond a rewatch history row
+/// (see [`record_rewatch`]), so repeated ticks (or a repeated confirm) write
+/// once. Returns whether progress advanced.
 ///
 /// A failed write is an error, never a silent `true`: the toast and
 /// `ProgressAdvanced` only follow progress that was actually saved. Failures
@@ -347,6 +348,7 @@ async fn record_progress_inner(
     let old_status = old_entry.map(|e| e.status);
 
     if episode <= old_episode {
+        record_rewatch(state, anime_id, episode, player, path, source, now).await?;
         return Ok(false);
     }
 
@@ -395,6 +397,33 @@ async fn record_progress_inner(
 
     notify_progress(state, anime_id, episode).await;
     Ok(true)
+}
+
+/// Add a history row for an episode at or below progress, so the latest watch
+/// (which the Continue / Up next logic reads) follows a rewatch. Progress is
+/// untouched. Scan ticks repeat every few seconds, so a row is only added when
+/// the newest one for the show is a different episode.
+async fn record_rewatch(
+    state: &EngineState,
+    anime_id: i64,
+    episode: i32,
+    player: Option<&str>,
+    path: Option<&str>,
+    source: &str,
+    now: i64,
+) -> anyhow::Result<()> {
+    let latest = state
+        .storage
+        .list_recent_watch_history_for_anime(anime_id, 1)
+        .await?;
+    if latest.first().is_some_and(|h| h.episode == episode) {
+        return Ok(());
+    }
+    state
+        .storage
+        .append_watch_history(anime_id, episode, path, player, source, now)
+        .await?;
+    Ok(())
 }
 
 /// Show a desktop toast when playback auto-advances an episode. Respects the

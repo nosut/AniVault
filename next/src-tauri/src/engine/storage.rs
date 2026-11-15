@@ -787,7 +787,7 @@ impl Storage {
     ) -> anyhow::Result<Vec<WatchHistoryRow>> {
         let rows = sqlx::query(
             "SELECT id, anime_id, episode, file_path, player, watched_at
-             FROM watch_history WHERE anime_id = ?1 ORDER BY watched_at DESC LIMIT ?2",
+             FROM watch_history WHERE anime_id = ?1 ORDER BY watched_at DESC, id DESC LIMIT ?2",
         )
         .bind(anime_id)
         .bind(limit)

@@ -185,3 +185,39 @@ async fn process_scan_result_falls_back_to_the_window_title_as_the_session_key()
         .expect("title-only playback still opens a session");
     assert_eq!(key.file_key, "Cowboy Bebop - 01");
 }
+
+#[tokio::test]
+async fn process_scan_result_records_a_rewatched_episode_once() {
+    let state = make_state().await;
+    state
+        .storage
+        .insert_minimal_anime(1, "Cowboy Bebop")
+        .await
+        .unwrap();
+    for ep in 1..=3 {
+        let name = format!("Cowboy Bebop - 0{ep}");
+        let r = make_scan_result("mpv.exe", &format!("D:/Anime/{name}.mkv"), &name);
+        process_scan_result(&state, r).await.unwrap();
+    }
+    state.events.drain();
+
+    // Rewatching episode 2, below progress 3: the history must show it as the
+    // latest watch, so "up next" after playback is episode 3, not episode 1.
+    let r = make_scan_result("mpv.exe", "D:/Anime/Cowboy Bebop - 02.mkv", "Cowboy Bebop - 02");
+    process_scan_result(&state, r).await.unwrap();
+    let history = state.storage.list_recent_watch_history_for_anime(1, 10).await.unwrap();
+    assert_eq!(history.len(), 4, "a rewatch adds a history row");
+    assert_eq!(history[0].episode, 2, "the rewatch is the newest row");
+
+    // Later ticks of the same rewatch must not add more rows.
+    let r = make_scan_result("mpv.exe", "D:/Anime/Cowboy Bebop - 02.mkv", "Cowboy Bebop - 02");
+    process_scan_result(&state, r).await.unwrap();
+    let history = state.storage.list_recent_watch_history_for_anime(1, 10).await.unwrap();
+    assert_eq!(history.len(), 4, "repeated ticks of a rewatch write once");
+
+    // Progress stays put and nothing claims it advanced.
+    let entry = state.storage.get_list_entry(1).await.unwrap().unwrap();
+    assert_eq!(entry.watched_episodes, 3);
+    let events = state.events.drain();
+    assert!(!events.iter().any(|e| matches!(e, EngineEvent::ProgressAdvanced { .. })));
+}

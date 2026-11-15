@@ -25,7 +25,7 @@ vi.mock('./api', () => ({
 }));
 
 import { getTrackingStatus, openEpisodeFile, fetchAnimeDetail } from './api';
-import { autoOpenStep, currentShow, playingEpisode, resetPlaybackForTests, startPlaybackPolling, noteEngineEvents } from './playback';
+import { autoOpenStep, currentShow, playingEpisode, resetPlaybackForTests, startPlaybackPolling, noteEngineEvents, pollTrackingStatus } from './playback';
 import { getPref, resetPrefs, setPref } from './prefs';
 import NowPlayingView from './NowPlayingView.svelte';
 
@@ -88,6 +88,26 @@ describe('playback store', () => {
     await settle();
     vi.mocked(fetchAnimeDetail).mockClear();
     noteEngineEvents([{ ProgressAdvanced: { anime_id: 7, new_episode: 3 } } as never]);
+    await settle();
+    expect(fetchAnimeDetail).toHaveBeenCalledWith(7);
+    stop();
+  });
+
+  it('reloads the show when its episode stops playing, so a rewatch shows up', async () => {
+    const watching = { player_name: 'mpv', file_path: null, window_title: null, episode_guess: 3, anime_id: 7 };
+    vi.mocked(getTrackingStatus).mockResolvedValue({ active: true, watching });
+    const stop = startPlaybackPolling();
+    await settle();
+    vi.mocked(fetchAnimeDetail).mockClear();
+
+    // Same episode still playing: no reload.
+    await pollTrackingStatus();
+    await settle();
+    expect(fetchAnimeDetail).not.toHaveBeenCalled();
+
+    // Playback ends: reload, since a rewatch writes history without ProgressAdvanced.
+    vi.mocked(getTrackingStatus).mockResolvedValue({ active: true, watching: null });
+    await pollTrackingStatus();
     await settle();
     expect(fetchAnimeDetail).toHaveBeenCalledWith(7);
     stop();

@@ -76,10 +76,17 @@ export async function pollTrackingStatus() {
   polling = true;
   try {
     const status = await getTrackingStatus();
+    const before = get(trackingStatus).watching;
     trackingStatus.set(status);
     trackingPollError.set(null);
     const id = status.watching?.anime_id;
-    if (id != null && id !== get(currentShow)?.animeId) void loadShow(id);
+    const showId = get(currentShow)?.animeId;
+    if (id != null && id !== showId) void loadShow(id);
+    // The current show's episode changed or stopped: reload its history. A
+    // rewatch writes a history row without ProgressAdvanced, so without this
+    // Up next falls back to stale history once the player closes.
+    else if (showId != null && before?.anime_id === showId
+      && playbackKey(status) !== playbackKey({ active: true, watching: before })) void loadShow(showId);
   } catch (e) {
     trackingPollError.set(explainError("AniVault couldn't check what's playing.", e));
   } finally {
