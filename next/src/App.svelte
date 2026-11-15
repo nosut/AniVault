@@ -10,6 +10,7 @@
   import { dismissUpdate, loadDismissedUpdate, shouldShowUpdate } from './lib/updateUi';
   import { latestPlaybackEnded, samePrompt, type PromptKey } from './lib/upNext';
   import NowPlaying from './lib/NowPlaying.svelte';
+  import NowPlayingView from './lib/NowPlayingView.svelte';
   import DashboardView from './lib/DashboardView.svelte';
   import LibraryView from './lib/LibraryView.svelte';
   import CollectionView from './lib/CollectionView.svelte';
@@ -41,7 +42,7 @@
     HardDrive,
   } from 'lucide-svelte';
 
-  type View = 'dashboard' | 'library' | 'collection' | 'season' | 'search' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings';
+  type View = 'dashboard' | 'library' | 'collection' | 'season' | 'search' | 'calendar' | 'history' | 'detail' | 'stats' | 'settings' | 'nowplaying';
 
   let navOrder: NavId[] = loadNavOrder();
   $: navItems = navOrder.map((id) => DEFAULT_NAV_ITEMS.find((item) => item.id === id)!);
@@ -452,7 +453,7 @@
     </nav>
     <div class="sr-only" aria-live="polite">{navAnnouncement}</div>
     <div class="now-playing-sidebar">
-      <NowPlaying events={latestEvents} collapsed={collapsed && isDesktopRail} />
+      <NowPlaying events={latestEvents} collapsed={collapsed && isDesktopRail} on:open={() => setView('nowplaying')} />
     </div>
   </aside>
 
@@ -536,6 +537,8 @@
       <StatsView />
     {:else if currentView === 'detail' && detailAnimeId !== null}
       <DetailView animeId={detailAnimeId} events={latestEvents} on:back={handleDetailBack} on:select={handleDetailSelect} />
+    {:else if currentView === 'nowplaying'}
+      <NowPlayingView on:select={handleSelect} />
     {:else if currentView === 'settings'}
       <SettingsView events={latestEvents} />
     {/if}

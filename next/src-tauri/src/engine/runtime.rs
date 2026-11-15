@@ -95,6 +95,10 @@ pub struct ActivePlaybackPub {
     pub file_path: Option<String>,
     pub window_title: Option<String>,
     pub episode_guess: Option<i32>,
+    /// The library show this playback was placed in, once the tracker has
+    /// identified it. `None` while the file is unrecognised.
+    #[serde(default)]
+    pub anime_id: Option<i64>,
 }
 
 pub fn sqlite_url_for_path(path: &Path) -> String {

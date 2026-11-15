@@ -164,6 +164,15 @@ pub async fn run_tracking_loop(
 
         // Update watching status — lock scope must not span .await
         let observed: Observation = if let Some(result) = scan.players.first() {
+            let processed = process_scan_result(&state, result.clone()).await;
+            let identified = match &processed {
+                Ok(Some(key)) => Some(key),
+                _ => None,
+            };
+
+            // Publish what is playing once per tick, after identification, so
+            // `anime_id` never flickers to null between ticks. The lock scope
+            // must not span an .await.
             {
                 let mut ctrl = state.tracking.lock().unwrap();
                 if ctrl.generation == generation {
@@ -171,15 +180,18 @@ pub async fn run_tracking_loop(
                         player_name: result.player_name.clone(),
                         file_path: result.file_path.clone(),
                         window_title: result.window_title.clone(),
-                        episode_guess: crate::engine::session::guess_episode(
-                            result.file_path.as_deref(),
-                            result.window_title.as_deref(),
-                        ),
+                        episode_guess: identified.map(|k| k.episode).or_else(|| {
+                            crate::engine::session::guess_episode(
+                                result.file_path.as_deref(),
+                                result.window_title.as_deref(),
+                            )
+                        }),
+                        anime_id: identified.map(|k| k.anime_id),
                     });
                 }
-            } // lock dropped here
+            }
 
-            match process_scan_result(&state, result.clone()).await {
+            match processed {
                 Ok(Some(key)) => Observation::Playing(key),
                 // A player is on screen but this tick could not place it in the
                 // library — grace applies, the session waits it out.

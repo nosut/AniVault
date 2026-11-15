@@ -6,6 +6,9 @@
   import { createEventDispatcher } from 'svelte';
   import { fetchAnimeDetail, getSonarrAvailability, updateListEntry, deleteAnime, getEpisodeFiles, getSeriesDiskSize, getAnimeRelations, getNextAiring, rescanAnimeFiles, repairAnimeFileMappings, pickFolder, mapFolderToAnime, unmapKnownFiles, type AnimeDetail, type SonarrAvailability, getSonarrCoverageFor, unignoreSonarrCoverage, type CoverageRow, type FileIndexEntry, type LibraryScanReport, type RelationEntry, type NextAiring, type EngineEvent } from './api';
   import { formatBytes } from './fileSize';
+  import EpisodeGrid from './EpisodeGrid.svelte';
+  import { buildEpisodeTiles, continueLabel, continueTarget, fileName, neighbours, stateLabel, type EpisodeTile } from './episodePlayback';
+  import { currentShow, playingEpisode } from './playback';
   import { onDestroy } from 'svelte';
   import { cleanupApplied, offerRemovalCleanup, requestCleanup, requestRemonitor } from './dropCleanup';
   import SonarrRemap from './SonarrRemap.svelte';
@@ -437,31 +440,31 @@
     loadAiring();
   }
 
-  function seasonOf(path: string): number {
-    const m = path.match(/[\\/ ._-]S(\d{1,2})E\d{1,3}/i) ?? path.match(/[\\/ ]Season\s*(\d{1,2})[\\/ ]/i);
-    return m?.[1] ? parseInt(m[1], 10) : 1;
-  }
-
-  // Sort files by (season, episode) so Season 1 always lists before Season 2.
-  $: sortedEpisodeFiles = [...episodeFiles].sort((a, b) => {
-    const sa = seasonOf(a.file_path);
-    const sb = seasonOf(b.file_path);
-    if (sa !== sb) return sa - sb;
-    return (a.episode ?? 0) - (b.episode ?? 0);
+  // The episode on screen, when it is this show.
+  $: playingHere = $currentShow?.animeId === animeId ? $playingEpisode : null;
+  $: watchedCount = detail?.watched_episodes ?? 0;
+  $: continueAt = continueTarget(episodeFiles, watchedCount, detail?.recent_history ?? []);
+  $: nextHere = playingHere != null ? neighbours(episodeFiles, playingHere).next?.episode ?? null : continueAt?.episode ?? null;
+  $: nextHereFile = nextHere != null ? episodeFiles.find((f) => f.episode === nextHere) ?? null : null;
+  $: episodeSeasons = buildEpisodeTiles(episodeFiles, {
+    watched: watchedCount,
+    episodeCount: detail?.episode_count ?? null,
+    playingEpisode: playingHere,
+    nextEpisode: nextHere,
   });
+  $: multiSeason = episodeSeasons.length > 1;
 
-  $: episodesBySeason = (() => {
-    const map = new Map<number, FileIndexEntry[]>();
-    for (const f of sortedEpisodeFiles) {
-      const s = seasonOf(f.file_path);
-      const arr = map.get(s);
-      if (arr) arr.push(f);
-      else map.set(s, [f]);
-    }
-    return [...map.entries()].sort((a, b) => a[0] - b[0]);
+  const EPISODE_VIEW_KEY = 'anivault.detail.episodeView';
+  let episodeView: 'list' | 'grid' = (() => {
+    try { return localStorage.getItem(EPISODE_VIEW_KEY) === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
   })();
-
-  $: multiSeason = episodesBySeason.length > 1;
+  function setEpisodeView(v: 'list' | 'grid') {
+    episodeView = v;
+    try { localStorage.setItem(EPISODE_VIEW_KEY, v); } catch { /* convenience only */ }
+  }
+  function playTile(e: CustomEvent<EpisodeTile>) {
+    if (e.detail.file) handlePlayFile(e.detail.file.file_path);
+  }
 
   function openFolder() {
     const first = episodeFiles[0];
@@ -665,6 +668,30 @@
           <p class="synopsis">{stripHtml(detail.synopsis)}</p>
         {:else}
           <p class="synopsis muted">No synopsis available.</p>
+        {/if}
+
+        {#if continueAt}
+          <div class="continue-banner">
+            {#if playingHere != null}
+              <div class="continue-text">
+                <span class="continue-kind">Playing now</span>
+                <span class="continue-ep">Episode {playingHere}</span>
+                <span class="continue-file">{nextHereFile ? `Episode ${nextHere} is next` : 'This is the last episode on disk'}</span>
+              </div>
+              {#if nextHereFile}
+                {@const nextPath = nextHereFile.file_path}
+                <button class="action-btn primary" on:click={() => handlePlayFile(nextPath)}><Play size={15} /> Play Ep {nextHere}</button>
+              {/if}
+            {:else}
+              {@const target = continueAt}
+              <div class="continue-text">
+                <span class="continue-kind">{continueLabel(target)}</span>
+                <span class="continue-ep">Episode {target.episode}</span>
+                <span class="continue-file" title={target.file.file_path}>{fileName(target.file.file_path)}</span>
+              </div>
+              <button class="action-btn primary" on:click={() => handlePlayFile(target.file.file_path)}><Play size={15} /> Play Ep {target.episode}</button>
+            {/if}
+          </div>
         {/if}
 
         {#if !detail.list_status && detail.watched_episodes == null && detail.score == null}
@@ -929,19 +956,32 @@
             {#if episodeFilesLoading}
               <p class="muted">Loading…</p>
             {:else if episodeFiles.length > 0}
+              <div class="episode-view-toggle" role="group" aria-label="Episode layout">
+                <button type="button" class:on={episodeView === 'list'} aria-pressed={episodeView === 'list'} on:click={() => setEpisodeView('list')}>List</button>
+                <button type="button" class:on={episodeView === 'grid'} aria-pressed={episodeView === 'grid'} on:click={() => setEpisodeView('grid')}>Grid</button>
+              </div>
               <div class="episode-file-list">
-                {#each episodesBySeason as [season, files] (season)}
+                {#each episodeSeasons as group (group.season)}
                   {#if multiSeason}
-                    <div class="season-header">Season {season}</div>
+                    <div class="season-header">Season {group.season}</div>
                   {/if}
-                  {#each files as file (file.file_path)}
-                    <div class="episode-file-row">
-                      <span class="ep-num">Ep {file.episode ?? '?'}</span>
-                      <span class="ep-path">{file.file_path}</span>
-                      <button class="action-btn small" on:click={() => handlePlayFile(file.file_path)}><Play size={13} /> Play</button>
-                      <button class="action-btn small danger" on:click={() => handleUnmapFile(file.file_path)} title="Remove this file from this anime">Unmap</button>
-                    </div>
-                  {/each}
+                  {#if episodeView === 'grid'}
+                    <EpisodeGrid tiles={group.tiles} on:play={playTile} />
+                  {:else}
+                    {#each group.tiles as tile (tile.episode)}
+                      <div class="episode-file-row {tile.state}">
+                        <span class="ep-num">Ep {tile.episode}</span>
+                        <span class="ep-path" title={tile.file?.file_path ?? ''}>{tile.file ? fileName(tile.file.file_path) : 'No file on disk'}</span>
+                        {#if stateLabel(tile.state)}<span class="ep-state">{stateLabel(tile.state)}</span>{/if}
+                        {#if tile.file}
+                          {@const path = tile.file.file_path}
+                          <button class="action-btn small" class:primary={tile.state === 'next'} on:click={() => handlePlayFile(path)}><Play size={13} /> Play</button>
+                          <button class="action-btn small" on:click={() => showInFolder(path)} title="Show this file in Explorer" aria-label="Show episode {tile.episode} in Explorer"><FolderOpen size={13} /></button>
+                          <button class="action-btn small danger" on:click={() => handleUnmapFile(path)} title="Remove this file from this anime">Unmap</button>
+                        {/if}
+                      </div>
+                    {/each}
+                  {/if}
                 {/each}
               </div>
             {:else if !episodeFilesLoading}
@@ -1520,6 +1560,24 @@
   .airing-countdown { font-size: 0.75rem; color: var(--color-accent); font-weight: 600; width: 100%; text-align: right; }
   .season-header { font-size: 0.75rem; font-weight: 700; color: var(--color-accent); text-transform: uppercase; letter-spacing: 0.06em; margin: 0.5rem 0 0.15rem; }
   .season-header:first-child { margin-top: 0; }
+  .ep-state { font-size: 0.7rem; color: var(--color-muted); white-space: nowrap; }
+  .episode-file-row.watched .ep-num, .episode-file-row.watched .ep-path { color: var(--color-muted); opacity: 0.75; }
+  .episode-file-row.watched .ep-state { color: var(--color-success); }
+  .episode-file-row.next, .episode-file-row.playing { border-color: rgba(var(--color-accent-rgb), 0.35); background: rgba(var(--color-accent-rgb), 0.08); }
+  .episode-file-row.next .ep-state, .episode-file-row.playing .ep-state { color: var(--color-accent); font-weight: 600; }
+  .episode-file-row.missing { opacity: 0.5; border-style: dashed; }
+  .ep-path { font-family: inherit; font-size: 0.8rem; }
+  .episode-view-toggle { display: inline-flex; gap: 2px; padding: 3px; margin-top: 0.5rem; border-radius: 999px; background: var(--color-surface-raised); }
+  .episode-view-toggle button { border: 0; background: transparent; color: var(--color-muted); font-size: 0.75rem; padding: 0.2rem 0.75rem; border-radius: 999px; cursor: pointer; }
+  .episode-view-toggle button.on { background: var(--color-bg); color: var(--color-text); }
+  .episode-view-toggle button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+  .action-btn.primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-bg); font-weight: 600; }
+  .action-btn.primary:hover:not(:disabled) { background: var(--color-accent); filter: brightness(1.08); }
+  .continue-banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; padding: 0.85rem 1rem; border-radius: 16px; border: 1px solid rgba(var(--color-accent-rgb), 0.3); background: linear-gradient(90deg, rgba(var(--color-accent-rgb), 0.16), rgba(var(--color-accent-rgb), 0.03)); }
+  .continue-text { display: grid; gap: 0.1rem; min-width: 0; }
+  .continue-kind { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-accent); }
+  .continue-ep { font-weight: 600; }
+  .continue-file { font-size: 0.75rem; color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .relations-list { display: grid; gap: 0.4rem; margin-top: 0.5rem; }
   .relation-row { display: flex; gap: 0.6rem; align-items: center; padding: 0.4rem 0.5rem; border: 1px solid rgba(var(--color-accent-rgb),0.08); border-radius: 6px; background: rgba(255,255,255,0.02); min-width: 0; }
   .relation-row.clickable { cursor: pointer; transition: border-color 0.15s, background 0.15s; }

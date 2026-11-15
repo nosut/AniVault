@@ -379,6 +379,8 @@ export interface ActivePlaybackInfo {
   file_path: string | null;
   window_title: string | null;
   episode_guess: number | null;
+  /** The library show this was identified as; null until it is recognised. */
+  anime_id?: number | null;
 }
 
 export interface TrackingStatus {
