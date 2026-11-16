@@ -34,8 +34,16 @@ describe('continueTarget', () => {
     expect(continueTarget(files, 2)).toMatchObject({ episode: 3, kind: 'continue' });
   });
 
-  it('starts again from the first file when nothing is left', () => {
-    expect(continueTarget(files, 4)).toMatchObject({ episode: 1, kind: 'restart' });
+  it('starts again from the first file once the show is finished', () => {
+    expect(continueTarget(files, 4, [], 4)).toMatchObject({ episode: 1, kind: 'restart' });
+  });
+
+  it('waits for the next episode of an airing show instead of restarting', () => {
+    // Caught up on episode 4 of 12; episode 5 has not been released yet.
+    expect(continueTarget(files, 4, [hist(4)], 12)).toBeNull();
+    // Episode count unknown (still airing): never assume it is over.
+    expect(continueTarget(files, 4, [hist(4)], null)).toBeNull();
+    expect(continueTarget(files, 4, [hist(4)])).toBeNull();
   });
 
   it('carries on a rewatch from the latest watch below progress', () => {
@@ -47,7 +55,7 @@ describe('continueTarget', () => {
   });
 
   it('falls through when the rewatch episode has no file', () => {
-    expect(continueTarget([file(1), file(2), file(4)], 4, [hist(2)])).toMatchObject({ episode: 1, kind: 'restart' });
+    expect(continueTarget([file(1), file(2), file(4)], 4, [hist(2)], 4)).toMatchObject({ episode: 1, kind: 'restart' });
   });
 
   it('returns null with no files and skips files with no episode number', () => {
@@ -111,6 +119,11 @@ describe('playbackControls', () => {
   it('offers the last watched as replay and the continue target as next when idle', () => {
     const c = playbackControls(files, 4, [hist(2)], null);
     expect([c.current, c.prev?.episode, c.next?.episode]).toEqual([2, 1, 3]);
+  });
+
+  it('offers no next when caught up on an airing show, keeping the replay', () => {
+    const c = playbackControls(files, 4, [hist(4)], null, 12);
+    expect([c.current, c.currentFile?.episode, c.prev?.episode, c.next]).toEqual([4, 4, 3, null]);
   });
 
   it('has nothing to replay with no history', () => {

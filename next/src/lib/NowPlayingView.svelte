@@ -25,7 +25,7 @@
   $: playing = $playingEpisode;
   $: watched = show?.detail.watched_episodes ?? 0;
   $: count = show?.detail.episode_count ?? null;
-  $: controls = show ? playbackControls(show.files, watched, show.detail.recent_history ?? [], playing) : null;
+  $: controls = show ? playbackControls(show.files, watched, show.detail.recent_history ?? [], playing, count) : null;
   $: seasons = show
     ? buildEpisodeTiles(show.files, {
         watched,
@@ -44,7 +44,7 @@
   $: shownSeason = seasons[seasonIndex] ?? null;
   // A finished show you're playing again, or partway back through.
   $: rewatching = show != null && count != null && watched >= count
-    && (playing != null || continueTarget(show.files, watched, show.detail.recent_history ?? [])?.kind === 'rewatch');
+    && (playing != null || continueTarget(show.files, watched, show.detail.recent_history ?? [], count)?.kind === 'rewatch');
   $: filesOnDisk = show ? new Set(show.files.filter((f) => f.episode != null).map((f) => f.episode)).size : 0;
   $: progressPct = count ? Math.min(100, Math.round((watched / count) * 100)) : 0;
   $: playerName = playing != null ? $trackingStatus.watching?.player_name ?? null : null;

@@ -444,7 +444,7 @@
   // The episode on screen, when it is this show.
   $: playingHere = $currentShow?.animeId === animeId ? $playingEpisode : null;
   $: watchedCount = detail?.watched_episodes ?? 0;
-  $: continueAt = continueTarget(episodeFiles, watchedCount, detail?.recent_history ?? []);
+  $: continueAt = continueTarget(episodeFiles, watchedCount, detail?.recent_history ?? [], detail?.episode_count ?? null);
   $: nextHere = playingHere != null ? neighbours(episodeFiles, playingHere).next?.episode ?? null : continueAt?.episode ?? null;
   $: nextHereFile = nextHere != null ? episodeFiles.find((f) => f.episode === nextHere) ?? null : null;
   $: episodeSeasons = buildEpisodeTiles(episodeFiles, {
@@ -669,7 +669,7 @@
           <p class="synopsis muted">No synopsis available.</p>
         {/if}
 
-        {#if continueAt}
+        {#if continueAt || playingHere != null}
           <div class="continue-banner">
             {#if playingHere != null}
               <div class="continue-text">
@@ -681,7 +681,7 @@
                 {@const nextPath = nextHereFile.file_path}
                 <button class="action-btn primary" on:click={() => handlePlayFile(nextPath)}><Play size={15} /> Play Ep {nextHere}</button>
               {/if}
-            {:else}
+            {:else if continueAt}
               {@const target = continueAt}
               <div class="continue-text">
                 <span class="continue-kind">{continueLabel(target)}</span>

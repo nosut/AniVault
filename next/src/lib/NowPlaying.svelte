@@ -62,7 +62,7 @@
   $: identified = status.watching?.anime_id != null;
   $: playing = $playingEpisode;
   $: controls = show
-    ? playbackControls(show.files, show.detail.watched_episodes ?? 0, show.detail.recent_history ?? [], playing)
+    ? playbackControls(show.files, show.detail.watched_episodes ?? 0, show.detail.recent_history ?? [], playing, show.detail.episode_count ?? null)
     : null;
   $: stripTiles = show && controls
     ? flatTiles(buildEpisodeTiles(show.files, {

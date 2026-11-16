@@ -59,12 +59,18 @@ export function fileForEpisode(files: FileIndexEntry[], episode: number): FileIn
  * - `rewatch`: the latest watch is below recorded progress, so you are partway
  *   through a rewatch; carry on from the episode after it.
  * - `continue`: the first file after recorded progress.
- * - `restart`: nothing is left after progress; start again from the first file.
+ * - `restart`: the show is finished (progress reached the episode count) and
+ *   nothing is left after progress; start again from the first file.
+ *
+ * Null when there is nothing to play, including when you are caught up on a
+ * show that is still airing (or whose episode count is unknown): the next
+ * episode just isn't on disk yet, so don't send you back to episode 1.
  */
 export function continueTarget(
   files: FileIndexEntry[],
   watched: number,
   history: RecentHistoryEntry[] = [],
+  episodeCount: number | null = null,
 ): ContinueTarget | null {
   const sorted = sortEpisodeFiles(files);
   if (sorted.length === 0) return null;
@@ -78,6 +84,9 @@ export function continueTarget(
 
   const after = sorted.find((x) => (x.episode ?? 0) > watched);
   if (after) return { episode: after.episode!, file: after, kind: 'continue' };
+
+  const finished = episodeCount != null && episodeCount > 0 && watched >= episodeCount;
+  if (!finished) return null;
 
   const first = sorted[0]!;
   return { episode: first.episode!, file: first, kind: 'restart' };
@@ -196,13 +205,14 @@ export function playbackControls(
   watched: number,
   history: RecentHistoryEntry[],
   playing: number | null,
+  episodeCount: number | null = null,
 ): PlaybackControls {
   if (playing != null) {
     const { prev, next } = neighbours(files, playing);
     return { current: playing, currentFile: fileForEpisode(files, playing), prev, next };
   }
   const last = history[0]?.episode ?? null;
-  const target = continueTarget(files, watched, history);
+  const target = continueTarget(files, watched, history, episodeCount);
   const currentFile = last != null ? fileForEpisode(files, last) : null;
   return {
     current: last,
