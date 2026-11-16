@@ -1,6 +1,6 @@
 [package]
 name = "anivault"
-version = "1.0.43"
+version = "1.0.44"
 description = "AniVault desktop anime library"
 authors = ["AniVault Contributors"]
 edition = "2021"
